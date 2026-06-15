@@ -24,6 +24,7 @@ import { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import {
   applyMemoryMode,
   detectMemoryMode,
+  MEMORY_MODE_PRESETS,
   normalizeMemoryStrategy,
   type MemoryMode,
   type MemoryStrategyUi,
@@ -71,6 +72,14 @@ type MemoryCopy = {
       description: string
     }
   >
+  modeSummary: {
+    tokenThreshold: string
+    workingWindow: string
+    compactWindow: string
+    keepMinimum: string
+    messageUnit: string
+    turnEstimate: (turns: number) => string
+  }
   fields: {
     autoCompactThreshold: string
     warningThreshold: string
@@ -148,6 +157,14 @@ const MEMORY_COPY: Record<'en' | 'zh', MemoryCopy> = {
       long: { label: 'Long', description: 'Keep more recent context before compacting.' },
       custom: { label: 'Custom', description: 'Current thresholds no longer match a preset.' },
     },
+    modeSummary: {
+      tokenThreshold: 'Auto compact at',
+      workingWindow: 'Keep recent working context',
+      compactWindow: 'Compaction window',
+      keepMinimum: 'Keep at least',
+      messageUnit: 'messages',
+      turnEstimate: (turns) => `approx ${turns} turns`,
+    },
     fields: {
       autoCompactThreshold: 'Auto compact threshold',
       warningThreshold: 'Warning threshold',
@@ -222,6 +239,14 @@ const MEMORY_COPY: Record<'en' | 'zh', MemoryCopy> = {
       balanced: { label: '均衡', description: '默认交付配置，适合大多数 Agent。' },
       long: { label: '长', description: '在压缩前保留更多近期上下文。' },
       custom: { label: '自定义', description: '当前阈值已不再匹配预设。' },
+    },
+    modeSummary: {
+      tokenThreshold: '自动压缩阈值',
+      workingWindow: '近期工作上下文',
+      compactWindow: '压缩窗口上限',
+      keepMinimum: '至少保留',
+      messageUnit: '条消息',
+      turnEstimate: (turns) => `约 ${turns} 轮对话`,
     },
     fields: {
       autoCompactThreshold: '自动压缩阈值',
@@ -299,6 +324,19 @@ function fieldClass(extra = '') {
 
 function headerBandClass() {
   return 'border-b border-black/[0.06] bg-[linear-gradient(135deg,rgba(53,127,124,0.08),rgba(255,255,255,0.86))]'
+}
+
+function formatTokenCount(value: number, locale: 'en' | 'zh') {
+  if (value >= 1000) {
+    const compact = value % 1000 === 0 ? `${value / 1000}` : `${(value / 1000).toFixed(1)}`
+    return locale === 'zh' ? `${compact}k Token` : `${compact}k tokens`
+  }
+  return locale === 'zh' ? `${value} Token` : `${value} tokens`
+}
+
+function formatMessageTurns(messages: number, messageUnit: string, turnEstimate: (turns: number) => string) {
+  const approxTurns = Math.max(1, Math.round(messages / 2))
+  return `${messages} ${messageUnit} / ${turnEstimate(approxTurns)}`
 }
 
 export default function MemoryStrategyWorkspace({ embedded = false }: { embedded?: boolean }) {
@@ -460,6 +498,15 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
                 const option = copy.modes[mode]
                 const active = activeMode === mode
                 const presetButton = mode !== 'custom'
+                const summarySource =
+                  mode === 'custom'
+                    ? {
+                        autocompactThresholdTokens: memory.autocompactThresholdTokens,
+                        l1MaxMessages: memory.l1MaxMessages,
+                        compactMaxMessages: memory.compactMaxMessages,
+                        compactionKeepMin: memory.compactionKeepMin,
+                      }
+                    : MEMORY_MODE_PRESETS[mode]
                 return (
                   <button
                     key={mode}
@@ -474,6 +521,40 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
                   >
                     <span className="block text-[13px] font-semibold">{option.label}</span>
                     <span className="mt-1 block text-[11px] leading-snug text-current/72">{option.description}</span>
+                    <div className="mt-3 space-y-1.5 border-t border-black/[0.06] pt-2.5 text-[10px] leading-snug text-current/72">
+                      <div className="flex items-start justify-between gap-3">
+                        <span>{copy.modeSummary.tokenThreshold}</span>
+                        <span className="text-right font-medium text-current">
+                          {formatTokenCount(summarySource.autocompactThresholdTokens, locale)}
+                        </span>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <span>{copy.modeSummary.workingWindow}</span>
+                        <span className="text-right font-medium text-current">
+                          {formatMessageTurns(
+                            summarySource.l1MaxMessages,
+                            copy.modeSummary.messageUnit,
+                            copy.modeSummary.turnEstimate,
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <span>{copy.modeSummary.compactWindow}</span>
+                        <span className="text-right font-medium text-current">
+                          {formatMessageTurns(
+                            summarySource.compactMaxMessages,
+                            copy.modeSummary.messageUnit,
+                            copy.modeSummary.turnEstimate,
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-start justify-between gap-3">
+                        <span>{copy.modeSummary.keepMinimum}</span>
+                        <span className="text-right font-medium text-current">
+                          {summarySource.compactionKeepMin}
+                        </span>
+                      </div>
+                    </div>
                   </button>
                 )
               })}
