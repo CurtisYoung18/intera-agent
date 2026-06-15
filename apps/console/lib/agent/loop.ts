@@ -11,7 +11,7 @@ import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { ChatMemoryManager } from './memory'
-import { HookEngine, type HookEvaluationResult } from './hook-engine'
+import { HookEngine } from './hook-engine'
 import { ToolRouter } from './tools'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
@@ -39,7 +39,6 @@ import { selectPromptAndTools } from './prompt-selector'
 import type { TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
-import { buildHumanHandoffQuestion } from './human-handoff'
 import {
   getActiveProcedureRun,
   getPendingProcedureLlmEvaluations,
@@ -63,6 +62,7 @@ import {
   finalizeProviderToolTurn,
   type SynthesisReason,
 } from '@intera/runtime-core/provider-tool-turn'
+import { StopHookHandler } from './stop-hook-handler'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -150,6 +150,7 @@ export class AgentLoop {
   private persistence: import('./persistence-port').PersistencePort
   private dryRun: boolean
   private memoryLifecycle: RuntimeMemoryLifecycle
+  private stopHookHandler: StopHookHandler
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -183,6 +184,20 @@ export class AgentLoop {
       setMessages: (messages) => { this.messages = messages },
       getUserMessagesSinceLastCompact: () => this.userMessagesSinceLastCompact,
       setUserMessagesSinceLastCompact: (count) => { this.userMessagesSinceLastCompact = count },
+    })
+    this.stopHookHandler = new StopHookHandler({
+      config: deps.config,
+      caseId: deps.caseId,
+      orgId: deps.orgId,
+      userId: deps.userId,
+      chatId: deps.chatId,
+      caseSchema: deps.caseSchema,
+      chatMemory: this.chatMemory,
+      persistence: this.persistence,
+      traceWriter: this.traceWriter,
+      getMessages: () => this.messages,
+      addMessage: (message) => this.messages.push(message),
+      getCurrentStage: () => this.currentStage,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -831,7 +846,7 @@ export class AgentLoop {
           assistantMessage.content = ''
 
           if (toolResults.length === 0) {
-            const stopAction = await this.handleStopBlocked(
+            const stopAction = await this.stopHookHandler.handle(
               stopEval,
               stopRetryCount,
               sendEvent,
@@ -1334,124 +1349,6 @@ export class AgentLoop {
           : undefined,
       },
     }
-  }
-
-  private async handleStopBlocked(
-    stopEval: HookEvaluationResult,
-    stopRetryCount: number,
-    sendEvent: (event: SSEEvent) => void,
-  ): Promise<
-    | { kind: 'retry'; feedbackMessage?: string }
-    | { kind: 'terminal'; result: LoopResult }
-  > {
-    const maxStopRetries = this.getMaxStopRetries()
-    const shouldRetry = stopEval.summary === 'block' && stopRetryCount < maxStopRetries
-
-    await this.traceWriter.write('loop_decision', shouldRetry ? 'Stop Hook retry' : 'Stop Hook fallback', {
-      checkpoint: 'Stop',
-      summary: stopEval.summary,
-      retry: stopRetryCount,
-      maxStopRetries,
-      hookNames: stopEval.results.filter((r) => r.action !== 'allow').map((r) => r.hookName),
-    })
-
-    if (shouldRetry) {
-      sendEvent({
-        type: 'withheld',
-        data: 'Reply held for Hook repair.',
-        timestamp: new Date().toISOString(),
-      })
-      return { kind: 'retry', feedbackMessage: stopEval.feedbackMessage }
-    }
-
-    const safeMessage = stopEval.summary === 'escalate'
-      ? escalationMessageFor(latestUserText(this.messages))
-      : 'I need to route this to a human specialist to make sure we give you an accurate answer. A teammate will review the case and follow up.'
-
-    try {
-      const resolvedCaseType = this.deps.caseSchema?.type || 'general'
-      await this.persistence.ensureCase({
-        id: this.deps.caseId,
-        orgId: this.deps.orgId,
-        userId: this.deps.userId,
-        type: resolvedCaseType,
-        status: 'escalated',
-        blocker: `Stop Hook fallback: ${stopEval.results.map((r) => r.hookName).join(', ')}`,
-        chatId: this.deps.chatId ?? this.deps.caseId,
-      })
-      await this.persistence.saveMemory(this.deps.caseId, {
-        caseId: this.deps.caseId,
-        ...this.chatMemory.getDbFields(),
-        humanTaskStatus: 'pending',
-      })
-      const question = buildHumanHandoffQuestion({
-        baseQuestion: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
-        caseType: this.deps.caseSchema?.type,
-        latestCustomerMessage: latestUserText(this.messages),
-        contextMap: this.chatMemory.getSummary().contextMap,
-      })
-      const task = await this.persistence.createHumanTask({
-        caseId: this.deps.caseId,
-        queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-        question,
-        status: 'pending',
-      })
-      await this.traceWriter.writeHumanTaskCreated(task.id, this.deps.caseSchema?.escalateOn?.[0] || 'general')
-      sendEvent({
-        type: 'human_task_created',
-        data: {
-          taskId: task.id,
-          queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-          question,
-          status: 'pending',
-        },
-        timestamp: new Date().toISOString(),
-      })
-    } catch (err) {
-      console.error('[AgentLoop] Failed to create Stop Hook fallback human task:', err)
-    }
-
-    const fallbackMessage: AssistantMessage = {
-      id: crypto.randomUUID(),
-      role: 'assistant',
-      content: safeMessage,
-      createdAt: new Date(),
-      isStreaming: false,
-    }
-    this.messages.push(fallbackMessage)
-
-    sendEvent({
-      type: 'text_delta',
-      data: safeMessage,
-      timestamp: new Date().toISOString(),
-    })
-    sendEvent({
-      type: 'message_stop',
-      data: { reason: 'stop_hook_fallback', stage: this.currentStage },
-      timestamp: new Date().toISOString(),
-    })
-    sendEvent({
-      type: 'escalated',
-      data: { stage: this.currentStage, reason: 'stop_hook_fallback' },
-      timestamp: new Date().toISOString(),
-    })
-    await this.traceWriter.writeEscalated('stop_hook_fallback', { stage: this.currentStage })
-
-    return {
-      kind: 'terminal',
-      result: {
-        messages: this.messages,
-        caseStatus: 'escalated',
-        transition: 'waiting_human',
-        currentStage: this.currentStage,
-        reason: 'stop_hook_fallback',
-      },
-    }
-  }
-
-  private getMaxStopRetries(): number {
-    const raw = (this.deps.config as AgentConfigData & { maxStopRetries?: unknown }).maxStopRetries
-    return typeof raw === 'number' && raw >= 0 ? Math.floor(raw) : 2
   }
 
   private buildToolInterceptorContext(): ToolInterceptorContext {
