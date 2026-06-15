@@ -97,13 +97,27 @@ describe('livechat-api', () => {
   })
 
   describe('sendImage', () => {
-    it('sends file event with url', async () => {
+    it('uploads external image urls before sending file events', async () => {
       await sendImage('chat1', 'https://img.example/pic.png', 'caption', token, license)
-      const call = server.calls[0]!
+      const uploadCall = server.calls[0]!
+      expect(uploadCall.action).toBe('upload_file')
+      const form = uploadCall.body as FormData
+      expect(form.get('file')).toBeTruthy()
+
+      const call = server.calls[1]!
+      expect(call.action).toBe('send_event')
       const evt = (call.body as Record<string, unknown>).event as Record<string, unknown>
       expect(evt.type).toBe('file')
-      expect(evt.url).toBe('https://img.example/pic.png')
+      expect(evt.url).toBe('https://cdn.livechat-files.com/api/file/mock/uploaded.png')
       expect(evt.alternative_text).toBe('caption')
+    })
+
+    it('reuses livechat cdn urls without re-uploading', async () => {
+      await sendImage('chat1', 'https://cdn.livechat-files.com/api/file/mock/already.png', undefined, token, license)
+      expect(server.calls).toHaveLength(1)
+      expect(server.calls[0]!.action).toBe('send_event')
+      const evt = (server.calls[0]!.body as Record<string, unknown>).event as Record<string, unknown>
+      expect(evt.url).toBe('https://cdn.livechat-files.com/api/file/mock/already.png')
     })
   })
 

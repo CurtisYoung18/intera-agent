@@ -11,6 +11,13 @@ import type { WidgetPayload, CardSpec } from './types'
 
 const LC_API_BASE = 'https://api.livechatinc.com/v3.5/agent/action'
 const LC_CONFIG_BASE = 'https://api.livechatinc.com/v3.5/configuration/action'
+const LIVECHAT_FILE_CDN_HOSTS = new Set(['cdn.livechat-files.com'])
+const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+}
 
 function buildAuthHeader(token: string, authType?: string, accountId?: string): string {
   if (authType === 'basic' && accountId) {
@@ -20,6 +27,86 @@ function buildAuthHeader(token: string, authType?: string, accountId?: string): 
   // auto-detect: long base64-like strings are likely PAT Basic
   if (token.length > 60 && /^[A-Za-z0-9+/=]+$/.test(token)) return `Basic ${token}`
   return `Bearer ${token}`
+}
+
+function isLiveChatCdnUrl(url: string): boolean {
+  try {
+    return LIVECHAT_FILE_CDN_HOSTS.has(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
+function guessFilename(url: string, contentType: string): string {
+  try {
+    const pathname = new URL(url).pathname
+    const lastSegment = pathname.split('/').filter(Boolean).pop()
+    if (lastSegment && /\.[A-Za-z0-9]+$/.test(lastSegment)) {
+      return lastSegment
+    }
+  } catch {
+    // Fall through to content type mapping.
+  }
+
+  const ext = CONTENT_TYPE_EXTENSIONS[contentType] ?? 'bin'
+  return `attachment.${ext}`
+}
+
+async function uploadFile(
+  file: Blob,
+  filename: string,
+  botAccessToken: string,
+  region: string = process.env.LIVECHAT_REGION ?? 'dal',
+  authType?: string,
+  accountId?: string,
+): Promise<string> {
+  const form = new FormData()
+  form.append('file', file, filename)
+
+  const res = await fetch(`${LC_API_BASE}/upload_file`, {
+    method: 'POST',
+    headers: {
+      Authorization: buildAuthHeader(botAccessToken, authType, accountId),
+      'X-Region': region,
+    },
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    const err = new Error(`LiveChat API upload_file failed (${res.status}): ${text}`) as Error & { code?: string }
+    if (res.status === 401) err.code = 'TOKEN_EXPIRED'
+    if (res.status === 403) err.code = 'NOT_IN_CHAT'
+    if (res.status === 429) err.code = 'RATE_LIMITED'
+    throw err
+  }
+
+  const data = await res.json() as { url?: unknown }
+  if (typeof data.url !== 'string' || !data.url) {
+    throw new Error('LiveChat API upload_file returned no url')
+  }
+  return data.url
+}
+
+async function ensureLiveChatFileUrl(
+  imageUrl: string,
+  botAccessToken: string,
+  region?: string,
+  authType?: string,
+  accountId?: string,
+): Promise<string> {
+  if (isLiveChatCdnUrl(imageUrl)) return imageUrl
+
+  const res = await fetch(imageUrl, { redirect: 'follow' })
+  if (!res.ok) {
+    throw new Error(`Failed to download external image (${res.status}): ${imageUrl}`)
+  }
+
+  const contentType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream'
+  const buffer = Buffer.from(await res.arrayBuffer())
+  const file = new Blob([buffer], { type: contentType })
+  const filename = guessFilename(imageUrl, contentType)
+
+  return uploadFile(file, filename, botAccessToken, region, authType, accountId)
 }
 
 async function lcPost(
@@ -191,11 +278,12 @@ export async function sendImage(
   botAccessToken: string, licenseId: string,
   region?: string, authType?: string, accountId?: string,
 ): Promise<void> {
+  const liveChatFileUrl = await ensureLiveChatFileUrl(imageUrl, botAccessToken, region, authType, accountId)
   await lcPost('send_event', {
     chat_id: chatId,
     event: {
       type: 'file',
-      url: imageUrl,
+      url: liveChatFileUrl,
       ...(caption ? { alternative_text: caption } : {}),
       visibility: 'all',
     },

@@ -130,16 +130,20 @@ async function flushBufferedTextAsMessages(
 
   const imageUrls = await resolveRenderableImageUrls(text)
   for (const imageUrl of imageUrls) {
-    await sendImage(
-      chatId,
-      imageUrl,
-      undefined,
-      config.botAccessToken,
-      config.licenseId,
-      params.region,
-      params.authType,
-      params.accountId,
-    )
+    try {
+      await sendImage(
+        chatId,
+        imageUrl,
+        undefined,
+        config.botAccessToken,
+        config.licenseId,
+        params.region,
+        params.authType,
+        params.accountId,
+      )
+    } catch (err) {
+      console.error('[Bridge] sendImage failed:', imageUrl, err)
+    }
   }
 }
 

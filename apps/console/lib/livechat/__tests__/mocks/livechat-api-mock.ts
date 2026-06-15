@@ -5,7 +5,7 @@ import { vi } from 'vitest'
 
 export interface MockLiveChatCall {
   action: string
-  body: Record<string, unknown>
+  body: unknown
 }
 
 export class MockLiveChatServer {
@@ -15,13 +15,27 @@ export class MockLiveChatServer {
   install(): void {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const urlStr = String(url)
+      if (!urlStr.includes('/agent/action/') && !urlStr.includes('/configuration/action/')) {
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'Content-Type': 'image/png' },
+        })
+      }
       const action = urlStr.split('/').pop() ?? ''
-      const body = init?.body ? JSON.parse(init.body as string) as Record<string, unknown> : null
+      let body: unknown = {}
+      if (init?.body instanceof FormData) {
+        body = init.body
+      } else if (typeof init?.body === 'string') {
+        body = JSON.parse(init.body) as Record<string, unknown>
+      }
       this.calls.push({ action, body: body ?? {} })
 
       const failure = this.shouldFail.get(action)
       if (failure) {
         return new Response(failure.body ?? 'mock error', { status: failure.status })
+      }
+      if (action === 'upload_file') {
+        return new Response(JSON.stringify({ url: 'https://cdn.livechat-files.com/api/file/mock/uploaded.png' }), { status: 200 })
       }
       return new Response(JSON.stringify({ ok: true }), { status: 200 })
     }))
