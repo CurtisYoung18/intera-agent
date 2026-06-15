@@ -9,27 +9,21 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
-import { prisma } from '@intera/shared/prisma'
 import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
-import { ChatMemoryManager, ChatSessionManager } from './memory'
+import { ChatMemoryManager } from './memory'
 import { HookEngine, type HookEvaluationResult } from './hook-engine'
 import { ToolRouter } from './tools'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
-import { microCompact } from './microCompact'
 import { classifyError } from './api/error-classifier'
 import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
-import { trySessionMemoryCompact } from './sessionMemoryCompact'
-import { compactConversation, reactiveCompact } from './compact'
+import { reactiveCompact } from './compact'
 import { Profiler } from './profiler'
 import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
 import { buildModelList } from './build-model-list'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
-import { profileKey } from './identity'
-import { mergeProfile } from '@intera/shared/memory/mergeProfile'
-import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks'
 
 // ---------------------------------------------------------------------------
@@ -42,7 +36,7 @@ import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
 import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
-import { selectProviderMessageWindow, type TranscriptHealthMetrics } from './provider-transcript'
+import type { TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import { buildHumanHandoffQuestion } from './human-handoff'
@@ -63,6 +57,7 @@ import {
   shouldPersistToolResultToChatMemory,
   shouldRecordProcedureEvidence,
 } from './runtime-managed-tools'
+import { RuntimeMemoryLifecycle } from './runtime-memory-lifecycle'
 import {
   assertProviderToolTurnInvariant,
   finalizeProviderToolTurn,
@@ -154,6 +149,7 @@ export class AgentLoop {
   private anthropicClient: Anthropic
   private persistence: import('./persistence-port').PersistencePort
   private dryRun: boolean
+  private memoryLifecycle: RuntimeMemoryLifecycle
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -171,6 +167,23 @@ export class AgentLoop {
     this.traceWriter = new TraceWriter(deps.caseId, this.persistence)
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
     this.dryRun = deps.dryRun ?? false
+    this.memoryLifecycle = new RuntimeMemoryLifecycle({
+      config: deps.config,
+      caseId: deps.caseId,
+      orgId: deps.orgId,
+      userId: deps.userId,
+      chatId: deps.chatId,
+      dryRun: this.dryRun,
+      persistRuntimeMemory: deps.persistRuntimeMemory,
+      chatMemory: this.chatMemory,
+      persistence: this.persistence,
+      traceWriter: this.traceWriter,
+      profiler: this.profiler,
+      getMessages: () => this.messages,
+      setMessages: (messages) => { this.messages = messages },
+      getUserMessagesSinceLastCompact: () => this.userMessagesSinceLastCompact,
+      setUserMessagesSinceLastCompact: (count) => { this.userMessagesSinceLastCompact = count },
+    })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
     this.conversationLoop = new ConversationLoop({
@@ -354,7 +367,7 @@ export class AgentLoop {
       }
 
       // Context compaction (simplified)
-      const compactResult = await this.checkAndCompact()
+      const compactResult = await this.memoryLifecycle.checkAndCompact()
       if (compactResult.shouldCompact) {
         sendEvent({
           type: 'withheld',
@@ -831,8 +844,7 @@ export class AgentLoop {
               stopReason = null
               continue
             }
-            this.compactUserProfile().catch(() => {})
-            this.persistChatSession().catch(() => {})
+            this.persistTurnMemory()
             return stopAction.result
           }
 
@@ -1091,8 +1103,7 @@ export class AgentLoop {
       )
       if (interceptorResult.action.kind === 'continue') continue
       if (interceptorResult.action.kind === 'return') {
-        this.compactUserProfile().catch(() => {})
-        this.persistChatSession().catch(() => {})
+        this.persistTurnMemory()
         return interceptorResult.action.result
       }
 
@@ -1108,8 +1119,7 @@ export class AgentLoop {
         )
         this.nudgeCount = nudgeBox.value
         if (caseToolResult.type === 'terminal') {
-          this.compactUserProfile().catch(() => {})
-          this.persistChatSession().catch(() => {})
+          this.persistTurnMemory()
           return caseToolResult.result
         }
         if (caseToolResult.type === 'continue') continue
@@ -1153,8 +1163,7 @@ export class AgentLoop {
           timestamp: new Date().toISOString(),
         })
 
-        this.compactUserProfile().catch(() => {})
-        this.persistChatSession().catch(() => {})
+        this.persistTurnMemory()
         return {
           messages: this.messages,
           caseStatus: 'waiting_human',
@@ -1173,8 +1182,7 @@ export class AgentLoop {
       // Post-tool auto-escalation: human task was created during this iteration.
       // The LLM has had a chance to respond naturally — now exit to waiting_human.
       if (this.pendingEscalation) {
-        this.compactUserProfile().catch(() => {})
-        this.persistChatSession().catch(() => {})
+        this.persistTurnMemory()
         return {
           messages: this.messages,
           caseStatus: 'escalated',
@@ -1187,8 +1195,7 @@ export class AgentLoop {
       // End-turn exit: return cleanly from inside the loop body so we never
       // reach the "Max iterations" trace block below the while condition.
       if (stopReason === 'end_turn' || stopReason === 'max_tokens') {
-        this.compactUserProfile().catch(() => {})
-        this.persistChatSession().catch(() => {})
+        this.persistTurnMemory()
         return {
           messages: this.messages,
           caseStatus: this.currentStage as CaseStatus,
@@ -1509,226 +1516,34 @@ export class AgentLoop {
     }
   }
 
-  private async checkAndCompact(): Promise<{
-    shouldCompact: boolean
-    reason?: string
-  }> {
-    // Master switch — admin can disable all auto-compaction
-    if (!this.deps.config.memoryStrategy.enableAutocompact) {
-      return { shouldCompact: false }
-    }
-
-    // MicroCompact: clear old tool results before assessment (free, local)
-    if (this.deps.config.memoryStrategy.enableMicrocompact !== false) {
-      const ms = this.deps.config.memoryStrategy
-      const minAge = ms.microcompactMinAgeMs ?? 60000
-      const mcResult = microCompact(this.messages, ms.compactableTools, ms.toolResultTokenRatio, minAge)
-      if (mcResult.clearedCount > 0) {
-        this.messages = mcResult.messages
-        await this.traceWriter.write('microcompact', 'Cleared tool results', {
-          clearedCount: mcResult.clearedCount,
-          tokensSaved: mcResult.tokensSaved,
-        })
-      }
-    }
-
-    // Session Memory Compact: reuse existing persisted summary if recent enough
-    if (this.chatMemory.hasSummary()) {
-      const smResult = trySessionMemoryCompact(
-        this.chatMemory.getSummary().summary,
-        this.chatMemory.getLastCompactedAt(),
-        this.deps.config.memoryStrategy.sessionMemoryMaxAgeMs ?? 1800000,
-      )
-      if (smResult.used) {
-        return { shouldCompact: false, reason: 'session_memory_still_fresh' }
-      }
-    }
-
-    // Cadence-driven compaction (compactEveryNMessages): trigger based on
-    // message count regardless of token thresholds. Default undefined = disabled.
-    const everyN = this.deps.config.memoryStrategy.compactEveryNMessages
-    const cadenceTriggered = everyN != null && everyN > 0 &&
-      this.userMessagesSinceLastCompact >= everyN
-
-    const messageContents = this.messages.map((m) => typeof m.content === 'string' ? m.content : '')
-    const estimatedTokens = this.chatMemory.estimateTokens(messageContents)
-
-    const assessment = this.chatMemory.assessCompaction(estimatedTokens, this.messages.length)
-
-    if (cadenceTriggered) {
-      if (this.chatMemory.isCompactCircuitBroken()) {
-        return { shouldCompact: false, reason: 'circuit_breaker' }
-      }
-      try {
-        await this.performCompaction()
-        const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
-        if (this.deps.config.memoryStrategy.enableSnip !== false) {
-          this.messages = selectProviderMessageWindow(this.messages, keepCount)
-        }
-        this.userMessagesSinceLastCompact = 0
-        await this.traceWriter.write('loop_decision', 'Compacted', {
-          reason: 'cadence', kept: keepCount,
-          messagesSinceLast: everyN, percentLeft: assessment.percentLeft,
-        })
-        return { shouldCompact: true, reason: 'cadence' }
-      } catch {
-        this.chatMemory.recordCompactionFailure()
-        return { shouldCompact: false, reason: 'failed' }
-      }
-    }
-
-    if (assessment.isBlocking) {
-      if (this.chatMemory.isCompactCircuitBroken()) {
-        return { shouldCompact: false, reason: 'circuit_breaker' }
-      }
-      try {
-        await this.performCompaction()
-        const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
-        if (this.deps.config.memoryStrategy.enableSnip !== false) {
-          this.messages = selectProviderMessageWindow(this.messages, keepCount)
-        }
-        this.userMessagesSinceLastCompact = 0
-        await this.traceWriter.write('loop_decision', 'Compacted', {
-          reason: 'blocking', kept: keepCount, percentLeft: assessment.percentLeft,
-        })
-        return { shouldCompact: true, reason: 'blocking' }
-      } catch {
-        this.chatMemory.recordCompactionFailure()
-        return { shouldCompact: false, reason: 'failed' }
-      }
-    }
-
-    if (assessment.shouldCompact) {
-      if (this.chatMemory.isCompactCircuitBroken()) {
-        return { shouldCompact: false, reason: 'circuit_breaker' }
-      }
-      try {
-        await this.performCompaction()
-        const keepCount = this.chatMemory.compactionKeepCount(this.messages.length)
-        if (this.deps.config.memoryStrategy.enableSnip !== false) {
-          this.messages = selectProviderMessageWindow(this.messages, keepCount)
-        }
-        this.userMessagesSinceLastCompact = 0
-        await this.traceWriter.write('loop_decision', 'Compacted', {
-          reason: 'auto', kept: keepCount, percentLeft: assessment.percentLeft,
-        })
-        return { shouldCompact: true, reason: 'auto' }
-      } catch {
-        this.chatMemory.recordCompactionFailure()
-        return { shouldCompact: false, reason: 'failed' }
-      }
-    }
-
-    if (assessment.isWarning) {
-      console.warn(`[AgentLoop] Context: ${assessment.percentLeft.toFixed(0)}% remaining`)
-    }
-
-    return { shouldCompact: false }
-  }
-
-
-  /** Persist chat-level memory to ChatSession table. */
-  private async persistChatSession(): Promise<void> {
-    if (!this.deps.chatId) return
-    if (!this.shouldPersistRuntimeMemory()) return
-    const activeRun = getActiveProcedureRun(this.deps.caseId)
-    const persistedContextMap = activeRun?.definition?.version === 'v2'
-      ? {}
-      : this.chatMemory.getContextMap()
-    try {
-      await prisma.chatSession.upsert({
-        where: { orgId_chatId: { orgId: this.deps.orgId, chatId: this.deps.chatId } },
-        update: {
-          contextMap: JSON.stringify(persistedContextMap),
-          keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
-          summary: this.chatMemory.getSummary().summary || undefined,
-        },
-        create: {
-          chatId: this.deps.chatId,
-          orgId: this.deps.orgId,
-          contextMap: JSON.stringify(persistedContextMap),
-          keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
-          summary: this.chatMemory.getSummary().summary || undefined,
-        },
-      })
-    } catch (err) {
-      console.warn('[AgentLoop] persistChatSession failed:', err)
-    }
-  }
-
-  /** Standalone compact for UserProfile — takes recent messages, produces a user portrait. */
-  private async compactUserProfile(): Promise<void> {
-    if (!this.deps.config.memoryStrategy.enableChatMemory) return
-    if (!this.shouldPersistRuntimeMemory()) return
-    const key = profileKey(this.deps.userId, this.deps.chatId)
-    if (!key) return
-    try {
-      const recentMessages = this.messages.slice(-50)
-      const result = await compactConversation(recentMessages, this.deps.config.memoryStrategy, { purpose: 'profile' })
-      const summary = result.summary
-      if (!summary) return
-
-      const existing = await prisma.userProfile.findUnique({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
-        select: { profile: true },
-      }).catch(() => null)
-      const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
-      const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', summary, maxTokens)
-      const stats = await recomputeProfileStats(prisma, key, this.deps.orgId)
-
-      await prisma.userProfile.upsert({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
-        create: { userId: key, orgId: this.deps.orgId, profile: merged, sections, ...stats },
-        update: { profile: merged, sections, ...stats },
-      })
-    } catch (err) {
-      console.warn('[AgentLoop] compactUserProfile failed:', err)
-    }
-  }
-
-  private async performCompaction(): Promise<void> {
-    this.profiler.incrementCompaction()
-    const strategy = this.deps.config.memoryStrategy
-
-    try {
-      const result = await compactConversation(this.messages, strategy, { purpose: 'case' })
-      if (result.summary) {
-        this.chatMemory.setSummary(result.summary)
-        await this.traceWriter.write('loop_decision', 'LLM Compact', {
-          model: result.model,
-          provider: result.provider,
-          tokensUsed: result.tokensUsed,
-        })
-        return
-      }
-      console.warn('[AgentLoop] LLM compact returned empty summary, falling back to programmatic')
-    } catch (err) {
-      console.warn('[AgentLoop] LLM compact failed, falling back to programmatic:', err)
-    }
-
-    // Fallback: programmatic XML summary
-    this.chatMemory.recordCompaction()
-  }
-
   // -----------------------------------------------------------------------
   getCaseType(): string {
     return this.deps.caseSchema?.type || 'general'
   }
 
+  private persistTurnMemory(): void {
+    this.memoryLifecycle.compactUserProfile().catch(() => {})
+    this.memoryLifecycle.persistChatSession().catch(() => {})
+  }
+
+  private async checkAndCompact(): Promise<{ shouldCompact: boolean; reason?: string }> {
+    return this.memoryLifecycle.checkAndCompact()
+  }
+
+  private async persistChatSession(): Promise<void> {
+    return this.memoryLifecycle.persistChatSession()
+  }
+
+  private async compactUserProfile(): Promise<void> {
+    return this.memoryLifecycle.compactUserProfile()
+  }
+
   private shouldPersistRuntimeMemory(): boolean {
-    return !this.dryRun || this.deps.persistRuntimeMemory === true
+    return this.memoryLifecycle.shouldPersistRuntimeMemory()
   }
 
   private async persistChatMemory(): Promise<void> {
-    if (!this.shouldPersistRuntimeMemory()) return
-    try {
-      await this.persistence.saveMemory(this.deps.caseId, {
-        caseId: this.deps.caseId,
-        ...this.chatMemory.getDbFields(),
-      })
-    } catch (err) {
-      console.warn('[AgentLoop] persistChatMemory failed:', err)
-    }
+    return this.memoryLifecycle.persistChatMemory()
   }
 
   abort() {
