@@ -1,0 +1,23 @@
+[Unit]
+Description=Intera Runtime (internal agent turn service)
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=intera
+WorkingDirectory=/home/intera/intera-agent
+EnvironmentFile=/etc/intera/console.env
+Environment=RUNTIME_HOST=127.0.0.1
+Environment=RUNTIME_PORT=3101
+Environment=CONSOLE_INTERNAL_URL=http://127.0.0.1:3000
+ExecStart=/usr/bin/npm run start:runtime
+Restart=on-failure
+RestartSec=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

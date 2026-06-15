@@ -30,6 +30,7 @@ import { buildModePrompt } from '@/lib/agent/buildModePrompt'
 import { createSafeSseWriter } from '@/lib/api/safe-sse'
 import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
+import { maybeProxyMessagesToRuntime } from '@/lib/runtime/runtime-service'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
@@ -201,6 +202,12 @@ export async function POST(request: NextRequest) {
     async handler({ session, repo }) {
       const authOrgId = session.orgId
       const authAgentConfigId = session.agentConfigId
+
+      const runtimeProxyResponse = await maybeProxyMessagesToRuntime(request, {
+        orgId: authOrgId,
+        agentConfigId: authAgentConfigId,
+      })
+      if (runtimeProxyResponse) return runtimeProxyResponse
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({

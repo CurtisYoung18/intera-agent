@@ -22,6 +22,11 @@ demo.anytrans.ai {
     # Manually-provided cert (NOT auto-TLS)
     tls /etc/intera/tls/demo.anytrans.ai.crt /etc/intera/tls/demo.anytrans.ai.key
 
+    # Runtime internal APIs are loopback/private-network only.
+    handle /internal/* {
+        respond "not found" 404
+    }
+
     # SSE endpoints: flush immediately, no proxy buffering
     @sse path /api/messages /api/cases/*/stream
     reverse_proxy @sse localhost:3000 {

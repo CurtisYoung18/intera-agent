@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest'
 import { getInternalMessagesUrl, resolveInternalMessagesBaseUrl } from './internal-messages-url'
 
 describe('internal LiveChat messages URL', () => {
+  it('uses the runtime service internal route when INTERA_RUNTIME_URL is configured', () => {
+    const env = {
+      INTERA_RUNTIME_URL: 'http://127.0.0.1:3101/',
+      PORT: '3000',
+      NODE_ENV: 'production',
+    } as NodeJS.ProcessEnv
+
+    expect(resolveInternalMessagesBaseUrl(env)).toBe('http://127.0.0.1:3101')
+    expect(getInternalMessagesUrl(env)).toBe('http://127.0.0.1:3101/internal/cases/messages')
+  })
+
   it('uses INTERNAL_CHAT_API_URL when explicitly configured', () => {
     const env = {
       INTERNAL_CHAT_API_URL: 'http://localhost:3999',

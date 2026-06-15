@@ -2,11 +2,14 @@
   "name": "intera-agent",
   "private": true,
   "workspaces": [
+    "apps/runtime",
     "apps/console",
     "packages/*"
   ],
   "scripts": {
     "dev:console": "npm run dev -w apps/console",
+    "start:runtime": "npm run start -w apps/runtime",
+    "test:runtime": "npm run test -w apps/runtime",
     "build:console": "npm run build -w apps/console",
     "smoke:console": "node scripts/smoke-console-auth.mjs",
     "ci:receipts": "node scripts/ci-receipts.mjs",

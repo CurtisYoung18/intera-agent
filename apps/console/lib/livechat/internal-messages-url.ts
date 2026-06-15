@@ -1,4 +1,8 @@
 export function resolveInternalMessagesBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.INTERA_RUNTIME_URL || env.RUNTIME_INTERNAL_URL) {
+    return (env.INTERA_RUNTIME_URL ?? env.RUNTIME_INTERNAL_URL ?? '').replace(/\/+$/, '')
+  }
+
   const port = env.PORT ?? (env.NODE_ENV === 'development' ? '3001' : '3000')
 
   if (env.INTERNAL_CHAT_API_URL) {
@@ -21,5 +25,9 @@ export function resolveInternalMessagesBaseUrl(env: NodeJS.ProcessEnv = process.
 }
 
 export function getInternalMessagesUrl(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.INTERA_RUNTIME_URL || env.RUNTIME_INTERNAL_URL) {
+    return `${resolveInternalMessagesBaseUrl(env)}/internal/cases/messages`
+  }
+
   return `${resolveInternalMessagesBaseUrl(env)}/api/messages`
 }
