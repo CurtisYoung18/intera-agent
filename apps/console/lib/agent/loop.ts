@@ -38,7 +38,6 @@ import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message
 import { selectPromptAndTools } from './prompt-selector'
 import type { TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
-import { escalationMessageFor, latestUserText } from './customer-messages'
 import {
   getActiveProcedureRun,
   getPendingProcedureLlmEvaluations,
@@ -63,6 +62,7 @@ import {
   type SynthesisReason,
 } from '@intera/runtime-core/provider-tool-turn'
 import { StopHookHandler } from './stop-hook-handler'
+import { HumanTaskHandoffHandler, type PendingHumanTaskEscalation } from './human-task-handoff-handler'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -141,7 +141,7 @@ export class AgentLoop {
   private iterationCount = 0
   private nudgeCount = 0
   private pendingEscalation = false
-  private pendingHumanTaskEscalation: { taskId: string; queue: string; question: string } | null = null
+  private pendingHumanTaskEscalation: PendingHumanTaskEscalation | null = null
   /** Counter for cadence-driven compaction (compactEveryNMessages). Reset after each compaction. */
   private userMessagesSinceLastCompact = 0
   private abortController: AbortController
@@ -151,6 +151,7 @@ export class AgentLoop {
   private dryRun: boolean
   private memoryLifecycle: RuntimeMemoryLifecycle
   private stopHookHandler: StopHookHandler
+  private humanTaskHandoffHandler: HumanTaskHandoffHandler
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -198,6 +199,11 @@ export class AgentLoop {
       getMessages: () => this.messages,
       addMessage: (message) => this.messages.push(message),
       getCurrentStage: () => this.currentStage,
+    })
+    this.humanTaskHandoffHandler = new HumanTaskHandoffHandler({
+      traceWriter: this.traceWriter,
+      getMessages: () => this.messages,
+      addMessage: (message) => this.messages.push(message),
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -1141,51 +1147,11 @@ export class AgentLoop {
       }
 
       if (this.pendingHumanTaskEscalation) {
-        const { taskId, queue, question } = this.pendingHumanTaskEscalation
+        const pending = this.pendingHumanTaskEscalation
         this.pendingHumanTaskEscalation = null
-
-        if (!fullText.trim()) {
-          const safeMessage = escalationMessageFor(latestUserText(this.messages))
-          const fallbackMessage: AssistantMessage = {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: safeMessage,
-            createdAt: new Date(),
-            isStreaming: false,
-          }
-          this.messages.push(fallbackMessage)
-          sendEvent({
-            type: 'text_delta',
-            data: safeMessage,
-            timestamp: new Date().toISOString(),
-          })
-        }
-
-        sendEvent({
-          type: 'human_task_created',
-          data: { taskId, queue, question, status: 'pending' },
-          timestamp: new Date().toISOString(),
-        })
-        await this.traceWriter.writeEscalated('human_task_created', { taskId, queue })
-        sendEvent({
-          type: 'escalated',
-          data: { reason: 'human_task_created', taskId, queue },
-          timestamp: new Date().toISOString(),
-        })
-        sendEvent({
-          type: 'message_stop',
-          data: { reason: 'waiting_human', stage: 'waiting_human' },
-          timestamp: new Date().toISOString(),
-        })
-
+        const handoffResult = await this.humanTaskHandoffHandler.complete(pending, fullText, sendEvent)
         this.persistTurnMemory()
-        return {
-          messages: this.messages,
-          caseStatus: 'waiting_human',
-          transition: 'waiting_human',
-          currentStage: 'waiting_human',
-          reason: 'human_task_created',
-        }
+        return handoffResult
       }
 
       sendEvent({
