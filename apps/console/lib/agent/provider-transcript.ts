@@ -595,7 +595,9 @@ function normalizeDisplayContentBlocks(input: unknown): Message['contentBlocks']
 }
 
 function normalizeRole(role: string): Message['role'] {
-  return role === 'assistant' || role === 'system' ? role : 'user'
+  if (role === 'assistant' || role === 'system') return role
+  if (role === 'agent') return 'assistant'
+  return 'user'
 }
 
 function stringifyOptional(value: unknown): string | undefined {

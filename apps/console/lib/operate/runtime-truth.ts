@@ -38,6 +38,7 @@ export type OperateTraceKind =
   | 'reconcile_gate'
   | 'stale_evidence'
   | 'procedure_runtime'
+  | 'runtime_debug'
   | 'human_handoff'
   | 'model_request'
   | 'model_response'
@@ -134,6 +135,31 @@ function isProcedureRuntimeDecision(title: string): boolean {
   )
 }
 
+function stripBracketedRuntimePrefix(title: string): string {
+  const trimmed = title.trim()
+  if (!trimmed.startsWith('[')) return trimmed
+
+  let depth = 0
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index]
+    if (char === '[') depth += 1
+    if (char === ']') {
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) {
+        return trimmed.slice(index + 1).trim()
+      }
+    }
+  }
+
+  return trimmed
+}
+
+function humanizeRuntimeDebugTitle(title: string): string {
+  const stripped = stripBracketedRuntimePrefix(title)
+  if (!stripped) return stripped
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1)
+}
+
 function deriveTraceStatus(
   trace: TraceTruthInput,
   payload: Record<string, unknown> | null,
@@ -212,15 +238,68 @@ function detailTextForTrace(
 ): string | null {
   if (!payload) return trace.detail
 
+  const summarizeScalarFields = (record: Record<string, unknown>): string | null => {
+    const scalarEntries = Object.entries(record)
+      .filter(([, value]) => value != null && value !== '')
+      .filter(([, value]) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+
+    if (scalarEntries.length === 0) return null
+
+    return scalarEntries
+      .slice(0, 3)
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(' · ')
+  }
+
+  const summarizeStructuredValue = (value: unknown): string | null => {
+    if (value == null) return null
+    if (typeof value === 'string') return value.length > 220 ? `${value.slice(0, 220)}…` : value
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    if (Array.isArray(value)) {
+      return value.length === 0
+        ? 'No items returned'
+        : `Returned ${value.length} item${value.length === 1 ? '' : 's'}`
+    }
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>
+      const failureMessage = typeof record.error === 'string'
+        ? record.error
+        : typeof record.message === 'string' && (record.ok === false || record.success === false)
+          ? record.message
+          : null
+      if (failureMessage) return `Error: ${failureMessage}`
+      if (typeof record.status === 'string' && record.status.trim()) {
+        const rest = summarizeScalarFields(
+          Object.fromEntries(Object.entries(record).filter(([key]) => key !== 'status')),
+        )
+        return rest ? `status: ${record.status} · ${rest}` : `status: ${record.status}`
+      }
+      if (Array.isArray(record.list)) {
+        return record.list.length === 0 ? 'No items returned' : `Returned ${record.list.length} item${record.list.length === 1 ? '' : 's'}`
+      }
+      if (Array.isArray(record.data)) {
+        return record.data.length === 0 ? 'No items returned' : `Returned ${record.data.length} item${record.data.length === 1 ? '' : 's'}`
+      }
+      const scalarSummary = summarizeScalarFields(record)
+      if (scalarSummary) return scalarSummary
+      return `Structured result (${Object.keys(record).length} fields)`
+    }
+    return null
+  }
+
   if (trace.actionType === 'tool_call') {
-    return payload.input != null ? `input: ${JSON.stringify(payload.input)}` : trace.detail
+    const summary = summarizeStructuredValue(payload.input)
+    return summary ? `input: ${summary}` : trace.detail
   }
 
   if (trace.actionType === 'tool_result') {
     const parts: string[] = []
-    if (payload.input != null) parts.push(`input: ${JSON.stringify(payload.input)}`)
-    if (payload.output != null) parts.push(`output: ${JSON.stringify(payload.output)}`)
-    if (payload.result != null && payload.output == null) parts.push(`output: ${JSON.stringify(payload.result)}`)
+    const inputSummary = summarizeStructuredValue(payload.input)
+    const outputSummary = summarizeStructuredValue(payload.output)
+    const resultSummary = payload.output == null ? summarizeStructuredValue(payload.result) : null
+    if (inputSummary) parts.push(`input: ${inputSummary}`)
+    if (outputSummary) parts.push(`output: ${outputSummary}`)
+    if (resultSummary) parts.push(`output: ${resultSummary}`)
     if (typeof payload.error === 'string' && payload.error.trim()) parts.push(`error: ${payload.error}`)
     return parts.length > 0 ? parts.join('\n') : trace.detail
   }
@@ -263,6 +342,11 @@ function detailTextForTrace(
       payload.ms != null ? `runtime: ${String(payload.ms)}ms` : null,
     ].filter(Boolean)
     return parts.length > 0 ? parts.join(' · ') : trace.detail
+  }
+
+  if (trace.actionType === 'agent_tree_node') {
+    const cleanedTitle = humanizeRuntimeDebugTitle(trace.title)
+    return cleanedTitle || trace.detail
   }
 
   return trace.detail
@@ -467,6 +551,18 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
     }
   }
 
+  if (trace.actionType === 'final_resolution') {
+    return {
+      kind: 'procedure_runtime',
+      status,
+      semanticLabel: 'Final resolution',
+      title: trace.title || 'Final resolution',
+      detailText: detailTextForTrace(trace, payload),
+      payload,
+      isExportedReviewStage: false,
+    }
+  }
+
   if (trace.actionType === 'llm_request_start') {
     return {
       kind: 'model_request',
@@ -512,6 +608,33 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
       detailText: detailTextForTrace(trace, payload),
       payload,
       isExportedReviewStage: true,
+    }
+  }
+
+  if (
+    trace.actionType === 'agent_tree_node' ||
+    trace.actionType === 'stream_event' ||
+    trace.actionType === 'case_created' ||
+    trace.actionType === 'microcompact' ||
+    trace.actionType === 'queue_message_enqueued' ||
+    trace.actionType === 'queue_message_consumed' ||
+    trace.actionType === 'incoming_chat' ||
+    trace.actionType === 'chat_deactivated' ||
+    trace.actionType === 'case_merged' ||
+    trace.actionType.startsWith('provider_transcript_') ||
+    (trace.actionType === 'loop_decision' && trace.title === 'Iteration Snapshot')
+  ) {
+    const cleanedTitle = trace.actionType === 'agent_tree_node'
+      ? humanizeRuntimeDebugTitle(trace.title)
+      : trace.title
+    return {
+      kind: 'runtime_debug',
+      status,
+      semanticLabel: 'Runtime debug',
+      title: cleanedTitle || trace.title || 'Runtime debug',
+      detailText: detailTextForTrace(trace, payload),
+      payload,
+      isExportedReviewStage: false,
     }
   }
 

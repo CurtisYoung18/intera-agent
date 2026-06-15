@@ -89,7 +89,7 @@ describe('POST /api/admin/playground/save-to-chat', () => {
       agentId: 'agent-1',
       messages: [
         { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi there!' },
+        { role: 'agent', content: 'Hi there!' },
         { role: 'user', content: 'Help me' },
       ],
     }
@@ -100,9 +100,24 @@ describe('POST /api/admin/playground/save-to-chat', () => {
     for (let i = 0; i < 3; i++) {
       const msgCall = h.mockMessageCreate.mock.calls[i][0]
       expect(msgCall.data.caseId).toBe('case-123')
-      expect(msgCall.data.role).toBe(input.messages[i].role)
+      expect(msgCall.data.role).toBe(i === 1 ? 'assistant' : input.messages[i].role)
       expect(msgCall.data.content).toBe(input.messages[i].content)
     }
+  })
+
+  it('persists exported contentBlocks for image-bearing messages', async () => {
+    const contentBlocks = [{
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: 'abc123' },
+    }]
+
+    await POST(makeRequest({
+      agentId: 'agent-1',
+      messages: [{ role: 'user', content: '', contentBlocks }],
+    }))
+
+    expect(h.mockMessageCreate).toHaveBeenCalledTimes(1)
+    expect(h.mockMessageCreate.mock.calls[0][0].data.contentBlocks).toEqual(contentBlocks)
   })
 
   it('bypasses analytics — does NOT touch UserProfile', async () => {

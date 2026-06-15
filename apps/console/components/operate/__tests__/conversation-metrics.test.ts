@@ -58,4 +58,33 @@ describe('computeConversationMetrics', () => {
     expect(metrics.turnWallMs).toBe(5540)
     expect(metrics.toolPhaseMs).toBe(3)
   })
+
+  it('reads OpenRouter prompt cache accounting when usage uses prompt_tokens_details', () => {
+    const traces = [
+      {
+        actionType: 'llm_response',
+        title: 'LLM response: end_turn',
+        createdAt: '2026-06-11T12:00:00.000Z',
+        payload: JSON.stringify({
+          usage: {
+            prompt_tokens: 5482,
+            completion_tokens: 71,
+            prompt_tokens_details: {
+              cached_tokens: 3200,
+              cache_write_tokens: 1280,
+            },
+          },
+        }),
+      },
+    ]
+
+    const metrics = computeConversationMetrics(traces)
+
+    expect(metrics.llmCalls).toBe(1)
+    expect(metrics.inputTokens).toBe(5482)
+    expect(metrics.outputTokens).toBe(71)
+    expect(metrics.cacheReadTokens).toBe(3200)
+    expect(metrics.cacheWriteTokens).toBe(1280)
+    expect(metrics.totalTokens).toBe(5553)
+  })
 })

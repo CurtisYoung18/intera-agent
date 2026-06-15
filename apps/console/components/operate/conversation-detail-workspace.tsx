@@ -28,9 +28,11 @@ import {
   summarizeToolPairing,
 } from '@/lib/operate/runtime-truth'
 import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
+import type { ContentBlock } from '@intera/shared/types'
 
 interface MsgItem {
   id: string; role: string; content: string; createdAt: string
+  contentBlocks?: ContentBlock[]
   runId?: string | null; procedureType?: string; procedureStatus?: string
 }
 
@@ -83,6 +85,11 @@ function CasePill({ caseItem }: { caseItem: CaseSummary }) {
 function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
   const isUser = msg.role === 'user'
   const isToolResult = msg.content.startsWith('Tool ') && msg.role === 'assistant'
+  const roleLabel = msg.role === 'user'
+    ? (locale === 'zh' ? '用户' : 'User')
+    : msg.role === 'system'
+      ? (locale === 'zh' ? '系统' : 'System')
+      : (locale === 'zh' ? '助手' : 'Assistant')
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${
@@ -90,11 +97,12 @@ function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
         {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5 text-indigo/60" />}
       </div>
       <div className={`min-w-0 max-w-[72%] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+        <span className="text-[11px] font-semibold text-[var(--fog)]/55">{roleLabel}</span>
         <div className={`rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
           isUser ? 'bg-indigo/[0.12] text-[var(--mist)] rounded-tr-sm'
           : isToolResult ? 'bg-black/[0.04] font-mono text-[11px] text-[var(--fog)] rounded-tl-sm border border-black/[0.05]'
           : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'}`}>
-          <MessageContent content={msg.content} />
+          <MessageContent content={msg.content} contentBlocks={msg.contentBlocks} imagePreviewMode="auto" />
         </div>
         <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt, locale)}</span>
       </div>

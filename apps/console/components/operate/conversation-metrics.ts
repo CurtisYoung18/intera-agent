@@ -1,3 +1,11 @@
+import {
+  hasRecognizedTokenUsage,
+  readCacheReadTokens,
+  readCacheWriteTokens,
+  readInputTokens,
+  readOutputTokens,
+} from '@/lib/agent/usage-accounting'
+
 export interface ConversationTraceMetricItem {
   actionType: string
   title: string
@@ -50,13 +58,16 @@ export function computeConversationMetrics(traces: ConversationTraceMetricItem[]
     }
 
     if (trace.actionType === 'llm_response' && payload) {
-      const usage = (payload.usage ?? {}) as Record<string, number>
-      metrics.inputTokens += usage.input_tokens ?? usage.inputTokens ?? 0
-      metrics.outputTokens += usage.output_tokens ?? usage.outputTokens ?? 0
-      metrics.cacheReadTokens += usage.cache_read_input_tokens ?? 0
-      metrics.cacheWriteTokens += usage.cache_creation_input_tokens ?? 0
+      const usage = (payload.usage ?? {}) as Record<string, unknown>
+      if (!hasRecognizedTokenUsage(usage)) continue
+      const inputTokens = readInputTokens(usage)
+      const outputTokens = readOutputTokens(usage)
+      metrics.inputTokens += inputTokens
+      metrics.outputTokens += outputTokens
+      metrics.cacheReadTokens += readCacheReadTokens(usage)
+      metrics.cacheWriteTokens += readCacheWriteTokens(usage)
       metrics.compactTokens += (payload as Record<string, number>).compactTokens ?? 0
-      metrics.totalTokens += (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
+      metrics.totalTokens += inputTokens + outputTokens
       metrics.llmCalls++
     }
 

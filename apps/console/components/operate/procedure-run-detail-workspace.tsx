@@ -6,12 +6,20 @@ import { Cpu, Zap, Clock, Wrench, BarChart3, ChevronDown } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { CaseTraceTimeline, type TraceRow } from '@/components/ops/case-trace-view'
 import { useConsoleLocale } from '@/components/locale-provider'
-import ReactMarkdown from 'react-markdown'
+import MessageContent from '@/components/chat/message-content'
 import { apiClient } from '@/lib/api/client'
 import { ConsoleBackButton, ConsoleStatusPill } from '@/components/ui/console-chrome'
 import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { getRuntimeSourceTruth, summarizeToolPairing } from '@/lib/operate/runtime-truth'
+import {
+  hasRecognizedTokenUsage,
+  readCacheReadTokens,
+  readCacheWriteTokens,
+  readInputTokens,
+  readOutputTokens,
+} from '@/lib/agent/usage-accounting'
 import type { CaseDetailResponse } from '@intera/shared/contracts/cases'
+import type { ContentBlock } from '@intera/shared/types'
 
 interface CaseData {
   id: string; runId?: string | null; userId?: string; type: string; status: string; goal: string | null; source?: string
@@ -25,6 +33,7 @@ interface CaseData {
 
 interface MsgItem {
   id: string; role: string; content: string; createdAt: string
+  contentBlocks?: ContentBlock[]
 }
 
 interface ToolCall {
@@ -62,10 +71,18 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
-export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }) {
+export default function ProcedureRunDetailWorkspace({
+  runId,
+  caseId,
+}: {
+  runId?: string
+  caseId?: string
+}) {
   const router = useRouter()
   const { t, locale } = useConsoleLocale()
   const isZh = locale === 'zh'
+  const detailId = runId ?? caseId ?? ''
+  const isRunDetail = Boolean(runId)
 
   const [caseData, setCaseData] = useState<CaseData | null>(null)
   const [traces, setTraces] = useState<TraceRow[]>([])
@@ -75,10 +92,14 @@ export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }
   const [showTraces, setShowTraces] = useState(true)
 
   useEffect(() => {
+    if (!detailId) return
+
     async function load() {
       setLoading(true)
       try {
-        const basePath = `/api/runs/${encodeURIComponent(runId)}`
+        const basePath = isRunDetail
+          ? `/api/runs/${encodeURIComponent(detailId)}`
+          : `/api/cases/${encodeURIComponent(detailId)}`
         const [caseResult, tracesResult, msgsResult] = await Promise.all([
           apiClient<CaseDetailResponse>(basePath),
           apiClient<{ traces: TraceRow[] }>(`${basePath}/traces?limit=500`),
@@ -90,8 +111,8 @@ export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }
       } catch (e) { console.error('ProcedureRun load failed:', e) }
       finally { setLoading(false) }
     }
-    load()
-  }, [runId])
+    void load()
+  }, [detailId, isRunDetail])
 
   // ── Metrics from traces ──
   const metrics = useMemo(() => {
@@ -109,19 +130,19 @@ export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }
       const p = (() => { try { return t.payload ? JSON.parse(t.payload) : null } catch { return null } })()
 
       // Token metrics from llm_response
-      if (t.actionType === 'llm_response' && p?.usage && typeof p.iteration === 'number') {
-        const u = p.usage as Record<string, number>
-        inputTokens += u.input_tokens ?? 0
-        outputTokens += u.output_tokens ?? 0
-        cacheReadTokens += u.cache_read_input_tokens ?? 0
-        cacheWriteTokens += u.cache_creation_input_tokens ?? 0
+      if (t.actionType === 'llm_response' && hasRecognizedTokenUsage((p?.usage ?? null) as Record<string, unknown> | null) && typeof p.iteration === 'number') {
+        const u = p.usage as Record<string, unknown>
+        inputTokens += readInputTokens(u)
+        outputTokens += readOutputTokens(u)
+        cacheReadTokens += readCacheReadTokens(u)
+        cacheWriteTokens += readCacheWriteTokens(u)
         llmCalls++
 
         const iter = p.iteration as number
         const im = iterMetrics.get(iter) || { iteration: iter, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, llmWallMs: 0, toolsWallMs: 0, toolCount: 0, model: undefined as string | undefined }
-        im.inputTokens += u.input_tokens ?? 0
-        im.outputTokens += u.output_tokens ?? 0
-        im.cacheReadTokens += u.cache_read_input_tokens ?? 0
+        im.inputTokens += readInputTokens(u)
+        im.outputTokens += readOutputTokens(u)
+        im.cacheReadTokens += readCacheReadTokens(u)
         im.model = (p.model as string) || im.model
         iterMetrics.set(iter, im)
       }
@@ -216,7 +237,7 @@ export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }
                 {sourceTruth ? <SourceTruthPill truth={sourceTruth} /> : null}
               </div>
               <p className="mt-1 text-[12px] text-[var(--fog)]/78">
-                {caseData.runId ?? runId ?? ''} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
+                {caseData.runId ?? caseId ?? runId ?? ''} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
               </p>
             </div>
           </div>
@@ -393,9 +414,9 @@ export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }
                     m.role === 'user' ? 'bg-indigo/[0.06]' : 'bg-white/80 border border-black/[0.05]'
                   }`}>
                     {m.content.startsWith('Tool ') ? (
-                      <pre className="whitespace-pre-wrap break-words text-[10px] font-mono text-[var(--fog)]">{m.content}</pre>
+                      <MessageContent content={m.content} />
                     ) : (
-                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                      <MessageContent content={m.content} contentBlocks={m.contentBlocks} imagePreviewMode="auto" />
                     )}
                     <span className="block mt-1 text-[9px] text-[var(--fog)]/50">{fmtTime(m.createdAt, locale)}</span>
                   </div>

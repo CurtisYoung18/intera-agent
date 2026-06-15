@@ -1,5 +1,6 @@
 // POST /api/admin/playground/save-to-chat — Save a playground dry-run transcript as a tagged test Case
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
@@ -10,6 +11,7 @@ const saveSchema = z.object({
       role: z.string(),
       content: z.string(),
       thinking: z.string().optional(),
+      contentBlocks: z.array(z.record(z.unknown())).optional(),
     }),
   ),
   traces: z.array(z.any()).optional(),
@@ -76,6 +78,19 @@ function normalizeSavedTraceRows(turnTraces: unknown[]): CanonicalTraceRow[] {
   return rows
 }
 
+function normalizeSavedMessageRole(role: string): 'user' | 'assistant' | 'system' {
+  if (role === 'assistant' || role === 'system') return role
+  if (role === 'agent') return 'assistant'
+  return 'user'
+}
+
+function normalizeSavedContentBlocks(
+  blocks: Array<Record<string, unknown>> | undefined,
+): Prisma.InputJsonValue | undefined {
+  if (!blocks || blocks.length === 0) return undefined
+  return blocks as Prisma.InputJsonValue
+}
+
 export const POST = defineRoute({
   method: 'POST',
   inputSchema: saveSchema,
@@ -102,8 +117,9 @@ export const POST = defineRoute({
           orgId: repo.orgId,
           chatId,
           runId: null,
-          role: msg.role,
+          role: normalizeSavedMessageRole(msg.role),
           content: msg.content,
+          contentBlocks: normalizeSavedContentBlocks(msg.contentBlocks),
         },
       })
     }

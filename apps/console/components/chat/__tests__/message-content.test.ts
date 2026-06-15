@@ -50,4 +50,23 @@ describe('MessageContent', () => {
     const { container } = render(createElement(MessageContent, { content: '```ts\nconst x = 1\n```' }))
     expect(container.querySelector('code')).toBeTruthy()
   })
+
+  it('renders attached image previews when auto preview is enabled', () => {
+    const { container } = render(createElement(MessageContent, {
+      content: '',
+      imagePreviewMode: 'auto',
+      contentBlocks: [{
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: 'image/png',
+          data: 'abc123',
+        },
+      }],
+    }))
+
+    const img = container.querySelector('img')
+    expect(img).toBeTruthy()
+    expect(img?.getAttribute('src')).toBe('data:image/png;base64,abc123')
+  })
 })

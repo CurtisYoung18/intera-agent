@@ -62,6 +62,7 @@ import {
   recordProcedureToolResult,
 } from './session-store'
 import { evaluateProcedureLlmCondition } from './procedure-llm-evaluator'
+import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -674,13 +675,7 @@ export class AgentLoop {
       streamEndedAt = Date.now()
 
       // Final usage per assistant completion (streaming APIs may emit usage on multiple deltas).
-      if (
-        usage &&
-        ((usage.input_tokens as number | undefined) != null ||
-          (usage.output_tokens as number | undefined) != null ||
-          (usage.inputTokens as number | undefined) != null ||
-          (usage.outputTokens as number | undefined) != null)
-      ) {
+      if (usage && hasRecognizedTokenUsage(usage)) {
         const calledToolNames = [...blocks.values()].filter(b => b.type === 'tool_use').map(b => b.name)
         // Debug: full API response
         if (debugLogsEnabled) {
@@ -696,10 +691,7 @@ export class AgentLoop {
           data: { stopReason, usage, iteration: this.iterationCount, model: this.deps.config.model, textPreview: fullText.slice(0, 3000) },
           timestamp: new Date().toISOString(),
         })
-        this.profiler.addTokens(
-          Number((usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0),
-          Number((usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0),
-        )
+        this.profiler.addTokens(readInputTokens(usage), readOutputTokens(usage))
       }
 
       // Stream complete — finalize the assistant message
@@ -897,13 +889,7 @@ export class AgentLoop {
         })
       }
 
-      if (
-        usage &&
-        ((usage.input_tokens as number | undefined) != null ||
-          (usage.output_tokens as number | undefined) != null ||
-          (usage.inputTokens as number | undefined) != null ||
-          (usage.outputTokens as number | undefined) != null)
-      ) {
+      if (usage && hasRecognizedTokenUsage(usage)) {
         const iterationEndedAt = Date.now()
         const llmWallMs = Math.max(0, streamEndedAt - iterationStartTime)
         const toolsWallMs = Math.max(0, iterationEndedAt - streamEndedAt)
@@ -913,12 +899,8 @@ export class AgentLoop {
           toolsWallMs,
           iterationWallMs: iterationEndedAt - iterationStartTime,
           wallMs: iterationEndedAt - iterationStartTime,
-          inputTokens: Number(
-            (usage.input_tokens as number | undefined) ?? (usage.inputTokens as number | undefined) ?? 0,
-          ),
-          outputTokens: Number(
-            (usage.output_tokens as number | undefined) ?? (usage.outputTokens as number | undefined) ?? 0,
-          ),
+          inputTokens: readInputTokens(usage),
+          outputTokens: readOutputTokens(usage),
         })
       }
 

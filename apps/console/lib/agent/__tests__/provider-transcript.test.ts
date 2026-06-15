@@ -49,6 +49,17 @@ describe('provider transcript serialization', () => {
     ])
   })
 
+  it('normalizes legacy agent rows back to assistant on hydrate', () => {
+    const hydrated = hydrateMessageFromDb({
+      id: 'legacy-agent',
+      role: 'agent',
+      content: 'Legacy playground export',
+      createdAt: new Date('2026-06-15T00:00:00Z'),
+    })
+
+    expect(hydrated.role).toBe('assistant')
+  })
+
   it('persists and hydrates internal user tool_result provider blocks without display text', () => {
     const message: Message = {
       id: 'tool-result-1',

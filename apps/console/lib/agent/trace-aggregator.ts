@@ -3,6 +3,13 @@
 
 import type { TraceRecord } from './persistence-port'
 import { normalizeTraceActionType, type ActionType } from './trace'
+import {
+  hasRecognizedTokenUsage,
+  readCacheReadTokens,
+  readCacheWriteTokens,
+  readInputTokens,
+  readOutputTokens,
+} from './usage-accounting'
 
 export type TraceStage =
   | 'Hooks'
@@ -342,16 +349,16 @@ function extractUsage(record: TraceRecord): PlaygroundTraceStep['usage'] {
   if (!raw) return undefined
   try {
     const parsed = JSON.parse(raw)
-    const u = parsed?.usage
-    if (u && (typeof u.input_tokens === 'number' || typeof u.output_tokens === 'number')) {
-      const inputTokens = Number(u.input_tokens ?? 0)
-      const outputTokens = Number(u.output_tokens ?? 0)
+    const u = isRecord(parsed?.usage) ? parsed.usage : null
+    if (u && hasRecognizedTokenUsage(u)) {
+      const inputTokens = readInputTokens(u)
+      const outputTokens = readOutputTokens(u)
       return {
         inputTokens,
         outputTokens,
         totalTokens: inputTokens + outputTokens,
-        cacheReadTokens: typeof u.cache_read_input_tokens === 'number' ? u.cache_read_input_tokens : undefined,
-        cacheWriteTokens: typeof u.cache_creation_input_tokens === 'number' ? u.cache_creation_input_tokens : undefined,
+        cacheReadTokens: readCacheReadTokens(u) || undefined,
+        cacheWriteTokens: readCacheWriteTokens(u) || undefined,
       }
     }
   } catch {

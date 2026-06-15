@@ -61,6 +61,36 @@ describe('runtime-truth helpers', () => {
     expect(trace.semanticLabel).toBe('Exported review stage')
   })
 
+  it('classifies agent tree lifecycle rows as runtime debug events', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'agent_tree_node',
+      title: '[Main[7iisaj]] run start',
+      detail: null,
+      payload: JSON.stringify({ agentName: 'Main[7iisaj]', depth: 0, chainId: 'chain-1' }),
+    })
+
+    expect(trace.kind).toBe('runtime_debug')
+    expect(trace.semanticLabel).toBe('Runtime debug')
+    expect(trace.title).toBe('Run start')
+  })
+
+  it('summarizes tool results without dumping full JSON into the evidence line', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'tool_result',
+      title: 'Tool result: receipt_ocr',
+      detail: null,
+      payload: JSON.stringify({
+        toolName: 'receipt_ocr',
+        output: { status: 'matched', amount: '800 BDT', reference: 'ABC123' },
+        latencyMs: 130,
+      }),
+    })
+
+    expect(trace.detailText).toContain('status: matched')
+    expect(trace.detailText).toContain('amount: 800 BDT')
+    expect(trace.detailText).not.toContain('{"status"')
+  })
+
   it('summarizes unmatched tool call/result counts', () => {
     const summary = summarizeToolPairing([
       { actionType: 'tool_call', title: 'Tool called: search', detail: null, payload: null },
