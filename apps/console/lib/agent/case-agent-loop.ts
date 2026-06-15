@@ -4,7 +4,7 @@
 // case tool handling. The customer path stays inline.
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { Message, SSEEvent, CaseSchemaConfig, TodoItem } from '@intera/shared/types'
+import type { Message, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { ProcedureExecutor } from './procedure-executor'
 import type { ChatMemoryManager } from './memory'
@@ -14,7 +14,7 @@ import type { ToolRouter } from './tools'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
-import { recordProcedureToolResult } from './session-store'
+import { getActiveProcedureRun, recordProcedureToolResult } from './session-store'
 
 export interface CaseLoopServices {
   caseId: string
@@ -47,10 +47,13 @@ export class CaseAgentLoop {
     _bootstrapNewCase?: boolean,
   ) {
     if (caseSchema.procedure && caseSchema.procedure.steps.length > 0) {
-      this.procedureExecutor = new ProcedureExecutor(
-        caseSchema.procedureDefinition ?? caseSchema.procedure,
-        caseSchema.type,
+      const knowledgeToolNames = new Set(
+        this.services.toolRouter
+          .getToolDefinitions()
+          .filter((tool) => !!tool.knowledgeSourceId)
+          .map((tool) => tool.name),
       )
+      this.procedureExecutor = new ProcedureExecutor(caseSchema.procedure, caseSchema.type, knowledgeToolNames)
     }
     this._currentStage = this.readCaseStatus()
   }
@@ -59,14 +62,14 @@ export class CaseAgentLoop {
     return this._currentStage
   }
 
-  getProcedureStepIdsForTool(toolName?: string): string[] {
-    if (!this.procedureExecutor) return []
-    return this.procedureExecutor.stepIdsForTool(toolName, this.services.chatMemory.getTodos())
-  }
-
   getStopProcedureStepIds(): string[] {
-    if (!this.procedureExecutor) return []
-    return this.procedureExecutor.stepIdsForStop(this.services.chatMemory.getTodos())
+    const activeRun = getActiveProcedureRun(this.services.caseId)
+    if (!activeRun) return []
+    const current = activeRun.currentStepId ? [activeRun.currentStepId] : []
+    const completed = activeRun.steps
+      .filter((step) => step.status === 'completed')
+      .map((step) => step.id)
+    return [...new Set([...current, ...completed])]
   }
 
   isStageActive(): boolean {
@@ -85,21 +88,7 @@ export class CaseAgentLoop {
     return this.procedureExecutor?.requiredTools() ?? []
   }
 
-  buildProcedurePrompt(basePrompt: string, todos: TodoItem[], facts: Record<string, unknown>): string {
-    if (!this.procedureExecutor) {
-      return [
-        `## Procedure Execution Context`,
-        `- procedureType: ${this.caseSchema.type}`,
-        `- status: ${this._currentStage}`,
-        'This case type has no Procedure configured. Ask concise clarifying questions or escalate with create_human_task if needed.',
-        '',
-        basePrompt,
-      ].join('\n')
-    }
-    return this.procedureExecutor.buildPrompt(basePrompt, this._currentStage, todos, facts)
-  }
-
-  buildProcedureDefinitionPrompt(_todos: TodoItem[], _facts: Record<string, unknown>): string {
+  buildProcedurePrompt(): string {
     if (!this.procedureExecutor) {
       return [
         `Procedure type: ${this.caseSchema.type}`,
@@ -389,7 +378,7 @@ export class CaseAgentLoop {
           input: finalizeResult.toolUse?.input,
           output: finalizedPayload,
         },
-        caseFacts: this.services.chatMemory.getConfirmedFacts(),
+        caseFacts: this.services.chatMemory.getContextMap(),
         missingFacts: this.services.chatMemory.getMissingFacts(),
         previousToolCalls: this.services.chatMemory.getToolsCalled().map((name) => ({
           name,

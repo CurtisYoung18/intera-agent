@@ -17,7 +17,7 @@ vi.mock('@/lib/agent/prompt-resolver', async () => {
     case_state: (params?.caseState as object) ?? null,
     session_binding: (params?.sessionBinding as object) ?? { userId: 'test-user-123', userLabel: 'Test User' },
     available_tools: (params?.available_tools as unknown[]) ?? [
-      { name: 'kb_search_faq', description: 'Search the FAQ knowledge base', needsMemberId: false },
+      { name: 'faq_lookup_default', description: 'Search the FAQ knowledge base', needsMemberId: false, knowledgeSourceId: 'ks_faq' },
     ],
   }))
   return {
@@ -40,7 +40,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     caseState: null,
     sessionBinding: { userId: 'test-user-123', userLabel: 'Test User' },
     availableTools: [
-      { name: 'kb_search_faq', description: 'Search the FAQ knowledge base', needsMemberId: false },
+      { name: 'faq_lookup_default', description: 'Search the FAQ knowledge base', needsMemberId: false, knowledgeSourceId: 'ks_faq' },
     ],
   }
 
@@ -95,15 +95,18 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
         escalateOn: ['conflict'],
       },
       caseState: {
-        confirmedFacts: { userId: '123' },
         toolsCalled: ['get_account_status'],
         missingFacts: [],
+        summary: 'Member provided a member id and asked for verification.',
+        keyEvents: [{ at: '2026-06-12T00:00:00.000Z', text: 'Member asked about account status.', source: 'llm' }],
       },
     })
     expect(result.prompt).toContain('## Procedure Type Schema')
     expect(result.prompt).toContain('## Current Chat Context')
     expect(result.prompt).toContain('## Active Hooks')
     expect(result.prompt).toContain('## Available Tools')
+    expect(result.prompt).toContain('Summary:')
+    expect(result.prompt).toContain('Recent events:')
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
   })
 
@@ -120,19 +123,18 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
         escalateOn: ['conflict'],
       },
       caseState: {
-        confirmedFacts: {
-          userId: '123',
-          __intera_procedure_runtime: {
-            activeProcedureRun: { procedureId: 'deposit_issue' },
-          },
-        },
+        summary: 'Customer asked for help with a deposit.',
+        keyEvents: [
+          { at: '2026-06-12T00:00:00.000Z', text: 'Customer typed member id 123.', source: 'dashboard' },
+          { at: '2026-06-12T00:00:01.000Z', text: '__intera_procedure_runtime should never appear', source: 'dashboard' },
+        ],
         toolsCalled: [],
         missingFacts: [],
       },
     })
 
     expect(result.prompt).toContain('## Current Chat Context')
-    expect(result.prompt).toContain('"userId":"123"')
+    expect(result.prompt).toContain('Customer typed member id 123.')
     expect(result.prompt).not.toContain('__intera_procedure_runtime')
     expect(result.prompt).not.toContain('activeProcedureRun')
   })

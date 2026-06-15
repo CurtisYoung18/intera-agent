@@ -44,9 +44,20 @@ const AGENT_ID = 'agent_default_v1'
 const SEED_TOOLS = [
   {
     name: 'read_chat_memory',
-    description: 'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, key events, and any compaction summary from earlier turns.',
+    description: 'Read the per-case working memory for the current investigation. Returns tool history, key events, compact summary, open items, and missing-info stats. It does not return ProcedureRun authority or hidden runtime state.',
     inputSchema: JSON.stringify({ type: 'object', properties: {}, required: [] }),
-    outputSchema: JSON.stringify({ type: 'object', properties: { summary: { type: 'string' }, confirmedFacts: { type: 'object' }, stats: { type: 'object' } } }),
+    outputSchema: JSON.stringify({
+      type: 'object',
+      properties: {
+        scope: { type: 'string' },
+        authority: { type: 'string' },
+        toolsCalled: { type: 'array', items: { type: 'string' } },
+        keyEvents: { type: 'array', items: { type: 'object' } },
+        compactSummary: { type: 'string' },
+        openItems: { type: 'array', items: { type: 'object' } },
+        stats: { type: 'object' },
+      },
+    }),
     mode: 'system_managed',
     guardPhase: 'post',
     toolCategory: 'system_info',
@@ -154,11 +165,11 @@ const SEED_HOOKS = [
       check: {
         kind: 'ai',
         evaluationPrompt:
-          'Check whether the finalize conclusion cites evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to collected facts.',
+          'Check whether the finalize conclusion cites evidence gathered during case investigation.\n\nFinalize output: {{tool_output}}\nTools called: {{tools_called}}\n\nBlock (result=blocked) if the conclusion makes claims without any factual grounding.\nPass if evidence is properly cited and the reasoning is traceable to runtime evidence.',
       },
       effect: {
         decision: 'block',
-        guidance: 'Conclusions must cite specific evidence. Reference tool results, confirmed facts, or knowledge base articles.',
+        guidance: 'Conclusions must cite specific evidence. Reference tool results or knowledge base articles.',
       },
     }),
     severity: 'high',
@@ -209,31 +220,74 @@ const SEED_CASE_TYPES = [
     defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
     procedure: JSON.stringify({
-      version: 1,
-      startStepId: 'collect_facts',
+      version: 'v2',
+      whenToUse: 'Use when the customer says a deposit or transfer was charged but their balance did not increase or no confirmation appeared.',
+      overview: 'Collect the deposit facts, verify order and payment-channel evidence, then either hand off a conflict or finalize with grounded evidence.',
+      handoffGuidance: 'Escalate to payment_ops when the tool evidence conflicts with the customer report or a manual reissue review is required.',
       steps: [
         {
           id: 'collect_facts',
           title: 'Collect deposit facts',
-          instructions: 'Collect transaction ID, amount, payment method, and date before investigation.',
-          requiredFacts: ['txnId', 'amount', 'paymentMethod', 'date'],
-          allowedTools: ['ask_user_questions', 'read_chat_memory'],
-          next: [{ when: 'complete', stepId: 'investigate_order' }],
+          guidance: 'Collect transaction ID, amount, payment method, and date before investigation.',
+          actions: [
+            {
+              id: 'ask_deposit_facts',
+              kind: 'ask',
+              label: 'Ask for deposit facts',
+              fields: ['txnId', 'amount', 'paymentMethod', 'date'],
+            },
+          ],
         },
         {
           id: 'investigate_order',
           title: 'Investigate order and channel',
-          instructions: 'Check order status and payment-channel status; reconcile the result with the customer report.',
-          requiredToolsAny: ['query_order_status', 'query_payment_channel_status'],
-          allowedTools: ['query_order_status', 'query_payment_channel_status', 'create_human_task', 'read_chat_memory'],
-          next: [{ when: 'complete', stepId: 'finalize' }],
+          guidance: 'Check order status and payment-channel status, then reconcile the evidence with the customer report.',
+          actions: [
+            {
+              id: 'query_order_status',
+              kind: 'call_tool',
+              label: 'Check order status',
+              toolName: 'query_order_status',
+            },
+            {
+              id: 'query_payment_channel_status',
+              kind: 'call_tool',
+              label: 'Check payment channel status',
+              toolName: 'query_payment_channel_status',
+            },
+          ],
+          branches: [
+            {
+              id: 'conflict_or_manual_review',
+              kind: 'if',
+              condition: {
+                kind: 'llm_eval',
+                prompt: 'Based on the order evidence, payment-channel evidence, and the customer report, is there a conflict or manual review need that requires payment_ops handoff?',
+              },
+              actions: [
+                {
+                  id: 'handoff_payment_ops',
+                  kind: 'request_human_handoff',
+                  label: 'Request payment ops review',
+                  queue: 'payment_ops',
+                },
+              ],
+            },
+          ],
+          completionGuidance: 'Do not finalize until the deposit evidence is reconciled or a human handoff is persisted.',
         },
         {
           id: 'finalize',
           title: 'Finalize customer answer',
-          instructions: 'Give a clear customer-facing answer grounded in collected evidence.',
-          allowedTools: ['finalize_procedure', 'create_human_task', 'read_chat_memory'],
-          next: [],
+          guidance: 'Give a clear customer-facing answer grounded in collected evidence.',
+          actions: [
+            {
+              id: 'finish_customer_answer',
+              kind: 'end',
+              label: 'Finalize customer answer',
+              status: 'completed',
+            },
+          ],
         },
       ],
     }),
@@ -495,7 +549,7 @@ async function seed() {
   await prisma.chatMemory.create({
     data: {
       caseId: c.id,
-      confirmedFacts: JSON.stringify({ txnId: 'TXU1_12345', amount: 500, userReportedNotReceived: true, orderStatus: 'pending', channelDelayedBatch: true }),
+      contextMap: JSON.stringify({ txnId: 'TXU1_12345', amount: 500, userReportedNotReceived: true, orderStatus: 'pending', channelDelayedBatch: true }),
       missingFacts: JSON.stringify(['receipt_screenshot']),
       toolsCalled: JSON.stringify(['query_order_status', 'query_payment_channel_status']),
       toolResults: JSON.stringify({

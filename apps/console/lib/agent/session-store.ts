@@ -25,17 +25,14 @@
 import type { AgentLoop } from './loop'
 import type {
   ContentBlock,
-  Procedure,
-  ProcedureDefinition,
   ProcedureRuntimeSignal,
+  ProcedureV2,
   ProcedureV2Action,
   ProcedureV2Branch,
   ProcedureV2Step,
 } from '@intera/shared/types'
 import {
   buildProcedureConditionLabel,
-  isProcedureV2Definition,
-  normalizeProcedureDefinition,
 } from '@intera/shared/contracts/case-types'
 import { prisma } from '@intera/shared/prisma'
 
@@ -102,9 +99,6 @@ export type ProcedureStepStatus = 'pending' | 'active' | 'completed' | 'skipped'
 
 export interface ProcedureRunStepState {
   id: string
-  action: string
-  target?: string
-  required?: boolean
   title?: string
   guidance?: string
   status: ProcedureStepStatus
@@ -191,7 +185,6 @@ export interface ProcedureRunState {
   procedureId: string
   caseType: string
   displayName: string
-  procedureVersion?: 'v1' | 'v2'
   status: ProcedureRunStatus
   inputEpoch: number
   lastReconciledInputEpoch: number
@@ -203,10 +196,9 @@ export interface ProcedureRunState {
   evidence: ProcedureRunEvidenceState[]
   evaluations: ProcedureRunConditionEvaluationState[]
   signals: ProcedureRunSignalState[]
-  legacyFacts: Record<string, unknown>
   blockers: string[]
   timeline: RuntimeEvent[]
-  definition?: ProcedureDefinition
+  definition?: ProcedureV2
   reason?: string
   outcome?: string | null
   confidence?: number
@@ -331,7 +323,6 @@ interface PersistedProcedureRunRecord {
   caseId: string
   agentConfigId: string
   procedureId: string
-  procedureVersion: string
   status: string
   inputEpoch: number
   needsReconcile: boolean
@@ -369,10 +360,7 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
         select: { runtimeInputEpoch: true },
       }),
       prisma.procedureRun.findMany({
-        where: {
-          caseId,
-          status: { in: ['active', 'paused'] },
-        },
+        where: { caseId },
         orderBy: { updatedAt: 'desc' },
       }),
     ])
@@ -383,7 +371,6 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
         caseId: run.caseId,
         agentConfigId: run.agentConfigId,
         procedureId: run.procedureId,
-        procedureVersion: run.procedureVersion,
         status: run.status,
         inputEpoch: run.inputEpoch,
         needsReconcile: run.needsReconcile,
@@ -402,7 +389,6 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
         caseId: record.caseId,
         agentConfigId: record.agentConfigId,
         procedureId: record.procedureId,
-        procedureVersion: record.procedureVersion,
         status: record.status,
         inputEpoch: record.inputEpoch,
         needsReconcile: record.needsReconcile,
@@ -415,7 +401,6 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
         caseId: record.caseId,
         agentConfigId: record.agentConfigId,
         procedureId: record.procedureId,
-        procedureVersion: record.procedureVersion,
         status: record.status,
         inputEpoch: record.inputEpoch,
         needsReconcile: record.needsReconcile,
@@ -491,11 +476,13 @@ export async function hydrateProcedureRuntime(
   session.latestInputEpoch = Math.max(session.latestInputEpoch, hydrated.latestInputEpoch)
   const runs = hydrated.runs
     .map(hydratePersistedRun)
+    .map(normalizeHydratedRun)
     .filter((run): run is ProcedureRunState => !!run)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 
   const activeRuns = runs.filter((run) => run.status === 'active')
   const pausedRuns = runs.filter((run) => run.status === 'paused')
+  const completedRuns = runs.filter((run) => run.status !== 'active' && run.status !== 'paused')
   const active = activeRuns[0]
   session.procedureRuntime = {
     activeProcedureRun: active,
@@ -503,7 +490,7 @@ export async function hydrateProcedureRuntime(
       ...activeRuns.slice(1).map((run) => ({ ...run, status: 'paused' as const })),
       ...pausedRuns,
     ],
-    completedProcedureRuns: [],
+    completedProcedureRuns: completedRuns,
   }
   session.procedureRuntimeHydrated = true
   return session
@@ -609,9 +596,9 @@ export function getActiveProcedureRun(caseId: string): ProcedureRunState | undef
 
 export function getPendingProcedureLlmEvaluations(caseId: string): PendingProcedureLlmEvaluation[] {
   const run = sessions.get(caseId)?.procedureRuntime.activeProcedureRun
-  if (!run || run.procedureVersion !== 'v2') return []
+  if (!run || run.definition?.version !== 'v2') return []
   const step = currentStep(run)
-  if (!step?.branches?.length || !run.definition || !isProcedureV2Definition(run.definition)) return []
+  if (!step?.branches?.length || !run.definition) return []
   const matchedBranchId = step.branches.find((branch) => branch.status === 'matched')?.id
 
   const pending: PendingProcedureLlmEvaluation[] = []
@@ -738,10 +725,9 @@ export function startProcedureRun(caseId: string, input: {
   agentConfigId?: string
   procedureId: string
   displayName: string
-  procedure?: Procedure | ProcedureDefinition
+  procedure?: ProcedureV2
   reason?: string
   confidence?: number
-  collectedFacts?: Record<string, unknown>
   requestId?: string
   currentProcedureAction?: 'pause' | 'complete' | 'abandon'
 }): { run: ProcedureRunState; idempotent: boolean; pausedRun?: ProcedureRunState } {
@@ -758,12 +744,6 @@ export function startProcedureRun(caseId: string, input: {
     active.lastStartRequestId = input.requestId ?? active.lastStartRequestId
     active.reason = input.reason ?? active.reason
     active.confidence = input.confidence ?? active.confidence
-    if (input.collectedFacts && active.procedureVersion !== 'v2') {
-      active.legacyFacts = {
-        ...active.legacyFacts,
-        ...filterRuntimeAuthorityKeys(input.collectedFacts),
-      }
-    }
     active.updatedAt = now
     appendProcedureTimeline(session, active, {
       origin: 'system',
@@ -801,9 +781,6 @@ export function startProcedureRun(caseId: string, input: {
 
   const resumedIndex = state.pausedProcedureRuns.findIndex((run) => run.procedureId === input.procedureId)
   const resumed = resumedIndex >= 0 ? state.pausedProcedureRuns.splice(resumedIndex, 1)[0] : undefined
-  const procedureVersion = input.procedure
-    ? isProcedureV2Definition(input.procedure) ? 'v2' : 'v1'
-    : undefined
   const run: ProcedureRunState = resumed
     ? {
         ...resumed,
@@ -812,15 +789,8 @@ export function startProcedureRun(caseId: string, input: {
         inputEpoch: session.latestInputEpoch,
         reason: input.reason ?? resumed.reason,
         confidence: input.confidence ?? resumed.confidence,
-        legacyFacts: resumed.procedureVersion === 'v2'
-          ? {}
-          : {
-              ...resumed.legacyFacts,
-              ...filterRuntimeAuthorityKeys(input.collectedFacts ?? {}),
-            },
         updatedAt: now,
         lastStartRequestId: input.requestId ?? resumed.lastStartRequestId,
-        procedureVersion: resumed.procedureVersion ?? procedureVersion,
         definition: resumed.definition ?? input.procedure,
       }
     : {
@@ -829,7 +799,6 @@ export function startProcedureRun(caseId: string, input: {
         procedureId: input.procedureId,
         caseType: input.procedureId,
         displayName: input.displayName,
-        procedureVersion,
         status: 'active',
         inputEpoch: session.latestInputEpoch,
         lastReconciledInputEpoch: session.latestInputEpoch,
@@ -841,9 +810,6 @@ export function startProcedureRun(caseId: string, input: {
         evidence: [],
         evaluations: [],
         signals: [],
-        legacyFacts: procedureVersion === 'v2'
-          ? {}
-          : filterRuntimeAuthorityKeys(input.collectedFacts ?? {}),
         blockers: [],
         timeline: [],
         definition: input.procedure,
@@ -905,6 +871,7 @@ export function recordProcedureToolResult(caseId: string, input: {
   basedOnInputEpoch?: number
   toolOutput?: unknown
   toolError?: string
+  isKnowledgeTool?: boolean
 }): { stale: boolean; run?: ProcedureRunState } {
   const session = sessions.get(caseId)
   const run = session?.procedureRuntime.activeProcedureRun
@@ -918,9 +885,15 @@ export function recordProcedureToolResult(caseId: string, input: {
     run.blockers = [...new Set([...run.blockers, 'New customer input arrived after this tool/action began.'])]
   }
 
-  const assessment = assessProcedureToolOutcome(input.toolName, input.toolOutput, input.toolError)
+  const isKnowledgeTool = isKnowledgeToolForSession(session, input)
+  const assessment = assessProcedureToolOutcome(
+    input.toolName,
+    input.toolOutput,
+    input.toolError,
+    isKnowledgeTool,
+  )
   const recordedAt = new Date().toISOString()
-  applyToolEvidenceToRun(session, run, input, stale, basedOn, recordedAt, assessment)
+  applyToolEvidenceToRun(session, run, input, stale, basedOn, recordedAt, assessment, isKnowledgeTool)
   const stillActive = session.procedureRuntime.activeProcedureRun?.runId === run.runId
   if (stillActive) {
     syncCurrentStepAfterProgress(run)
@@ -1097,7 +1070,6 @@ export function procedureRunPromptTail(caseId: string): string {
     lines.push('')
     lines.push(`## ${label}: ${run.displayName} (${run.procedureId})`)
     lines.push(`- runId: ${run.runId}`)
-    lines.push(`- version: ${run.procedureVersion ?? 'v1'}`)
     lines.push(`- status: ${run.status}`)
     lines.push(`- inputEpoch: ${run.inputEpoch}`)
     lines.push(`- lastReconciledInputEpoch: ${run.lastReconciledInputEpoch}`)
@@ -1147,9 +1119,8 @@ export function procedureRunPromptTail(caseId: string): string {
       lines.push('Steps:')
       for (const step of run.steps) {
         const evidence = step.evidenceToolCallIds.length ? ` evidence=${step.evidenceToolCallIds.join(',')}` : ''
-        const target = step.target ? ` target=${step.target}` : ''
         const title = step.title ? ` title=${JSON.stringify(step.title)}` : ''
-        lines.push(`- ${step.id}: ${step.status} action=${step.action}${target}${title}${evidence}`)
+        lines.push(`- ${step.id}: ${step.status}${title}${evidence}`)
         if (step.actions?.length) {
           for (const action of step.actions) {
             const branch = action.branchId ? ` branch=${action.branchId}` : ''
@@ -1411,7 +1382,6 @@ function toPersistedProcedureRun(session: CaseSession, run: ProcedureRunState): 
     caseId: session.caseId,
     agentConfigId,
     procedureId: run.procedureId,
-    procedureVersion: run.procedureVersion ?? 'v2',
     status: run.status,
     inputEpoch: run.inputEpoch,
     needsReconcile: run.needsReconcile,
@@ -1424,29 +1394,30 @@ function toPersistedProcedureRun(session: CaseSession, run: ProcedureRunState): 
 function hydratePersistedRun(record: PersistedProcedureRunRecord): ProcedureRunState | null {
   const raw = isRecord(record.state) ? record.state : {}
   const status = isProcedureRunStatus(record.status) ? record.status : 'paused'
-  const procedureVersion = record.procedureVersion === 'v1' ? 'v1' : 'v2'
   return {
     runId: stringFrom(raw.runId) ?? record.id,
     agentConfigId: stringFrom(raw.agentConfigId) ?? record.agentConfigId,
     procedureId: stringFrom(raw.procedureId) ?? record.procedureId,
     caseType: stringFrom(raw.caseType) ?? record.procedureId,
     displayName: stringFrom(raw.displayName) ?? record.procedureId,
-    procedureVersion,
     status,
     inputEpoch: record.inputEpoch,
     lastReconciledInputEpoch: numberFrom(raw.lastReconciledInputEpoch) ?? record.inputEpoch,
     needsReconcile: record.needsReconcile,
     currentStepId: stringFrom(raw.currentStepId) ?? null,
-    steps: Array.isArray(raw.steps) ? raw.steps as ProcedureRunStepState[] : [],
+    steps: Array.isArray(raw.steps)
+      ? raw.steps
+        .map((step) => hydrateProcedureRunStepState(step))
+        .filter((step): step is ProcedureRunStepState => step !== null)
+      : [],
     inputs: Array.isArray(raw.inputs) ? raw.inputs as ProcedureRunInputState[] : [],
     evidenceToolCallIds: Array.isArray(raw.evidenceToolCallIds) ? raw.evidenceToolCallIds as string[] : [],
     evidence: Array.isArray(raw.evidence) ? raw.evidence as ProcedureRunEvidenceState[] : [],
     evaluations: Array.isArray(raw.evaluations) ? raw.evaluations as ProcedureRunConditionEvaluationState[] : [],
     signals: Array.isArray(raw.signals) ? raw.signals as ProcedureRunSignalState[] : [],
-    legacyFacts: isRecord(raw.legacyFacts) ? raw.legacyFacts : {},
     blockers: Array.isArray(raw.blockers) ? raw.blockers as string[] : [],
     timeline: Array.isArray(raw.timeline) ? raw.timeline as RuntimeEvent[] : [],
-    definition: isRecord(raw.definition) ? raw.definition as unknown as ProcedureDefinition : undefined,
+    definition: isRecord(raw.definition) ? raw.definition as unknown as ProcedureV2 : undefined,
     reason: stringFrom(raw.reason),
     outcome: stringFrom(raw.outcome) ?? record.outcome ?? undefined,
     confidence: numberFrom(raw.confidence),
@@ -1457,6 +1428,49 @@ function hydratePersistedRun(record: PersistedProcedureRunRecord): ProcedureRunS
     updatedAt: stringFrom(raw.updatedAt) ?? dateString(record.updatedAt) ?? new Date().toISOString(),
     lastStartRequestId: stringFrom(raw.lastStartRequestId),
   }
+}
+
+function normalizeHydratedRun(run: ProcedureRunState | null): ProcedureRunState | null {
+  if (!run) return null
+  if (!isLegacyPausedHandoffRun(run)) return run
+  return {
+    ...run,
+    status: 'completed',
+    currentStepId: null,
+    blockers: [],
+    reason: legacyHandoffFinalizationReason(run),
+    outcome: run.outcome ?? 'handed_off',
+  }
+}
+
+function isLegacyPausedHandoffRun(run: ProcedureRunState): boolean {
+  if (run.status !== 'paused') return false
+  if (typeof run.reason === 'string' && run.reason.toLowerCase().startsWith('waiting for human handoff')) {
+    return true
+  }
+  return run.evidence.some((entry) =>
+    entry.kind === 'handoff' &&
+    isRecord(entry.metadata) &&
+    (
+      entry.metadata.outcome === 'succeeded' ||
+      (isRecord(entry.metadata.output) && entry.metadata.output.persisted === true)
+    ),
+  )
+}
+
+function legacyHandoffFinalizationReason(run: ProcedureRunState): string {
+  const handoffEvidence = run.evidence.find((entry) =>
+    entry.kind === 'handoff' &&
+    isRecord(entry.metadata) &&
+    isRecord(entry.metadata.output) &&
+    typeof entry.metadata.output.taskId === 'string',
+  )
+  const taskId = handoffEvidence && isRecord(handoffEvidence.metadata) && isRecord(handoffEvidence.metadata.output)
+    ? handoffEvidence.metadata.output.taskId
+    : undefined
+  return typeof taskId === 'string'
+    ? `Finalized after human handoff task ${taskId}.`
+    : 'Finalized after human handoff.'
 }
 
 function pauseActiveRunForEviction(session: CaseSession): boolean {
@@ -1532,6 +1546,10 @@ function isCurrentProcedureAction(value: unknown): value is ProcedureRunState['c
   return value === 'pause' || value === 'complete' || value === 'abandon'
 }
 
+function isProcedureStepStatus(value: unknown): value is ProcedureStepStatus {
+  return value === 'pending' || value === 'active' || value === 'completed' || value === 'skipped' || value === 'blocked'
+}
+
 function stringFrom(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
@@ -1543,6 +1561,81 @@ function numberFrom(value: unknown): number | undefined {
 function dateString(value: Date | string | undefined): string | undefined {
   if (value instanceof Date) return value.toISOString()
   return typeof value === 'string' ? value : undefined
+}
+
+function hydrateProcedureRunStepState(value: unknown): ProcedureRunStepState | null {
+  if (!isRecord(value)) return null
+  const id = stringFrom(value.id)
+  const status = isProcedureStepStatus(value.status) ? value.status : undefined
+  if (!id || !status) return null
+  return {
+    id,
+    title: stringFrom(value.title),
+    guidance: stringFrom(value.guidance),
+    status,
+    startedAt: stringFrom(value.startedAt),
+    completedAt: stringFrom(value.completedAt),
+    evidenceToolCallIds: Array.isArray(value.evidenceToolCallIds)
+      ? value.evidenceToolCallIds.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+    actions: Array.isArray(value.actions)
+      ? value.actions
+        .map((action) => hydrateProcedureRunActionState(action))
+        .filter((action): action is ProcedureRunActionState => action !== null)
+      : [],
+    branches: Array.isArray(value.branches)
+      ? value.branches
+        .map((branch) => hydrateProcedureRunBranchState(branch))
+        .filter((branch): branch is ProcedureRunBranchState => branch !== null)
+      : [],
+    skipReason: stringFrom(value.skipReason),
+    completionReason: stringFrom(value.completionReason),
+  }
+}
+
+function hydrateProcedureRunActionState(value: unknown): ProcedureRunActionState | null {
+  if (!isRecord(value)) return null
+  const id = stringFrom(value.id)
+  const kind = stringFrom(value.kind)
+  const label = stringFrom(value.label)
+  const status = isProcedureStepStatus(value.status) ? value.status : undefined
+  if (!id || !kind || !label || !status) return null
+  return {
+    id,
+    kind,
+    label,
+    target: stringFrom(value.target),
+    guidance: stringFrom(value.guidance),
+    branchId: stringFrom(value.branchId),
+    required: typeof value.required === 'boolean' ? value.required : undefined,
+    status,
+    evidenceIds: Array.isArray(value.evidenceIds)
+      ? value.evidenceIds.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+  }
+}
+
+function hydrateProcedureRunBranchState(value: unknown): ProcedureRunBranchState | null {
+  if (!isRecord(value)) return null
+  const id = stringFrom(value.id)
+  const kind = value.kind === 'if' || value.kind === 'else_if' || value.kind === 'else'
+    ? value.kind
+    : undefined
+  const status = value.status === 'pending' || value.status === 'matched' || value.status === 'skipped'
+    ? value.status
+    : undefined
+  if (!id || !kind || !status) return null
+  return {
+    id,
+    kind,
+    label: stringFrom(value.label),
+    conditionLabel: stringFrom(value.conditionLabel),
+    status,
+    reason: stringFrom(value.reason),
+    actionIds: Array.isArray(value.actionIds)
+      ? value.actionIds.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+  }
 }
 
 function captureRunInput(run: ProcedureRunState, event: RuntimeEvent): void {
@@ -1576,29 +1669,11 @@ function defaultPriority(source: RuntimeEventSource): number {
   return source === 'control' ? -100 : 0
 }
 
-function buildInitialSteps(procedure?: Procedure | ProcedureDefinition): ProcedureRunStepState[] {
+function buildInitialSteps(procedure?: ProcedureV2): ProcedureRunStepState[] {
   if (!procedure) return []
-  if (!isProcedureV2Definition(procedure)) {
-    return procedure.steps.map((step) => ({
-      id: step.id,
-      action: step.action,
-      target: step.target,
-      required: step.required === true ? true : undefined,
-      title: buildLegacyStepTitle(step),
-      guidance: step.guidance,
-      status: 'pending',
-      evidenceToolCallIds: [],
-    }))
-  }
-
-  const normalized = normalizeProcedureDefinition(procedure)
-  return procedure.steps.map((step, index) => {
-    const normalizedStep = normalized.steps[index]
+  return procedure.steps.map((step) => {
     return {
       id: step.id,
-      action: normalizedStep?.action ?? 'decide',
-      target: normalizedStep?.target,
-      required: true,
       title: step.title,
       guidance: step.guidance,
       status: 'pending',
@@ -1643,12 +1718,6 @@ function appendProcedureTimeline(
   run.inputEpoch = session.latestInputEpoch
   run.updatedAt = event.createdAt
   return event
-}
-
-function buildLegacyStepTitle(step: Procedure['steps'][number]): string {
-  if (step.guidance?.trim()) return step.guidance.trim()
-  if (step.target?.trim()) return `${step.action} ${step.target.trim()}`
-  return step.action
 }
 
 function toActionState(action: ProcedureV2Action, branchId?: string): ProcedureRunActionState {
@@ -2017,7 +2086,7 @@ function findBranchDefinition(
   run: ProcedureRunState,
   branchId: string,
 ): ProcedureV2Branch | undefined {
-  if (!run.definition || !isProcedureV2Definition(run.definition)) return undefined
+  if (!run.definition) return undefined
   for (const step of run.definition.steps) {
     const branch = (step.branches ?? []).find((candidate) => candidate.id === branchId)
     if (branch) return branch
@@ -2054,17 +2123,9 @@ function maybeCompleteStep(run: ProcedureRunState, step: ProcedureRunStepState, 
   if (step.status === 'completed' || step.status === 'skipped') return
 
   if (!step.actions?.length) {
-    if (step.action !== 'ask' || step.evidenceToolCallIds.length > 0) {
-      if (
-        step.action !== 'use' &&
-        step.action !== 'read' &&
-        step.action !== 'escalate' &&
-        step.action !== 'finalize'
-      ) {
-        step.status = 'completed'
-        step.completedAt = step.completedAt ?? now
-      }
-    }
+    step.status = 'completed'
+    step.completedAt = step.completedAt ?? now
+    step.completionReason = step.completionReason ?? 'No executable actions remained for this step.'
     return
   }
 
@@ -2166,6 +2227,7 @@ function assessProcedureToolOutcome(
   toolName: string,
   toolOutput: unknown,
   toolError?: string,
+  isKnowledgeTool = false,
 ): ProcedureToolAssessment {
   if (toolError?.trim()) {
     return {
@@ -2185,7 +2247,7 @@ function assessProcedureToolOutcome(
     return { outcome: 'schema_invalid', label: 'Human handoff returned an unexpected payload' }
   }
 
-  if (toolName.startsWith('kb_search_')) {
+  if (isKnowledgeTool) {
     if (Array.isArray(toolOutput)) {
       return toolOutput.length > 0
         ? { outcome: 'succeeded', label: 'Knowledge search returned hits' }
@@ -2289,10 +2351,11 @@ function applyToolEvidenceToRun(
   basedOnInputEpoch: number,
   createdAt: string,
   assessment: ProcedureToolAssessment = assessProcedureToolOutcome(input.toolName, input.toolOutput, input.toolError),
+  isKnowledgeTool = false,
 ): void {
   const evidenceId = input.toolUseId ?? `${input.toolName}:${Date.now()}`
-  const match = findMatchingToolStep(run, input.toolName)
-  const evidenceKind = input.toolName.startsWith('kb_search_')
+  const match = findMatchingToolStep(run, input.toolName, isKnowledgeTool)
+  const evidenceKind = isKnowledgeTool
     ? 'knowledge'
     : input.toolName === 'create_human_task'
       ? 'handoff'
@@ -2324,7 +2387,7 @@ function applyToolEvidenceToRun(
   }
 
   if (!match) {
-    if (input.toolName.startsWith('kb_search_') && !stale && assessment.outcome === 'succeeded') {
+    if (isKnowledgeTool && !stale && assessment.outcome === 'succeeded') {
       clearProcedureSignal(run, 'knowledge_gap')
     }
     return
@@ -2371,32 +2434,22 @@ function applyToolEvidenceToRun(
       match.step.status = 'blocked'
       match.step.completionReason = undefined
     }
-  } else if (stepMatchesLegacyTool(match.step, input.toolName)) {
-    if (assessment.outcome === 'succeeded') {
-      clearRunBlocker(run, blockerKey)
-      match.step.status = 'completed'
-      match.step.completedAt = createdAt
-      match.step.completionReason = `Observed ${input.toolName}.`
-    } else {
-      setRunBlocker(run, blockerKey, blockerForToolAssessment(input.toolName, assessment) ?? `${input.toolName} did not complete successfully.`)
-      match.step.status = 'blocked'
-      match.step.completedAt = undefined
-      match.step.completionReason = undefined
-    }
   }
 
-  if (input.toolName.startsWith('kb_search_') && assessment.outcome === 'succeeded') {
+  if (isKnowledgeTool && assessment.outcome === 'succeeded') {
     clearProcedureSignal(run, 'knowledge_gap')
   }
   if (input.toolName === 'create_human_task' && assessment.outcome === 'succeeded') {
     clearProcedureSignal(run, 'explicit_human_request')
     clearProcedureSignal(run, 'no_progress_loop')
     clearProcedureSignal(run, 'knowledge_gap')
-    transitionRunToWaitingHuman(session, run, match, createdAt, input.toolOutput)
+    // Owner contract: persisted human handoff is terminal for the ProcedureRun
+    // regardless of channel. The case/chat may remain waiting_human for ops.
+    finalizeRunForHumanHandoff(session, run, match, createdAt, input.toolOutput)
   }
 }
 
-function transitionRunToWaitingHuman(
+function finalizeRunForHumanHandoff(
   session: CaseSession,
   run: ProcedureRunState,
   match: { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null,
@@ -2445,18 +2498,21 @@ function transitionRunToWaitingHuman(
   }
 
   run.blockers = []
-  run.status = 'paused'
+  run.status = 'completed'
   run.currentStepId = null
   run.reason = taskId
-    ? `Waiting for human handoff task ${taskId}.`
-    : 'Waiting for human handoff.'
+    ? `Finalized after human handoff task ${taskId}.`
+    : 'Finalized after human handoff.'
+  run.outcome = 'handed_off'
   run.updatedAt = createdAt
 
   if (session.procedureRuntime.activeProcedureRun?.runId === run.runId) {
     session.procedureRuntime.activeProcedureRun = undefined
-    if (!session.procedureRuntime.pausedProcedureRuns.some((candidate) => candidate.runId === run.runId)) {
-      session.procedureRuntime.pausedProcedureRuns.push(run)
-    }
+  }
+  session.procedureRuntime.pausedProcedureRuns = session.procedureRuntime.pausedProcedureRuns
+    .filter((candidate) => candidate.runId !== run.runId)
+  if (!session.procedureRuntime.completedProcedureRuns.some((candidate) => candidate.runId === run.runId)) {
+    session.procedureRuntime.completedProcedureRuns.push(run)
   }
 
   appendProcedureTimeline(session, run, {
@@ -2464,16 +2520,18 @@ function transitionRunToWaitingHuman(
     source: 'control',
     basedOnInputEpoch: run.inputEpoch,
     summary: taskId
-      ? `ProcedureRun paused for human handoff task ${taskId}`
-      : 'ProcedureRun paused for human handoff',
+      ? `ProcedureRun finalized after human handoff task ${taskId}`
+      : 'ProcedureRun finalized after human handoff',
     metadata: {
       terminal: true,
-      waitingHuman: true,
+      handoffFinalized: true,
       taskId,
       queue,
       persisted: true,
+      outcome: 'handed_off',
     },
   })
+  scheduleRunPersist(session, run)
 }
 
 function buildToolEvidenceLabel(toolName: string, kind: ProcedureRunEvidenceState['kind']): string {
@@ -2490,6 +2548,7 @@ function buildToolEvidenceLabel(toolName: string, kind: ProcedureRunEvidenceStat
 function findMatchingToolStep(
   run: ProcedureRunState,
   toolName: string,
+  isKnowledgeTool: boolean,
 ): { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null {
   const stepsInPriority = [
     ...(run.currentStepId ? run.steps.filter((step) => step.id === run.currentStepId) : []),
@@ -2497,20 +2556,19 @@ function findMatchingToolStep(
   ]
 
   for (const step of stepsInPriority) {
-    const action = (step.actions ?? []).find((candidate) => actionMatchesTool(candidate, toolName))
+    const action = (step.actions ?? []).find((candidate) => actionMatchesTool(candidate, toolName, isKnowledgeTool))
     if (action) return { step, action }
-    if (stepMatchesLegacyTool(step, toolName)) return { step }
   }
 
   return null
 }
 
-function actionMatchesTool(action: ProcedureRunActionState, toolName: string): boolean {
+function actionMatchesTool(action: ProcedureRunActionState, toolName: string, isKnowledgeTool: boolean): boolean {
   switch (action.kind) {
     case 'call_tool':
       return action.target === toolName
     case 'search_knowledge':
-      return toolName.startsWith('kb_search_')
+      return isKnowledgeTool
     case 'ask':
       return toolName === 'ask_user_questions'
     case 'request_human_handoff':
@@ -2522,13 +2580,13 @@ function actionMatchesTool(action: ProcedureRunActionState, toolName: string): b
   }
 }
 
-function stepMatchesLegacyTool(step: ProcedureRunStepState, toolName: string): boolean {
-  if (step.actions?.length) return false
-  if (step.target && step.target === toolName) return true
-  if (step.action === 'ask' && toolName === 'ask_user_questions') return true
-  if (step.action === 'escalate' && toolName === 'create_human_task') return true
-  if (step.action === 'finalize' && toolName === 'finalize_procedure') return true
-  return false
+function isKnowledgeToolForSession(
+  session: CaseSession,
+  input: { toolName: string; isKnowledgeTool?: boolean },
+): boolean {
+  if (typeof input.isKnowledgeTool === 'boolean') return input.isKnowledgeTool
+  const toolDefinition = session.loop?.getToolDefinition?.(input.toolName)
+  return !!toolDefinition?.knowledgeSourceId
 }
 
 export function isRuntimeAuthorityKey(key: string): boolean {
@@ -2558,9 +2616,8 @@ export function filterRuntimeAuthorityKeys(value: Record<string, unknown>): Reco
 
 function finalizationBlockers(run: ProcedureRunState): string[] {
   const blockers = [...run.blockers]
-  if (run.procedureVersion === 'v2') {
+  if (run.definition?.version === 'v2') {
     const incompleteRequiredSteps = run.steps.filter((step) =>
-      step.required !== false &&
       step.status !== 'completed' &&
       step.status !== 'skipped',
     )
@@ -2611,9 +2668,8 @@ function cloneRun(run: ProcedureRunState): ProcedureRunState {
       metadata: entry.metadata ? { ...entry.metadata } : undefined,
     })),
     signals: run.signals.map((signal) => ({ ...signal })),
-    legacyFacts: { ...run.legacyFacts },
     blockers: [...run.blockers],
     timeline: run.timeline.map((event) => ({ ...event, metadata: event.metadata ? { ...event.metadata } : undefined })),
-    definition: run.definition ? JSON.parse(JSON.stringify(run.definition)) as ProcedureDefinition : undefined,
+    definition: run.definition ? JSON.parse(JSON.stringify(run.definition)) as ProcedureV2 : undefined,
   }
 }

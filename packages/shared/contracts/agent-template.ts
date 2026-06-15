@@ -1,7 +1,7 @@
 // .intera-agent.json v1 — portable Agent Template Package contract.
 
 import { z } from 'zod'
-import { procedureDefinitionSchema, templateCaseTypeSchema } from './case-types'
+import { procedureV2Schema, templateCaseTypeSchema } from './case-types'
 import { templateToolSchema } from './tools'
 import {
   hookBindingContractSchema,
@@ -26,7 +26,7 @@ export const agentTemplateProcedureSummarySchema = z.object({
   description: z.string().optional(),
   caseTypeType: stableNameSchema.optional(),
   enabled: z.boolean().default(true),
-  procedure: procedureDefinitionSchema,
+  procedure: procedureV2Schema,
   legacy: z.record(z.unknown()).optional(),
 })
 export type AgentTemplateProcedureSummary = z.infer<typeof agentTemplateProcedureSummarySchema>

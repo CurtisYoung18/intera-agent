@@ -21,7 +21,7 @@ function procedureStepCount(item: CaseTypeItem) {
   return parseProcedure(item.procedure ?? null)?.steps.length ?? 0
 }
 
-function buildNewProcedureDefinition(t: ReturnType<typeof useConsoleLocale>['t']) {
+function buildNewProcedure(t: ReturnType<typeof useConsoleLocale>['t']) {
   return {
     version: 'v2' as const,
     whenToUse: t('caseTypes.defaults.whenToUse'),
@@ -120,7 +120,7 @@ export default function BuildProceduresPage() {
           escalateOn: [],
           autoCloseConditions: [],
           enabled: true,
-          procedure: buildNewProcedureDefinition(t),
+          procedure: buildNewProcedure(t),
           maxAutoTurns: 10,
         },
       })

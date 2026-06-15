@@ -21,6 +21,8 @@ const baseScenario: SavedScenario = {
     hooks: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
     humanTransfer: true,
     finalStatus: 'waiting_human',
+    procedureStatus: 'completed',
+    procedureOutcome: 'handed_off',
     forbiddenPhrases: ['guaranteed compensation'],
   },
   createdAt: '2026-06-08T00:00:00.000Z',
@@ -78,6 +80,8 @@ describe('Scenario runner harness', () => {
       handoff: [{ required: true, reason: 'create_human_task observed', target: 'human' }],
       finalResponse: 'I will transfer this to a human specialist.',
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
     }, {
       executionMode: 'agentRuntime',
       toolExecutionMode: 'mocked',

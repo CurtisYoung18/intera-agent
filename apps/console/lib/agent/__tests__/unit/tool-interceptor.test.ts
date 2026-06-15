@@ -74,7 +74,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         caseSchema: null,
         chatMemory: {
           setCaseStatus,
-          setConfirmedFactsBulk: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
         } as any,
         persistence: {} as any,
         traceWriter: {
@@ -139,6 +139,18 @@ describe('tool-interceptor start_procedure truth alignment', () => {
       mode: 'inline_procedure',
       caseType: 'deposit_not_credited',
       runId: 'run-1',
+      procedureSummary: {
+        stepCount: 1,
+        steps: [
+          expect.objectContaining({
+            id: 'collect_txid',
+            title: 'Collect TXID',
+            actionKinds: ['ask'],
+            branchCount: 0,
+            requiredActionCount: 1,
+          }),
+        ],
+      },
     })
   })
 })

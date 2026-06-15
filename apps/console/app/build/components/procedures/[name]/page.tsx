@@ -30,13 +30,11 @@ import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import type { TranslateFn } from '@/lib/i18n/types'
 import {
-  isProcedureV2Definition,
   parseProcedure,
-  parseProcedureDefinition,
   PROCEDURE_CONDITION_KINDS,
   PROCEDURE_RUNTIME_SIGNALS,
   PROCEDURE_V2_ACTION_KINDS,
-  simulateProcedureDefinition,
+  simulateProcedure,
   type CaseTypeItem,
   type ProcedureRuntimeSignalContract,
   type ProcedureSimulationInputContract,
@@ -335,12 +333,6 @@ function emptyToUndefined(value: string) {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-function titleFromLegacyStep(step: NonNullable<ReturnType<typeof parseProcedure>>['steps'][number]) {
-  if (step.guidance?.trim()) return step.guidance.trim()
-  if (step.target?.trim()) return `${step.action} ${step.target.trim()}`
-  return `Handle ${step.action}`
-}
-
 function actionDraftFromContract(action: ProcedureV2ActionContract): ActionDraft {
   switch (action.kind) {
     case 'ask':
@@ -442,99 +434,6 @@ function stepDraftFromContract(step: ProcedureV2StepContract): StepDraft {
   }
 }
 
-function legacyActionDraft(t: TranslateFn, step: NonNullable<ReturnType<typeof parseProcedure>>['steps'][number]): ActionDraft {
-  switch (step.action) {
-    case 'ask':
-      return {
-        ...buildActionDraft(t, 'ask', `${step.id}_ask`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyAskLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-        fields: step.target ? step.target.split(',').map((value) => value.trim()).filter(Boolean) : [],
-      }
-    case 'read':
-      return {
-        ...buildActionDraft(t, 'search_knowledge', `${step.id}_kb`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyKnowledgeLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-        suggestedSources: step.target ? [step.target] : [],
-      }
-    case 'escalate':
-      return {
-        ...buildActionDraft(t, 'request_human_handoff', `${step.id}_handoff`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyHandoffLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-        queue: step.target || 'general',
-      }
-    case 'finalize':
-      return {
-        ...buildActionDraft(t, 'end', `${step.id}_end`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyEndLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-        endStatus: step.target === 'cancelled' ? 'cancelled' : 'completed',
-      }
-    case 'tag':
-      return {
-        ...buildActionDraft(t, 'call_tool', `${step.id}_tag`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyTagLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-        toolName: step.target || 'update_case_tag',
-      }
-    case 'decide':
-      return {
-        ...buildActionDraft(t, 'ask', `${step.id}_decide`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyDecideLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-      }
-    case 'use':
-    default:
-      return {
-        ...buildActionDraft(t, 'call_tool', `${step.id}_tool`),
-        label: step.guidance?.trim() || t('procedureEditor.defaults.legacyToolLabel'),
-        guidance: step.guidance || '',
-        required: step.required !== false,
-        toolName: step.target || '',
-      }
-  }
-}
-
-function legacyStepToDraft(t: TranslateFn, step: NonNullable<ReturnType<typeof parseProcedure>>['steps'][number], index: number): StepDraft {
-  const action = legacyActionDraft(t, step)
-  if (step.when?.trim()) {
-    return {
-      id: step.id,
-      title: titleFromLegacyStep(step),
-      guidance: step.guidance || '',
-      skipGuidance: '',
-      completionGuidance: '',
-      actions: [],
-      branches: [{
-        ...buildBranchDraft(t, 'if', `${step.id}_branch`),
-        label: step.when,
-        conditionKind: 'llm_eval',
-        conditionLabel: step.when,
-        llmPrompt: step.when,
-        actions: [{ ...action, id: `${step.id}_branch_action` }],
-      }],
-    }
-  }
-
-  return {
-    id: step.id,
-    title: titleFromLegacyStep(step) || t('procedureEditor.defaults.stepTitle', { n: index + 1 }),
-    guidance: step.guidance || '',
-    skipGuidance: '',
-    completionGuidance: '',
-    actions: [action],
-    branches: [],
-  }
-}
-
 function createEmptyDraft(t: TranslateFn): ProcedureEditorDraft {
   return {
     type: '',
@@ -556,11 +455,8 @@ function createEmptyDraft(t: TranslateFn): ProcedureEditorDraft {
 }
 
 function toDraft(t: TranslateFn, item: CaseTypeItem): ProcedureEditorDraft {
-  const parsedDefinition = parseProcedureDefinition(item.procedure ?? null)
-  const legacy = parseProcedure(item.procedure ?? null)
-  const steps = parsedDefinition && isProcedureV2Definition(parsedDefinition)
-    ? parsedDefinition.steps.map(stepDraftFromContract)
-    : (legacy?.steps ?? []).map((step, index) => legacyStepToDraft(t, step, index))
+  const parsedProcedure = parseProcedure(item.procedure ?? null)
+  const steps = parsedProcedure?.steps.map(stepDraftFromContract) ?? []
 
   return {
     type: item.type,
@@ -573,18 +469,10 @@ function toDraft(t: TranslateFn, item: CaseTypeItem): ProcedureEditorDraft {
     requiredFacts: parseList(item.requiredFacts),
     escalateOn: parseList(item.escalateOn),
     autoCloseConditions: parseList(item.autoCloseConditions ?? '[]'),
-    whenToUse: parsedDefinition && isProcedureV2Definition(parsedDefinition)
-      ? parsedDefinition.whenToUse
-      : item.defaultGoal || '',
-    overview: parsedDefinition && isProcedureV2Definition(parsedDefinition)
-      ? parsedDefinition.overview || ''
-      : item.description || '',
-    knowledgeGuidance: parsedDefinition && isProcedureV2Definition(parsedDefinition)
-      ? parsedDefinition.knowledgeGuidance || ''
-      : '',
-    handoffGuidance: parsedDefinition && isProcedureV2Definition(parsedDefinition)
-      ? parsedDefinition.handoffGuidance || ''
-      : '',
+    whenToUse: parsedProcedure?.whenToUse || item.defaultGoal || '',
+    overview: parsedProcedure?.overview || item.description || '',
+    knowledgeGuidance: parsedProcedure?.knowledgeGuidance || '',
+    handoffGuidance: parsedProcedure?.handoffGuidance || '',
     steps: steps.length > 0 ? steps : [buildStepDraft(t, 0)],
   }
 }
@@ -674,7 +562,7 @@ function toAction(t: TranslateFn, action: ActionDraft): ProcedureV2ActionContrac
   }
 }
 
-function toProcedureDefinition(t: TranslateFn, draft: ProcedureEditorDraft): ProcedureV2Contract {
+function toProcedure(t: TranslateFn, draft: ProcedureEditorDraft): ProcedureV2Contract {
   return {
     version: 'v2',
     whenToUse: draft.whenToUse.trim() || draft.defaultGoal.trim() || draft.displayName.trim() || t('procedureEditor.defaults.whenToUse'),
@@ -1133,6 +1021,7 @@ export default function BuildProcedureDetailPage() {
   const [simulation, setSimulation] = useState<ProcedureSimulationInputContract>({
     signals: [],
     toolNames: [],
+    knowledgeToolNames: [],
     formFields: [],
     knowledgeSearches: 0,
     handoffRequested: false,
@@ -1172,10 +1061,10 @@ export default function BuildProcedureDetailPage() {
     load()
   }, [load])
 
-  const procedureDefinition = useMemo(() => toProcedureDefinition(t, draft), [draft, t])
+  const procedure = useMemo(() => toProcedure(t, draft), [draft, t])
   const simulationReceipt = useMemo(
-    () => simulateProcedureDefinition(procedureDefinition, simulation),
-    [procedureDefinition, simulation],
+    () => simulateProcedure(procedure, simulation),
+    [procedure, simulation],
   )
 
   const getStepBindings = useCallback((stepId: string) => {
@@ -1373,7 +1262,7 @@ export default function BuildProcedureDetailPage() {
           requiredFacts: draft.requiredFacts,
           escalateOn: draft.escalateOn,
           autoCloseConditions: draft.autoCloseConditions,
-          procedure: procedureDefinition,
+          procedure,
         },
       })
       await bustConfigCache(orgId).catch(() => {})
@@ -1388,7 +1277,7 @@ export default function BuildProcedureDetailPage() {
     } finally {
       setSaving(false)
     }
-  }, [agentConfigId, draft, item, load, orgId, procedureDefinition, router, t])
+  }, [agentConfigId, draft, item, load, orgId, procedure, router, t])
 
   const deleteProcedure = useCallback(async () => {
     if (!agentConfigId || !item) return
@@ -2045,12 +1934,12 @@ export default function BuildProcedureDetailPage() {
                   <div className="space-y-4 p-6">
                     <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
                       <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.preview.title')}</p>
-                      <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedureDefinition.whenToUse}</p>
-                      {procedureDefinition.overview ? (
-                        <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedureDefinition.overview}</p>
+                      <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedure.whenToUse}</p>
+                      {procedure.overview ? (
+                        <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedure.overview}</p>
                       ) : null}
                     </div>
-                    {procedureDefinition.steps.map((step) => (
+                    {procedure.steps.map((step) => (
                       <div key={step.id} className="rounded-[20px] border border-black/[0.08] bg-white p-5">
                         <p className="text-[14px] font-semibold text-[var(--mist)]">{step.title}</p>
                         <p className="mt-2 text-[12px] leading-6 text-[var(--fog)]">{step.guidance}</p>
@@ -2081,6 +1970,7 @@ export default function BuildProcedureDetailPage() {
                         onClick={() => setSimulation({
                           signals: [],
                           toolNames: [],
+                          knowledgeToolNames: [],
                           formFields: [],
                           matchedLlmConditionIds: [],
                           knowledgeSearches: 0,
@@ -2154,6 +2044,14 @@ export default function BuildProcedureDetailPage() {
                             values={simulation.toolNames}
                             onChange={(values) => setSimulation((current) => ({ ...current, toolNames: values }))}
                             placeholder={t('procedureEditor.placeholder.simulationToolNames')}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.knowledgeToolNames')}</p>
+                          <ChipInput
+                            values={simulation.knowledgeToolNames || []}
+                            onChange={(values) => setSimulation((current) => ({ ...current, knowledgeToolNames: values }))}
+                            placeholder={t('procedureEditor.placeholder.simulationKnowledgeToolNames')}
                           />
                         </div>
                         <div className="space-y-2">

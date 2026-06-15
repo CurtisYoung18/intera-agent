@@ -97,7 +97,7 @@ const PRESERVE_RULES: Array<{
   {
     field: 'preserveProcedureProgress',
     label: 'Procedure progress',
-    description: 'procedureRun and current step stay in working memory, not confirmedFacts.',
+    description: 'procedureRun and current step stay in working memory, not the context map.',
     icon: History,
   },
   {
@@ -623,10 +623,10 @@ function MemoryPanel({
               onChange={(event) => setMemoryField('factExtractionPrompt', event.target.value)}
               rows={7}
               className={fieldClass('resize-y leading-relaxed')}
-              placeholder="Extract stable business facts only. Keep procedureRun, tool runtime state, and handoff queue state out of confirmedFacts."
+              placeholder="Extract stable business facts only. Keep procedureRun, tool runtime state, and handoff queue state out of the context map."
             />
             <span className="block text-[11px] leading-snug text-[var(--fog)]">
-              confirmedFacts are business facts. Procedure runtime state belongs to structured working memory.
+              The context map is only for business facts. Procedure runtime state belongs to structured working memory.
             </span>
           </label>
         </div>
@@ -720,7 +720,7 @@ function ProfilePanel({
           Long-term profile memory
         </div>
         <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
-          Profile memory is for stable user signals. It is separate from ProcedureRun confirmedFacts and procedure runtime state.
+          Profile memory is for stable user signals. It is separate from the ProcedureRun context map and runtime state.
         </p>
         <div className="mt-4 space-y-3">
           <SwitchField

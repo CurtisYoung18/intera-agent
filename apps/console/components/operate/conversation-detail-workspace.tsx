@@ -489,7 +489,8 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                   )}
                   <div className="mt-2 flex gap-3 text-[10px] text-[var(--fog)]/50">
                     <span>{(mem.toolsCalled?.length ?? 0)} {isZh ? '个工具' : 'tools'}</span>
-                    <span>{Object.keys(mem.confirmedFacts ?? {}).length} {isZh ? '条事实' : 'facts'}</span>
+                    <span>{(mem.keyEvents?.length ?? 0)} {isZh ? '个事件' : 'events'}</span>
+                    <span>{(mem.missingFacts?.length ?? 0)} {isZh ? '个缺口' : 'gaps'}</span>
                   </div>
                 </div>
               ))}

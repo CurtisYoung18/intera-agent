@@ -59,16 +59,16 @@ beforeEach(() => {
   h.repo.raw.actionTrace.findMany.mockResolvedValue([])
   h.repo.raw.humanTask.findMany.mockResolvedValue([])
   h.repo.raw.chatMemory.findUnique.mockResolvedValue({
-    confirmedFacts: JSON.stringify({
-      memberId: 'M123',
-      __intera_procedure_runtime: { runId: 'runtime-secret' },
-    }),
     missingFacts: '[]',
     toolsCalled: '[]',
     toolResults: JSON.stringify({
       lookup_balance: { ok: true },
       __intera_private_tool_state: { currentStepId: 'internal' },
     }),
+    keyEvents: JSON.stringify([
+      { text: 'memberId collected', metadata: { memberId: 'M123' } },
+      { text: 'runtime hidden', metadata: { __intera_procedure_runtime: { runId: 'runtime-secret' } } },
+    ]),
     summary: null,
   })
 })
@@ -79,7 +79,7 @@ describe('GET /api/cases/[id]/export', () => {
     const markdown = await res.text()
 
     expect(res.status).toBe(200)
-    expect(markdown).toContain('memberId')
+    expect(markdown).toContain('memberId collected')
     expect(markdown).toContain('lookup_balance')
     expect(markdown).not.toContain('__intera_')
     expect(markdown).not.toContain('runtime-secret')

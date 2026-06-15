@@ -2,13 +2,13 @@
 // Replaces {{placeholder}} tokens in the system prompt with live data
 // from DB/config, so the prompt always reflects Console configuration.
 
-import { stripInternalMemoryKeys } from './memory'
 import { isOpaqueInternalUserId, isVerifiedMemberId } from './identity'
 
 export interface ToolSummary {
   name: string
   description: string
   needsMemberId: boolean
+  knowledgeSourceId?: string
 }
 
 export interface PromptContext {
@@ -21,9 +21,10 @@ export interface PromptContext {
     escalateOn: string[]
   } | null
   case_state?: {
-    confirmedFacts: Record<string, unknown>
     toolsCalled: string[]
     missingFacts: string[]
+    keyEvents?: Array<{ at: string; text: string; source: string }>
+    summary?: string
   } | null
   session_binding?: { userId: string; userLabel?: string } | null
   available_tools?: ToolSummary[]
@@ -58,21 +59,33 @@ function renderCaseSchema(schema: PromptContext['case_schema']): string {
 
 function renderCaseState(state: PromptContext['case_state']): string {
   if (!state) return ''
-  const confirmedFacts = stripInternalMemoryKeys(state.confirmedFacts)
-  if (Object.keys(confirmedFacts).length === 0 && state.toolsCalled.length === 0) return ''
-  return [
-    '## Current Chat Context',
-    `- Confirmed: ${JSON.stringify(confirmedFacts)}`,
-    `- Tools used: ${JSON.stringify(state.toolsCalled)}`,
-    `- Missing: ${JSON.stringify(state.missingFacts)}`,
-  ].join('\n')
+  const recentEvents = (state.keyEvents ?? [])
+    .map((event) => event.text)
+    .filter((text) => typeof text === 'string' && !text.includes('__intera_'))
+    .slice(-5)
+  if (!state.summary && recentEvents.length === 0 && state.toolsCalled.length === 0 && state.missingFacts.length === 0) return ''
+
+  const lines = ['## Current Chat Context']
+  if (state.summary?.trim()) {
+    lines.push(`- Summary: ${state.summary.trim()}`)
+  }
+  if (recentEvents.length > 0) {
+    lines.push(`- Recent events: ${JSON.stringify(recentEvents)}`)
+  }
+  if (state.toolsCalled.length > 0) {
+    lines.push(`- Tools used: ${JSON.stringify(state.toolsCalled)}`)
+  }
+  if (state.missingFacts.length > 0) {
+    lines.push(`- Missing: ${JSON.stringify(state.missingFacts)}`)
+  }
+  return lines.join('\n')
 }
 
 function renderTools(tools: PromptContext['available_tools']): string {
   if (!tools?.length) return ''
-  const kbTools = tools.filter(t => t.name.startsWith('kb_search_'))
-  const lookupTools = tools.filter(t => !t.name.startsWith('kb_search_') && t.needsMemberId)
-  const otherTools = tools.filter(t => !t.name.startsWith('kb_search_') && !t.needsMemberId)
+  const kbTools = tools.filter((tool) => !!tool.knowledgeSourceId)
+  const lookupTools = tools.filter((tool) => !tool.knowledgeSourceId && tool.needsMemberId)
+  const otherTools = tools.filter((tool) => !tool.knowledgeSourceId && !tool.needsMemberId)
 
   const lines: string[] = ['## Available Tools']
   if (kbTools.length) {

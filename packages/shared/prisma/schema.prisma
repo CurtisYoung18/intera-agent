@@ -266,7 +266,6 @@ model ProcedureRun {
   caseId           String
   agentConfigId    String
   procedureId      String
-  procedureVersion String   @default("v2")
   status           String
   inputEpoch       Int      @default(0)
   needsReconcile   Boolean  @default(false)
@@ -289,7 +288,7 @@ model ChatMemory {
   caseId String @unique
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
-  confirmedFacts  String  @default("{}") // JSON
+  contextMap      String  @default("{}") // JSON
   missingFacts    String  @default("[]") // JSON
   toolsCalled     String  @default("[]") // JSON
   toolResults     String  @default("{}") // JSON
@@ -495,7 +494,7 @@ model ChatSession {
   id             String   @id @default(cuid())
   chatId         String   @unique
   orgId          String   @default("default") @map("org_id")
-  confirmedFacts String   @default("{}")
+  contextMap     String   @default("{}")
   summary        String?
   keyEvents      String   @default("[]")
   createdAt      DateTime @default(now())

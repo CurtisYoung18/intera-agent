@@ -55,6 +55,8 @@ vi.mock('@/lib/scenarios/runtime-runner', async () => {
       handoff: [{ required: true, target: 'human' }],
       finalResponse: 'I will transfer this case to a human specialist.',
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
     }, {
       executionMode: 'agentRuntime',
       toolExecutionMode: 'mocked',
@@ -98,6 +100,8 @@ function validScenario(name = 'deposit_missing_evidence') {
       hooks: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
       humanTransfer: true,
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
       forbiddenPhrases: ['guaranteed compensation'],
     },
   }

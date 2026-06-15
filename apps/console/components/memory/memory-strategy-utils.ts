@@ -175,13 +175,13 @@ export function runCompactFixture(sample: string, strategy: MemoryStrategyUi): C
   const preservedHandoff = strategy.preserveHumanHandoffStatus !== false && hasHandoff
 
   const factsLine = preservedFacts
-    ? 'Business facts stay in confirmed facts: member, transaction, amount, and stated issue.'
+    ? 'Business facts stay in the context map: member, transaction, amount, and stated issue.'
     : 'No durable business fact was detected for this fixture.'
   const toolLine = preservedToolEvidence
     ? 'Tool evidence is summarized with source and result status.'
     : 'Tool evidence is not present or is disabled for this strategy.'
   const procedureLine = preservedProcedureProgress
-    ? 'Procedure progress stays in working memory as current step state, not confirmedFacts.'
+    ? 'Procedure progress stays in working memory as current step state, not the context map.'
     : 'Procedure runtime state needs review for this fixture.'
   const handoffLine = preservedHandoff
     ? 'Human handoff status remains visible for operator continuity.'
@@ -193,7 +193,7 @@ export function runCompactFixture(sample: string, strategy: MemoryStrategyUi): C
     {
       key: 'facts',
       label: 'Business facts',
-      detail: 'Facts belong in confirmedFacts only when they describe the customer or case.',
+      detail: 'Facts belong in the context map only when they describe the customer or case.',
       status: strategy.preserveFacts === false ? 'disabled' : preservedFacts ? 'preserved' : 'missing',
     },
     {
@@ -205,7 +205,7 @@ export function runCompactFixture(sample: string, strategy: MemoryStrategyUi): C
     {
       key: 'procedureProgress',
       label: 'Procedure progress',
-      detail: 'procedureRun stays in structured working memory instead of confirmedFacts.',
+      detail: 'procedureRun stays in structured working memory instead of the context map.',
       status:
         strategy.preserveProcedureProgress === false
           ? 'disabled'

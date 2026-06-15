@@ -242,10 +242,8 @@ export function collectProcedureSteps(caseTypes: CaseTypePickerRow[]) {
       caseTypeType: ct.type,
       caseTypeDisplayName: ct.displayName ?? ct.type,
       id: step.id,
-      action: step.action,
-      target: step.target ?? null,
       guidance: step.guidance ?? null,
-      label: `${ct.displayName ?? ct.type} / ${step.id}`,
+      label: `${ct.displayName ?? ct.type} / ${step.title || step.id}`,
     }))
   })
 }

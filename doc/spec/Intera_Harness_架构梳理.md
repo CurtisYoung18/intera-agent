@@ -390,6 +390,11 @@ The Agent may:
 - switch Procedure type if the problem is reclassified
 - escalate when a Hook or Tool failure requires a human
 
+Owner decision, 2026-06-15: once a human handoff succeeds on any channel, that
+ProcedureRun is terminally finalized. The surrounding case/chat may remain
+`waiting_human` for operator work, but the Procedure itself must not sit in a
+resumable paused-human state.
+
 Procedure Builder should show Hook controls at the ProcedureStep level. The data model remains top-level Hook + HookBinding; the step UI is a convenient binding surface.
 
 ---

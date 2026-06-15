@@ -9,6 +9,26 @@ import { exportAgentTemplate, importAgentTemplate } from '../service'
 const now = new Date('2026-06-08T00:00:00.000Z')
 let tempDir: string | null = null
 
+const depositProcedureV2 = {
+  version: 'v2' as const,
+  whenToUse: 'Use for deposit issues.',
+  steps: [
+    {
+      id: 'lookup_latest_deposit',
+      title: 'Check latest deposit',
+      guidance: 'Use the latest deposit tool to inspect the reported deposit.',
+      actions: [
+        {
+          id: 'lookup_latest_deposit_action',
+          kind: 'call_tool' as const,
+          label: 'Check latest deposit',
+          toolName: 'get_latest_deposit',
+        },
+      ],
+    },
+  ],
+}
+
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'intera-agent-template-'))
   process.env.INTERA_SCENARIO_STORE_PATH = join(tempDir, 'scenarios.json')
@@ -95,7 +115,7 @@ describe('Agent Template Package service', () => {
         requiredFacts: ['member_id'],
         defaultGoal: 'Investigate deposit status.',
         escalateOn: ['conflict'],
-        procedure: { steps: [{ id: 'lookup_latest_deposit', action: 'use', target: 'get_latest_deposit' }] },
+        procedure: depositProcedureV2,
       }],
       tools: [{
         name: 'get_latest_deposit',
@@ -392,7 +412,7 @@ function makeExportRepo() {
     escalateOn: '["conflict"]',
     autoCloseConditions: null,
     enabled: true,
-    procedure: '{"steps":[{"id":"lookup_latest_deposit","action":"use","target":"get_latest_deposit"}]}',
+    procedure: JSON.stringify(depositProcedureV2),
     maxAutoTurns: 8,
     createdAt: now,
     updatedAt: now,

@@ -5,7 +5,7 @@
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { procedureDefinitionSchema } from '@intera/shared/contracts/case-types'
+import { caseTypeProcedureInputSchema } from '@intera/shared/contracts/case-types'
 
 interface CaseTypeParams { name: string }
 
@@ -42,7 +42,7 @@ const updateSchema = z.object({
   escalateOn: z.union([z.string(), z.array(z.string())]).optional(),
   autoCloseConditions: z.union([z.string(), z.array(z.string())]).nullable().optional(),
   enabled: z.boolean().optional(),
-  procedure: z.union([z.string(), procedureDefinitionSchema]).nullable().optional(),
+  procedure: caseTypeProcedureInputSchema.nullable().optional(),
   maxAutoTurns: z.number().optional(),
 })
 type UpdateInput = z.infer<typeof updateSchema>

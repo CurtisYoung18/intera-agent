@@ -163,7 +163,7 @@ export interface ToolDefinition {
 
 export interface ChatMemoryData {
   caseId: string
-  confirmedFacts: Record<string, unknown>
+  contextMap: Record<string, unknown>
   missingFacts: string[]
   toolsCalled: string[]
   toolResults: Record<string, unknown>
@@ -390,54 +390,10 @@ export interface CaseSchemaConfig {
   defaultGoal: string
   escalateOn: string[]
   autoCloseConditions?: Record<string, unknown>
-  /** Ordered Procedure executed by the single main agent. When present, the case runs the Procedure path. */
-  procedure?: Procedure
-  /** Backward-compatible richer Procedure definition for Procedure v2 authoring/runtime. */
-  procedureDefinition?: ProcedureDefinition
+  /** Procedure v2 definition executed by the single main agent. */
+  procedure?: ProcedureV2
   /** Safety bound on auto-continuation turns. */
   maxAutoTurns?: number
-}
-
-// ============================================
-// Procedure (single-agent ordered SOP — Procedure refactor)
-// ============================================
-
-/**
- * One closed, operator-legible action vocabulary for a Procedure step.
- *   use      — call a tool                       (target = tool name)
- *   read     — gather data (read-only tool/KB/memory/prior case)
- *   ask      — collect from the customer         (target = form/field set)
- *   decide   — natural-language branch point     (when carries the condition)
- *   tag      — label the case/customer           (target = tag value)
- *   escalate — hand to a human                   (target = queue)
- *   finalize — close the case                    (target? = 'resolved' | 'consultation')
- */
-export type ProcedureAction =
-  | 'use'
-  | 'read'
-  | 'ask'
-  | 'decide'
-  | 'tag'
-  | 'escalate'
-  | 'finalize'
-
-export interface ProcedureStep {
-  /** Stable, unique within the procedure. */
-  id: string
-  action: ProcedureAction
-  /** Typed by action (tool name / source / tag / queue …). */
-  target?: string
-  /** Per-step natural-language instruction. */
-  guidance?: string
-  /** Optional NL precondition ("only if balance unchanged"). */
-  when?: string
-  /** Feeds the completion check and HookBinding derivation. */
-  required?: boolean
-}
-
-export interface Procedure {
-  /** Ordered; the agent follows but may adapt (skip when false, reorder if evidence present, loop back). */
-  steps: ProcedureStep[]
 }
 
 export type ProcedureV2ActionKind =
@@ -543,8 +499,6 @@ export interface ProcedureV2 {
   handoffGuidance?: string
   steps: ProcedureV2Step[]
 }
-
-export type ProcedureDefinition = Procedure | ProcedureV2
 
 export interface ProcedureSimulationInput {
   signals: ProcedureRuntimeSignal[]

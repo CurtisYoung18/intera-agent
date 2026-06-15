@@ -92,3 +92,36 @@ describe('session binding identity handling', () => {
     expect(rendered).not.toContain('member_id: 未知 / unknown')
   })
 })
+
+describe('available tools rendering', () => {
+  it('groups knowledge tools by structured identity instead of relying on kb_search_ prefixes', () => {
+    const rendered = resolvePrompt('{{available_tools}}', {
+      available_tools: [
+        {
+          name: 'faq_lookup_default',
+          description: 'Search the FAQ knowledge base',
+          needsMemberId: false,
+          knowledgeSourceId: 'ks_faq',
+        },
+        {
+          name: 'get_latest_deposit',
+          description: 'Fetch the latest deposit',
+          needsMemberId: true,
+        },
+        {
+          name: 'create_human_task',
+          description: 'Request human help',
+          needsMemberId: false,
+        },
+      ],
+    })
+
+    expect(rendered).toContain('## Available Tools')
+    expect(rendered).toContain('**Knowledge Bases**')
+    expect(rendered).toContain('faq_lookup_default: Search the FAQ knowledge base')
+    expect(rendered).toContain('**Account Lookups**')
+    expect(rendered).toContain('get_latest_deposit: Fetch the latest deposit')
+    expect(rendered).toContain('**Actions**')
+    expect(rendered).toContain('create_human_task: Request human help')
+  })
+})

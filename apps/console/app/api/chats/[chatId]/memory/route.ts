@@ -30,8 +30,9 @@ export const GET = defineRoute<void, { chatId: string }>({
       memories: memories.map(m => ({
         caseId: m.caseId,
         summary: m.summary,
-        confirmedFacts: (() => { try { return JSON.parse(m.confirmedFacts) } catch { return {} } })(),
+        keyEvents: (() => { try { return JSON.parse(m.keyEvents) } catch { return [] } })(),
         toolsCalled: (() => { try { return JSON.parse(m.toolsCalled) } catch { return [] } })(),
+        missingFacts: (() => { try { return JSON.parse(m.missingFacts) } catch { return [] } })(),
         updatedAt: m.updatedAt,
       })),
       profile,

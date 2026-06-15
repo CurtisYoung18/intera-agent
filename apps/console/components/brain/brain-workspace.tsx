@@ -88,7 +88,7 @@ export default function BrainWorkspace() {
               </p>
             </div>
             <div className="rounded-lg border border-black/[0.08] bg-white/70 px-4 py-3 text-[12px] leading-5 text-[var(--fog)]">
-              Procedure runtime state stays outside confirmed facts and profile memory.
+              Procedure runtime state stays outside the context map and profile memory.
             </div>
           </div>
 

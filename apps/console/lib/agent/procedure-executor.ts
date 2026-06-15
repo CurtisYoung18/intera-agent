@@ -1,244 +1,73 @@
 // Procedure Executor — structured single-agent Procedure runtime.
 //
-// A Procedure is an ordered list of steps (closed action vocab) executed by the
-// single main customer-facing Agent. The prompt is rendered from typed steps and
-// completion is gated on the required steps + finalize.
+// Procedure v2 is the only supported execution shape here. The prompt is
+// rendered from typed steps/branches/actions, and completion is gated on the
+// required tool actions plus explicit finalize.
 
-import type { Procedure, TodoItem } from '@intera/shared/types'
-import type {
-  ProcedureDefinition,
-  ProcedureStep,
-  ProcedureV2,
-  ProcedureV2Action,
-  ProcedureV2Branch,
-  ProcedureV2Step,
-} from '@intera/shared/types'
+import type { ProcedureV2, ProcedureV2Action, ProcedureV2Step } from '@intera/shared/types'
 import {
   buildProcedureActionSummary,
   buildProcedureConditionLabel,
-  isProcedureV2Definition,
-  normalizeProcedureDefinition,
 } from '@intera/shared/contracts/case-types'
-
-const ACTION_LABEL: Record<string, string> = {
-  use: 'Use tool',
-  read: 'Read',
-  ask: 'Ask customer',
-  decide: 'Decide',
-  tag: 'Tag',
-  escalate: 'Escalate',
-  finalize: 'Finalize',
-}
-
-/** Render the ordered Procedure steps as a Fin-style numbered checklist for the system prompt. */
-export function renderProcedureSteps(procedure: Procedure): string {
-  if (!procedure.steps.length) {
-    return '  (no steps defined — use your best judgment to investigate and resolve.)'
-  }
-  return procedure.steps
-    .map((s, i) => {
-      const label = ACTION_LABEL[s.action] ?? s.action
-      const head = [`  ${i + 1}. ${label}`]
-      if (s.target) head.push(s.target)
-      if (s.required) head.push('(required)')
-      let line = head.join(' ')
-      if (s.when) line += `\n       — only when: ${s.when}`
-      if (s.guidance) line += `\n       — ${s.guidance}`
-      return line
-    })
-    .join('\n')
-}
-
-/** Seed the agent's todo list from the Procedure steps (one pending todo per step, in order). */
-export function seedProcedureTodos(procedure: Procedure): TodoItem[] {
-  const now = new Date().toISOString()
-  return procedure.steps.map((s) => ({
-    id: s.id,
-    text: `[${s.action}]${s.target ? ` ${s.target}` : ''}${s.guidance ? ` — ${s.guidance}` : ''}`,
-    status: 'pending' as const,
-    addedBy: 'procedure_init' as const,
-    addedAt: now,
-  }))
-}
-
-/**
- * Tool targets that the Procedure hard-requires before completion: required `use`/`read`
- * steps with a concrete target and NO `when` condition. A `when`-gated step is conditional —
- * the agent skips it when the condition is false, so it is not part of the hard completion gate.
- */
-export function requiredToolTargets(procedure: Procedure): string[] {
-  return procedure.steps
-    .filter((s) => s.required && !s.when && (s.action === 'use' || s.action === 'read') && !!s.target)
-    .map((s) => s.target as string)
-}
-
-/**
- * Completion check: every hard-required tool target has been called and a finalize
- * step has been reached.
- */
-export function isProcedureComplete(
-  procedure: Procedure,
-  state: { calledTools: string[]; finalized: boolean },
-): boolean {
-  if (!state.finalized) return false
-  const called = new Set(state.calledTools)
-  return requiredToolTargets(procedure).every((t) => called.has(t))
-}
 
 /**
  * Renders a Procedure into the case-mode system prompt and exposes the completion gate.
  * Held by CaseAgentLoop when the case type carries a `procedure`.
  */
 export class ProcedureExecutor {
-  private readonly normalizedProcedure: Procedure
-  private readonly definition: ProcedureDefinition
+  private readonly procedure: ProcedureV2
 
   constructor(
-    procedure: Procedure | ProcedureDefinition,
+    procedure: ProcedureV2,
     private readonly caseType: string,
+    private readonly knowledgeToolNames: Set<string> = new Set(),
   ) {
-    this.definition = procedure
-    this.normalizedProcedure = normalizeProcedureDefinition(procedure)
-  }
-
-  /** Build the Procedure-mode system prompt (mirrors buildSopPrompt but from typed steps). */
-  buildPrompt(
-    basePrompt: string,
-    stage: string,
-    todos: TodoItem[],
-    facts: Record<string, unknown>,
-  ): string {
-    const todoLines =
-      todos.length === 0
-        ? '  (none tracked yet — follow the procedure steps below in order.)'
-        : todos
-            .map((t) => {
-              const icon =
-                t.status === 'completed' ? '✓' : t.status === 'cancelled' ? '✗' : t.status === 'in_progress' ? '→' : '○'
-              const notes = t.notes ? ` — ${t.notes}` : ''
-              return `  [${icon}] ${t.id} ${t.text}${notes}`
-            })
-            .join('\n')
-
-    const factLines =
-      Object.entries(facts).length === 0
-        ? '  (none yet)'
-        : Object.entries(facts)
-            .filter(([k]) => !k.startsWith('__'))
-            .map(([k, v]) => `  ${k}: ${JSON.stringify(v)}`)
-            .join('\n')
-    const runtimeTruthBlock = isProcedureV2Definition(this.definition)
-      ? [
-          '## Runtime Truth',
-          'Use the dynamic ProcedureRun tail for inputs, evidence, evaluator receipts, blockers, and reconcile state.',
-          'Do not treat chat-memory confirmed facts as Procedure v2 authority.',
-          '',
-        ].join('\n')
-      : [
-          '## Confirmed Facts',
-          factLines,
-          '',
-        ].join('\n')
-
-    const tail = [
-      `## Procedure Execution Context`,
-      `- procedureType: ${this.caseType}`,
-      `- stage: ${stage}`,
-      '',
-      'Follow the ordered Procedure below using tools — one agent,',
-      'no hand-offs. Text-only assertions are not sufficient.',
-      '',
-      '## Procedure (follow in order; adapt only as the rules allow)',
-      this.renderOrderedDefinition(),
-      '',
-      '## Current Todos',
-      todoLines,
-      '',
-      runtimeTruthBlock,
-      '## EXECUTION RULES',
-      'Rule 1 — Work the steps in order. Call the prescribed tool for each step.',
-      'Rule 2 — A step marked "only when …" is conditional: skip it (no action) when its',
-      '         condition is false; do NOT announce the skip.',
-      'Rule 3 — Do not finalize until every required step has been completed with its tool.',
-      'Rule 4 — If you are blocked or the customer needs something only a human can do,',
-      '         call create_human_task to escalate rather than guessing.',
-    ].join('\n')
-
-    return basePrompt + '\n\n' + tail
+    this.procedure = procedure
   }
 
   /** Tool targets the procedure hard-requires before completion. */
   requiredTools(): string[] {
-    return requiredToolTargets(this.normalizedProcedure)
+    return this.requiredToolTargets()
   }
 
   /** Stable-ish Procedure definition block; runtime state is appended separately by AgentLoop. */
   buildDefinitionPrompt(): string {
-    if (isProcedureV2Definition(this.definition)) {
-      return this.buildV2DefinitionPrompt(this.definition)
-    }
-    return [
-      `Procedure type: ${this.caseType}`,
-      '',
-      '## Ordered Procedure Steps',
-      renderProcedureSteps(this.normalizedProcedure),
-      '',
-      '## Procedure Rules',
-      'Rule 1 — Work the steps in order unless the runtime tail says reconciliation is required.',
-      'Rule 2 — A step marked "only when …" is conditional: skip it when false without announcing the skip.',
-      'Rule 3 — Do not finalize until required evidence is current for the latest inputEpoch.',
-      'Rule 4 — If blocked or the customer needs something only a human can do, call create_human_task.',
-    ].join('\n')
+    return this.buildV2DefinitionPrompt(this.procedure)
   }
 
   /** Step ids that are relevant for a Tool checkpoint in the current turn. */
-  stepIdsForTool(toolName: string | undefined, todos: TodoItem[]): string[] {
-    if (!toolName) return this.activeTodoStepIds(todos)
-    const matchingTargets = isProcedureV2Definition(this.definition)
-      ? this.definition.steps
-          .filter((step) => this.v2StepMatchesTool(step, toolName))
-          .map((step) => step.id)
-      : this.normalizedProcedure.steps
-          .filter((s) => (s.action === 'use' || s.action === 'read') && s.target === toolName)
-          .map((s) => s.id)
-    return [...new Set([...matchingTargets, ...this.activeTodoStepIds(todos)])]
-  }
-
-  /** Step ids that should be in scope for Stop checks in the current turn. */
-  stepIdsForStop(todos: TodoItem[]): string[] {
-    const active = this.activeTodoStepIds(todos)
-    const completed = todos
-      .filter((todo) => todo.status === 'completed')
-      .map((todo) => todo.id)
-    return [...new Set([...active, ...completed])]
+  stepIdsForTool(toolName: string | undefined): string[] {
+    if (!toolName) return []
+    const matchingTargets = this.procedure.steps
+      .filter((step) => this.v2StepMatchesTool(step, toolName))
+      .map((step) => step.id)
+    return [...new Set(matchingTargets)]
   }
 
   /** Completion gate — see {@link isProcedureComplete}. */
   isComplete(state: { calledTools: string[]; finalized: boolean }): boolean {
-    return isProcedureComplete(this.normalizedProcedure, state)
-  }
-
-  private activeTodoStepIds(todos: TodoItem[]): string[] {
-    const ids = new Set(this.normalizedProcedure.steps.map((step) => step.id))
-    const active = todos
-      .filter((todo) => ids.has(todo.id) && (todo.status === 'pending' || todo.status === 'in_progress'))
-      .map((todo) => todo.id)
-    if (active.length > 0) return active
-
-    const firstUnfinished = this.normalizedProcedure.steps.find((step) => {
-      const todo = todos.find((t) => t.id === step.id)
-      return !todo || (todo.status !== 'completed' && todo.status !== 'cancelled')
-    })
-    return firstUnfinished ? [firstUnfinished.id] : []
+    if (!state.finalized) return false
+    const called = new Set(state.calledTools)
+    return this.requiredToolTargets().every((toolName) => called.has(toolName))
   }
 
   private renderOrderedDefinition(): string {
-    if (!isProcedureV2Definition(this.definition)) {
-      return renderProcedureSteps(this.normalizedProcedure)
+    if (!this.procedure.steps.length) {
+      return '  (no steps defined — use your best judgment to investigate and resolve.)'
     }
-    return this.definition.steps
+    return this.procedure.steps
       .map((step, index) => this.renderV2Step(step, index))
       .join('\n')
+  }
+
+  private requiredToolTargets(): string[] {
+    return this.procedure.steps.flatMap((step) =>
+      collectStepActions(step)
+        .filter((action): action is Extract<ProcedureV2Action, { kind: 'call_tool' }> =>
+          action.kind === 'call_tool' && action.required !== false && action.toolName.trim().length > 0,
+        )
+        .map((action) => action.toolName),
+    )
   }
 
   private buildV2DefinitionPrompt(definition: ProcedureV2): string {
@@ -322,7 +151,7 @@ export class ProcedureExecutor {
       case 'call_tool':
         return action.toolName === toolName
       case 'search_knowledge':
-        return toolName.startsWith('kb_search_')
+        return this.knowledgeToolNames.has(toolName)
       case 'ask':
         return toolName === 'ask_user_questions'
       case 'request_human_handoff':
@@ -331,4 +160,11 @@ export class ProcedureExecutor {
         return toolName === 'finalize_procedure'
     }
   }
+}
+
+function collectStepActions(step: ProcedureV2Step): ProcedureV2Action[] {
+  return [
+    ...step.actions,
+    ...(step.branches?.flatMap((branch) => branch.actions) ?? []),
+  ]
 }

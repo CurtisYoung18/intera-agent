@@ -179,6 +179,8 @@ vi.mock('@/lib/scenarios/store', () => ({
       hooks: [{ hookName: 'provider_conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
       humanTransfer: true,
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
     },
   })),
   appendScenarioReceipt: vi.fn(async (_agentConfigId: string, receipt: any) => {
@@ -216,6 +218,8 @@ vi.mock('@/lib/scenarios/runtime-runner', async () => {
       humanTransfer: true,
       handoff: [{ required: true, target: 'human' }],
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
       finalResponse: 'I will transfer this case to a human specialist.',
     }, {
       executionMode: 'agentRuntime',

@@ -30,6 +30,29 @@ vi.mock('@intera/shared/prisma', () => ({
   },
 }))
 
+function toolProcedure(toolName: string) {
+  return {
+    version: 'v2' as const,
+    whenToUse: `Use when ${toolName} is needed.`,
+    steps: [
+      {
+        id: 'lookup',
+        title: 'Lookup',
+        guidance: `Call ${toolName}.`,
+        actions: [{ id: 'lookup_tool', kind: 'call_tool' as const, label: `Call ${toolName}`, toolName }],
+        branches: [],
+      },
+      {
+        id: 'close',
+        title: 'Close',
+        guidance: 'Finalize when done.',
+        actions: [{ id: 'finish', kind: 'end' as const, label: 'Finish', status: 'completed' as const }],
+        branches: [],
+      },
+    ],
+  }
+}
+
 function config(): AgentConfigData {
   return {
     model: 'claude-sonnet-4-20250514',
@@ -92,6 +115,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(router.getTool('finalize_case')).toBeUndefined()
     expect(router.getTool('read_chat_memory')?.description).toContain('not ProcedureRun authority')
     expect(router.getTool('read_user_profile')?.description).toContain('never returns active ProcedureRun runtime state')
+    expect((router.getTool('remember')?.inputSchema as { properties?: { scope?: { enum?: string[] } } })?.properties?.scope?.enum).toEqual(['user'])
   })
 
   it('handles get_current_time as a runtime-managed system tool', () => {
@@ -113,9 +137,8 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
 
     const conversationLoop = { buildPrompt: () => 'CORE_PROMPT', filterTools: (tools: unknown[]) => tools } as unknown as ConversationLoop
     const caseLoop = {
-      buildProcedureDefinitionPrompt: () => 'PROCEDURE_DEFINITION',
+      buildProcedurePrompt: () => 'PROCEDURE_DEFINITION',
     } as unknown as CaseAgentLoop
-    const chatMemory = { getTodos: () => [], getConfirmedFacts: () => ({}) } as unknown as ChatMemoryManager
     const beforeCtx: PromptSelectorContext = {
       isCaseActive: false,
       isConsultation: false,
@@ -124,7 +147,6 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
       nudgeCount: 0,
       conversationLoop,
       caseLoop: null,
-      chatMemory,
       allTools: toolsBefore,
     }
     const before = selectPromptAndTools(beforeCtx)
@@ -133,7 +155,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     startProcedureRun(caseId, {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
-      procedure: { steps: [{ id: 'lookup', action: 'use', target: 'get_latest_deposit' }] },
+      procedure: toolProcedure('get_latest_deposit'),
     })
     const tail = procedureRunPromptTail(caseId)
     const after = selectPromptAndTools({
@@ -147,6 +169,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(after.prompt.indexOf('CORE_PROMPT')).toBeLessThan(after.prompt.indexOf('<procedure_run_runtime>'))
     expect(after.prompt).toContain('PROCEDURE_DEFINITION')
     expect(after.prompt).toContain('currentStepId: lookup')
+    expect(after.prompt).not.toContain('action=call_tool')
     expect(after.tools.map((tool) => tool.name)).toEqual(before.tools.map((tool) => tool.name))
     closeSession(caseId)
   })
@@ -159,12 +182,7 @@ describe('R3 HookContext and memory boundaries', () => {
     startProcedureRun(caseId, {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
-      procedure: {
-        steps: [
-          { id: 'lookup', action: 'use', target: 'get_latest_deposit' },
-          { id: 'close', action: 'finalize', target: 'resolved' },
-        ],
-      },
+      procedure: toolProcedure('get_latest_deposit'),
     })
     const loop = makeLoop(caseId)
     const ctx = (loop as unknown as { buildHookContext: Function }).buildHookContext('PreToolUse', {
@@ -177,13 +195,17 @@ describe('R3 HookContext and memory boundaries', () => {
     closeSession(caseId)
   })
 
-  it('remember(scope="chat") feeds read_chat_memory and rejects ProcedureRun authority keys', async () => {
+  it('read_chat_memory returns context signals only, and remember(scope="chat") rejects structured fact writes', async () => {
     const caseId = 'r3-chat-memory'
     recordInitialInputEvent(caseId, { content: 'deposit missing' })
     startProcedureRun(caseId, {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
-      procedure: { steps: [{ id: 'lookup', action: 'use', target: 'get_latest_deposit' }] },
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [{ id: 'lookup', title: 'Lookup deposit', guidance: 'Check the latest deposit.', actions: [{ id: 'lookup_tool', kind: 'call_tool', label: 'Check latest deposit', toolName: 'get_latest_deposit' }] }],
+      },
     })
     const loop = makeLoop(caseId)
 
@@ -194,14 +216,16 @@ describe('R3 HookContext and memory boundaries', () => {
     })
     const read = (loop as unknown as { readChatMemoryToolOutput: Function }).readChatMemoryToolOutput()
 
-    expect(remember.writtenKeys).toEqual(['memberId'])
-    expect(remember.rejectedKeys.sort()).toEqual(['currentStepId', 'needsReconcile'].sort())
-    expect(read.confirmedFacts).toEqual({ memberId: 'M123' })
+    expect(remember.ok).toBe(false)
+    expect(remember.writtenKeys).toEqual([])
+    expect(remember.rejectedKeys.sort()).toEqual(['currentStepId', 'memberId', 'needsReconcile'].sort())
+    expect(read).not.toHaveProperty('contextMap')
+    expect(read).not.toHaveProperty('contextMapAvailable')
     expect(JSON.stringify(read)).not.toContain('currentStepId')
     closeSession(caseId)
   })
 
-  it('hides confirmedFacts and rejects chat fact writes on Procedure v2 runs', async () => {
+  it('keeps read_chat_memory free of raw context blobs and rejects chat writes on Procedure v2 runs', async () => {
     const caseId = 'r3-v2-memory-boundary'
     recordInitialInputEvent(caseId, { content: 'I need help with a deposit page' })
     startProcedureRun(caseId, {
@@ -231,9 +255,9 @@ describe('R3 HookContext and memory boundaries', () => {
     const read = (loop as unknown as { readChatMemoryToolOutput: Function }).readChatMemoryToolOutput()
 
     expect(remember.ok).toBe(false)
-    expect(String(remember.error)).toContain('Procedure v2')
-    expect(read.confirmedFactsAvailable).toBe(false)
-    expect(read.confirmedFacts).toEqual({})
+    expect(String(remember.error)).toContain('Chat-scoped fact writes are no longer supported')
+    expect(read).not.toHaveProperty('contextMapAvailable')
+    expect(read).not.toHaveProperty('contextMap')
     closeSession(caseId)
   })
 

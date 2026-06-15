@@ -37,36 +37,68 @@
       "enabled": true,
       "maxAutoTurns": 8,
       "procedure": {
+        "version": "v2",
+        "whenToUse": "Use when a deposit or top-up was charged but did not appear in the customer's balance.",
+        "overview": "Collect the deposit details, inspect live platform evidence, and hand off only when the evidence conflicts or requires manual review.",
+        "handoffGuidance": "Escalate to payment_ops when platform evidence conflicts with the customer report or a manual provider review is required.",
         "steps": [
           {
             "id": "collect_deposit_details",
-            "action": "ask",
-            "target": "deposit_details",
+            "title": "Collect deposit details",
             "guidance": "Collect member id, amount, currency, payment method, and approximate deposit time.",
-            "required": true
+            "actions": [
+              {
+                "id": "ask_deposit_details",
+                "kind": "ask",
+                "label": "Ask for deposit details",
+                "fields": ["member_id", "amount", "currency", "payment_method", "approximate_time"]
+              }
+            ]
           },
           {
             "id": "lookup_latest_deposit",
-            "action": "use",
-            "target": "get_latest_deposit",
+            "title": "Check latest deposit evidence",
             "guidance": "Read the latest platform-side deposit record before drawing a conclusion.",
-            "required": true
-          },
-          {
-            "id": "decide_deposit_status",
-            "action": "decide",
-            "guidance": "Compare the customer claim with platform evidence and mark conflicts for human review."
-          },
-          {
-            "id": "handoff_if_conflict",
-            "action": "escalate",
-            "target": "create_human_task",
-            "when": "Platform evidence is conflicting, unavailable, or requires manual payment-ops action."
+            "actions": [
+              {
+                "id": "lookup_latest_deposit_action",
+                "kind": "call_tool",
+                "label": "Check latest deposit",
+                "toolName": "get_latest_deposit"
+              }
+            ],
+            "branches": [
+              {
+                "id": "handoff_if_conflict",
+                "kind": "if",
+                "condition": {
+                  "kind": "llm_eval",
+                  "prompt": "Based on the deposit evidence and the customer report, is there a conflict or manual-review need that requires payment_ops handoff?"
+                },
+                "actions": [
+                  {
+                    "id": "request_payment_ops_review",
+                    "kind": "request_human_handoff",
+                    "label": "Request payment ops review",
+                    "queue": "payment_ops"
+                  }
+                ]
+              }
+            ],
+            "completionGuidance": "Do not finalize until the deposit evidence is reconciled or a human handoff is persisted."
           },
           {
             "id": "explain_deposit_next_step",
-            "action": "finalize",
-            "guidance": "Explain the current status, cite evidence, and avoid promising compensation."
+            "title": "Explain the next step",
+            "guidance": "Explain the current status, cite evidence, and avoid promising compensation.",
+            "actions": [
+              {
+                "id": "finish_deposit_case",
+                "kind": "end",
+                "label": "Finalize deposit answer",
+                "status": "completed"
+              }
+            ]
           }
         ]
       }
@@ -82,25 +114,48 @@
       "enabled": true,
       "maxAutoTurns": 8,
       "procedure": {
+        "version": "v2",
+        "whenToUse": "Use when the customer asks why a withdrawal is pending, rejected, or unavailable.",
+        "overview": "Collect withdrawal details, inspect live withdrawal evidence, and explain the safest next step.",
         "steps": [
           {
             "id": "collect_withdrawal_details",
-            "action": "ask",
-            "target": "withdrawal_details",
+            "title": "Collect withdrawal details",
             "guidance": "Collect member id and withdrawal id if they are missing.",
-            "required": true
+            "actions": [
+              {
+                "id": "ask_withdrawal_details",
+                "kind": "ask",
+                "label": "Ask for withdrawal details",
+                "fields": ["member_id", "withdrawal_id"]
+              }
+            ]
           },
           {
             "id": "lookup_withdrawal_status",
-            "action": "use",
-            "target": "get_withdrawal_status",
+            "title": "Check withdrawal status",
             "guidance": "Check current withdrawal status and turnover requirements.",
-            "required": true
+            "actions": [
+              {
+                "id": "lookup_withdrawal_status_action",
+                "kind": "call_tool",
+                "label": "Check withdrawal status",
+                "toolName": "get_withdrawal_status"
+              }
+            ]
           },
           {
             "id": "explain_withdrawal_next_step",
-            "action": "finalize",
-            "guidance": "Explain status and next step without making unsupported payout promises."
+            "title": "Explain the next step",
+            "guidance": "Explain status and next step without making unsupported payout promises.",
+            "actions": [
+              {
+                "id": "finish_withdrawal_case",
+                "kind": "end",
+                "label": "Finalize withdrawal answer",
+                "status": "completed"
+              }
+            ]
           }
         ]
       }
@@ -113,12 +168,69 @@
       "caseTypeType": "deposit_issue",
       "enabled": true,
       "procedure": {
+        "version": "v2",
+        "whenToUse": "Use when a deposit or top-up was charged but did not appear in the customer's balance.",
+        "overview": "Collect the deposit details, inspect live platform evidence, and hand off only when the evidence conflicts or requires manual review.",
+        "handoffGuidance": "Escalate to payment_ops when platform evidence conflicts with the customer report or a manual provider review is required.",
         "steps": [
-          { "id": "collect_deposit_details", "action": "ask", "target": "deposit_details", "guidance": "Collect member id, amount, currency, payment method, and approximate deposit time.", "required": true },
-          { "id": "lookup_latest_deposit", "action": "use", "target": "get_latest_deposit", "guidance": "Read the latest platform-side deposit record before drawing a conclusion.", "required": true },
-          { "id": "decide_deposit_status", "action": "decide", "guidance": "Compare the customer claim with platform evidence and mark conflicts for human review." },
-          { "id": "handoff_if_conflict", "action": "escalate", "target": "create_human_task", "when": "Platform evidence is conflicting, unavailable, or requires manual payment-ops action." },
-          { "id": "explain_deposit_next_step", "action": "finalize", "guidance": "Explain the current status, cite evidence, and avoid promising compensation." }
+          {
+            "id": "collect_deposit_details",
+            "title": "Collect deposit details",
+            "guidance": "Collect member id, amount, currency, payment method, and approximate deposit time.",
+            "actions": [
+              {
+                "id": "ask_deposit_details",
+                "kind": "ask",
+                "label": "Ask for deposit details",
+                "fields": ["member_id", "amount", "currency", "payment_method", "approximate_time"]
+              }
+            ]
+          },
+          {
+            "id": "lookup_latest_deposit",
+            "title": "Check latest deposit evidence",
+            "guidance": "Read the latest platform-side deposit record before drawing a conclusion.",
+            "actions": [
+              {
+                "id": "lookup_latest_deposit_action",
+                "kind": "call_tool",
+                "label": "Check latest deposit",
+                "toolName": "get_latest_deposit"
+              }
+            ],
+            "branches": [
+              {
+                "id": "handoff_if_conflict",
+                "kind": "if",
+                "condition": {
+                  "kind": "llm_eval",
+                  "prompt": "Based on the deposit evidence and the customer report, is there a conflict or manual-review need that requires payment_ops handoff?"
+                },
+                "actions": [
+                  {
+                    "id": "request_payment_ops_review",
+                    "kind": "request_human_handoff",
+                    "label": "Request payment ops review",
+                    "queue": "payment_ops"
+                  }
+                ]
+              }
+            ],
+            "completionGuidance": "Do not finalize until the deposit evidence is reconciled or a human handoff is persisted."
+          },
+          {
+            "id": "explain_deposit_next_step",
+            "title": "Explain the next step",
+            "guidance": "Explain the current status, cite evidence, and avoid promising compensation.",
+            "actions": [
+              {
+                "id": "finish_deposit_case",
+                "kind": "end",
+                "label": "Finalize deposit answer",
+                "status": "completed"
+              }
+            ]
+          }
         ]
       }
     },
@@ -128,10 +240,49 @@
       "caseTypeType": "withdrawal_status",
       "enabled": true,
       "procedure": {
+        "version": "v2",
+        "whenToUse": "Use when the customer asks why a withdrawal is pending, rejected, or unavailable.",
+        "overview": "Collect withdrawal details, inspect live withdrawal evidence, and explain the safest next step.",
         "steps": [
-          { "id": "collect_withdrawal_details", "action": "ask", "target": "withdrawal_details", "guidance": "Collect member id and withdrawal id if they are missing.", "required": true },
-          { "id": "lookup_withdrawal_status", "action": "use", "target": "get_withdrawal_status", "guidance": "Check current withdrawal status and turnover requirements.", "required": true },
-          { "id": "explain_withdrawal_next_step", "action": "finalize", "guidance": "Explain status and next step without making unsupported payout promises." }
+          {
+            "id": "collect_withdrawal_details",
+            "title": "Collect withdrawal details",
+            "guidance": "Collect member id and withdrawal id if they are missing.",
+            "actions": [
+              {
+                "id": "ask_withdrawal_details",
+                "kind": "ask",
+                "label": "Ask for withdrawal details",
+                "fields": ["member_id", "withdrawal_id"]
+              }
+            ]
+          },
+          {
+            "id": "lookup_withdrawal_status",
+            "title": "Check withdrawal status",
+            "guidance": "Check current withdrawal status and turnover requirements.",
+            "actions": [
+              {
+                "id": "lookup_withdrawal_status_action",
+                "kind": "call_tool",
+                "label": "Check withdrawal status",
+                "toolName": "get_withdrawal_status"
+              }
+            ]
+          },
+          {
+            "id": "explain_withdrawal_next_step",
+            "title": "Explain the next step",
+            "guidance": "Explain status and next step without making unsupported payout promises.",
+            "actions": [
+              {
+                "id": "finish_withdrawal_case",
+                "kind": "end",
+                "label": "Finalize withdrawal answer",
+                "status": "completed"
+              }
+            ]
+          }
         ]
       }
     }

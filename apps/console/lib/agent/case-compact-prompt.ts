@@ -10,7 +10,7 @@ export const CASE_COMPACT_PROMPT = `Summarize this conversation as a working-sta
 
 Output in this order:
 
-1. Confirmed Facts: Every fact the agent has verified or the user has confirmed during this conversation. One fact per line. Include identifiers, amounts, dates, statuses — the operational data the agent relies on to make decisions.
+1. Context Map: Every business fact the agent has verified or the user has confirmed during this conversation. One fact per line. Include identifiers, amounts, dates, statuses — the operational data the agent relies on to make decisions.
 
 2. Tools Run: List every tool call made in this conversation, with the tool name and a one-line summary of what it returned. Include errors and empty results — they are decision-relevant.
 
@@ -23,7 +23,7 @@ Output in this order:
 CRITICAL RULES:
 - This is a CASE summary, NOT a user portrait. Do NOT describe "who the user is", their preferences, their history, their personality, or their communication style. That belongs in the profile system — never in a case compaction.
 - Do NOT include a "portrait" section. Do NOT describe the user's identity traits, habits, or long-term patterns.
-- If the token budget is tight, prioritize sections 1-3 (confirmed facts, tools run, open items) over sections 4-5.
+- If the token budget is tight, prioritize sections 1-3 (context map, tools run, open items) over sections 4-5.
 
 COMPRESSION RULES:
 - Facts older than 7 days: one-line summary only.

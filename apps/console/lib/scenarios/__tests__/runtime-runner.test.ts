@@ -7,6 +7,7 @@ vi.mock('@/lib/agent/playground-runner', () => ({
   runPlaygroundTurn: vi.fn(),
 }))
 
+import { runPlaygroundTurn } from '@/lib/agent/playground-runner'
 import { buildRuntimeEvidence, runScenarioAgentRuntime } from '../runtime-runner'
 
 const scenario: SavedScenario = {
@@ -22,6 +23,8 @@ const scenario: SavedScenario = {
     hooks: [{ hookName: 'review_lookup_result', checkpoint: 'PostToolUse', decision: 'escalate' }],
     humanTransfer: true,
     finalStatus: 'waiting_human',
+    procedureStatus: 'completed',
+    procedureOutcome: 'handed_off',
     requiredPhrases: ['human specialist'],
     forbiddenPhrases: ['guaranteed compensation'],
   },
@@ -137,6 +140,8 @@ describe('runtime-backed Scenario evidence', () => {
     })
     expect(evidence.hookDecisions?.[0]).toMatchObject({ hookName: 'review_lookup_result', checkpoint: 'PostToolUse', decision: 'escalate' })
     expect(evidence.humanTransfer).toBe(true)
+    expect(evidence.procedureStatus).toBeUndefined()
+    expect(evidence.procedureOutcome).toBeUndefined()
     expect(evidence.runtime?.staleEvidence).toHaveLength(1)
     expect(evidence.runtime?.reconcileEvidence).toHaveLength(1)
     expect(evidence.runtime?.transition).toBe('waiting_human')
@@ -189,9 +194,11 @@ describe('runtime-backed Scenario evidence', () => {
           runId: 'run-1',
           procedureId: 'deposit_issue',
           displayName: 'Deposit',
-          status: 'paused',
-          reason: 'Waiting for human handoff task task-1.',
+          status: 'completed',
+          outcome: 'handed_off',
+          reason: 'Finalized after human handoff task task-1.',
           version: 'v2',
+          updatedAt: '2026-06-10T00:00:02.000Z',
           currentStepId: null,
           blockers: [],
           inputs: [{ eventId: 'evt-1', inputEpoch: 1, source: 'customer_message', origin: 'customer', createdAt: '2026-06-10T00:00:00.000Z', content: 'Where is the deposit page?' }],
@@ -205,10 +212,13 @@ describe('runtime-backed Scenario evidence', () => {
     expect(evidence.runtime?.procedureRuns?.[0]).toMatchObject({
       procedureId: 'deposit_issue',
       version: 'v2',
-      status: 'paused',
-      reason: 'Waiting for human handoff task task-1.',
+      status: 'completed',
+      outcome: 'handed_off',
+      reason: 'Finalized after human handoff task task-1.',
       currentStepId: null,
     })
+    expect(evidence.procedureStatus).toBe('completed')
+    expect(evidence.procedureOutcome).toBe('handed_off')
     expect(evidence.runtime?.procedureRuns?.[0]?.evaluations?.[0]).toMatchObject({
       decision: 'matched',
     })
@@ -230,12 +240,15 @@ describe('runtime-backed Scenario evidence', () => {
           handoff: [{ required: true, target: 'human' }],
           finalResponse: 'A human specialist will review this safely.',
           finalStatus: 'waiting_human',
+          procedureStatus: 'completed',
+          procedureOutcome: 'handed_off',
           runtime: {
             procedureRuns: [{
               runId: 'run-1',
               procedureId: 'deposit_issue',
               displayName: 'Deposit',
               status: 'completed',
+              outcome: 'handed_off',
               version: 'v2',
               currentStepId: 'handoff',
               blockers: [],
@@ -254,5 +267,127 @@ describe('runtime-backed Scenario evidence', () => {
     expect(receipt.evidence.caseType).toBe('deposit_not_credited')
     expect(receipt.evidence.runtime?.procedureRuns?.[0]?.procedureId).toBe('deposit_issue')
     expect(receipt.failureReasons).toEqual([])
+  })
+
+  it('derives runtime receipt truth from structured Playground trace metadata instead of hardcoding mocked', async () => {
+    vi.mocked(runPlaygroundTurn).mockImplementationOnce(async function* () {
+      yield {
+        type: 'session_init',
+        data: { chatId: 'chat-runtime', caseId: 'case-runtime' },
+        timestamp: '2026-06-10T00:00:00.000Z',
+      }
+      yield {
+        type: 'tool_executing',
+        data: { name: 'faq_lookup_default', input: { query: 'deposit help' } },
+        timestamp: '2026-06-10T00:00:00.500Z',
+      }
+      yield {
+        type: 'trace',
+        data: {
+          turnId: 'trace-runtime',
+          caseType: 'deposit_not_credited',
+          reply: 'Here is the deposit help article.',
+          blocked: false,
+          trace: [
+            {
+              stage: 'Knowledge retrieval',
+              source: 'knowledge',
+              status: 'info',
+              fired: true,
+              ms: 50,
+              summary: 'Tool: faq_lookup_default',
+              detail: [['tool_call', 'faq_lookup_default']],
+              runtimeTruth: {
+                model: 'deepseek-v4-flash',
+                imageSupport: {
+                  status: 'unsupported',
+                  label: 'Unsupported',
+                  source: 'configured_model_registry',
+                },
+                executionSurface: {
+                  mode: 'runtime_only',
+                  label: 'Runtime-backed surface',
+                },
+                toolSummary: {
+                  mockedDryRun: 0,
+                  runtimeBacked: 1,
+                  runtimeManaged: 0,
+                  staticFixture: 0,
+                  unknown: 0,
+                },
+                warnings: [],
+              },
+            },
+          ],
+          rawTrace: [
+            {
+              caseId: 'case-runtime',
+              actionType: 'tool_call',
+              title: 'Tool called: faq_lookup_default',
+              payload: JSON.stringify({
+                toolName: 'faq_lookup_default',
+                input: { query: 'deposit help' },
+                knowledgeSourceId: 'ks_faq',
+                knowledgeSourceName: 'FAQ',
+                executionTruth: {
+                  effectiveMode: 'runtime_backed',
+                  label: 'Runtime-backed knowledge tool',
+                  dryRun: false,
+                  definitionMode: 'http',
+                  toolCategory: 'system_info',
+                },
+              }),
+              createdAt: '2026-06-10T00:00:00.600Z',
+            },
+            {
+              caseId: 'case-runtime',
+              actionType: 'tool_result',
+              title: 'Tool: faq_lookup_default',
+              payload: JSON.stringify({
+                toolName: 'faq_lookup_default',
+                input: { query: 'deposit help' },
+                output: { hits: [{ id: 'faq-1', title: 'Deposit FAQ' }] },
+                knowledgeSourceId: 'ks_faq',
+                knowledgeSourceName: 'FAQ',
+                executionTruth: {
+                  effectiveMode: 'runtime_backed',
+                  label: 'Runtime-backed knowledge tool',
+                  dryRun: false,
+                  definitionMode: 'http',
+                  toolCategory: 'system_info',
+                },
+              }),
+              createdAt: '2026-06-10T00:00:01.000Z',
+            },
+          ],
+          resolvedModel: 'deepseek-v4-flash',
+          applicableStages: ['Knowledge retrieval', 'Model generation'],
+          totalMs: 100,
+        },
+        timestamp: '2026-06-10T00:00:01.100Z',
+      }
+      yield {
+        type: 'message_stop',
+        data: { reason: 'next_turn' },
+        timestamp: '2026-06-10T00:00:01.200Z',
+      }
+    })
+
+    const receipt = await runScenarioAgentRuntime(scenario, {
+      orgId: 'org-1',
+      agentConfigId: 'agent-1',
+    })
+
+    expect(receipt.toolExecutionMode).toBe('runtime')
+    expect(receipt.evidence.toolCalls?.some((call) =>
+      call.name === 'faq_lookup_default'
+      && call.executionMode === 'runtime'
+      && (call as Record<string, unknown>).knowledgeSourceId === 'ks_faq'
+    )).toBe(true)
+    expect(receipt.evidence.knowledgeHits?.[0]).toMatchObject({
+      source: 'FAQ',
+      toolName: 'faq_lookup_default',
+      title: 'Deposit FAQ',
+    })
   })
 })

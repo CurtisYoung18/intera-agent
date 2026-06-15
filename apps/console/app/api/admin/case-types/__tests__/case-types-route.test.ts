@@ -2,6 +2,7 @@
 // Scoped by agentConfigId (not orgId).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { LEGACY_PROCEDURE_MIGRATION_SCRIPT } from '@intera/shared/contracts/case-types'
 
 const h = vi.hoisted(() => {
   const caseTypeRow = (overrides: Record<string, unknown>) => ({
@@ -194,15 +195,39 @@ describe('G1 — Uniform envelope', () => {
     expect(res.status).toBe(400)
   })
 
+  it('POST rejects legacy procedure payloads with migration guidance', async () => {
+    const res = await POST(makeRequest({
+      agentConfigId: 'agent_default_v1',
+      type: 'legacy_procedure_case',
+      procedure: { steps: [{ id: 'finish', action: 'finalize' }] },
+    }))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(String(body.error.fields?.procedure ?? '')).toContain(LEGACY_PROCEDURE_MIGRATION_SCRIPT)
+    expect(res.status).toBe(400)
+  })
+
   it('POST accepts procedure payloads', async () => {
     const res = await POST(makeRequest({
       agentConfigId: 'agent_default_v1',
       type: 'procedure_case',
-      procedure: { steps: [{ id: 'finish', action: 'finalize' }] },
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issue',
+        steps: [
+          {
+            id: 'step_1',
+            title: 'Collect details',
+            guidance: 'Ask for the missing details.',
+            actions: [{ id: 'ask_member', kind: 'ask', label: 'Ask member id', fields: ['member_id'] }],
+          },
+        ],
+      },
     }))
     const body = await res.json()
     expect(body.ok).toBe(true)
-    expect(body.data.caseType.procedure).toContain('"finish"')
+    expect(body.data.caseType.procedure).toContain('"step_1"')
   })
 })
 
@@ -212,9 +237,15 @@ describe('G4 — Procedure payload', () => {
       makeRequestForAgent('agent_default_v1', {
         agentConfigId: 'agent_default_v1',
         procedure: {
-        steps: [
-            { id: 'step_1', action: 'use', target: 'user', guidance: 'collect user details', when: 'always', required: true },
-            { id: 'step_2', action: 'ask', target: 'ops', guidance: 'send alert', when: 'error', required: false },
+          version: 'v2',
+          whenToUse: 'Use for updated refund flow',
+          steps: [
+            {
+              id: 'step_1',
+              title: 'Collect user details',
+              guidance: 'Ask for the missing details first.',
+              actions: [{ id: 'ask_user', kind: 'ask', label: 'Ask user details', fields: ['member_id'] }],
+            },
           ],
         },
       }),
@@ -223,6 +254,21 @@ describe('G4 — Procedure payload', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.caseType.procedure).toContain('"step_1"')
+  })
+
+  it('PUT rejects legacy procedure payloads with migration guidance', async () => {
+    const res = await PUT(
+      makeRequestForAgent('agent_default_v1', {
+        agentConfigId: 'agent_default_v1',
+        procedure: { steps: [{ id: 'step_1', action: 'use', target: 'get_latest_deposit' }] },
+      }),
+      routeCtx('refund_request'),
+    )
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(String(body.error.fields?.procedure ?? '')).toContain(LEGACY_PROCEDURE_MIGRATION_SCRIPT)
+    expect(res.status).toBe(400)
   })
 })
 

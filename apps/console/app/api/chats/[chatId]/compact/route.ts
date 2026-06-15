@@ -58,7 +58,7 @@ export const POST = defineRoute<void, { chatId: string }>({
       caseIds.map(caseId =>
         repo.raw.chatMemory.upsert({
           where: { caseId },
-          create: { caseId, summary, confirmedFacts: '{}', missingFacts: '[]', toolsCalled: '[]', toolResults: '{}', keyEvents: '[]', humanTaskStatus: 'none' },
+          create: { caseId, summary, contextMap: '{}', missingFacts: '[]', toolsCalled: '[]', toolResults: '{}', keyEvents: '[]', humanTaskStatus: 'none' },
           update: { summary },
         }),
       ),

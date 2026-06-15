@@ -31,7 +31,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
-import { isProcedureV2Definition, parseProcedure, parseProcedureDefinition } from '@intera/shared/contracts/case-types'
+import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 
 // Verify env vars at module load (logged once per cold start)
@@ -69,8 +69,7 @@ function schemaFromCaseTypeRow(caseType: {
   maxAutoTurns?: number | null
 }): CaseSchemaConfig {
   const requiredFacts = parseMemoryJson(caseType.requiredFacts) as string[]
-  const procedureDefinition = parseProcedureDefinition(caseType.procedure)
-  const procedure = procedureDefinition ? parseProcedure(caseType.procedure) : null
+  const procedure = parseProcedure(caseType.procedure)
 
   return {
     type: caseType.type,
@@ -82,7 +81,6 @@ function schemaFromCaseTypeRow(caseType: {
     escalateOn: (parseMemoryJson(caseType.escalateOn) as string[]) || [],
     autoCloseConditions: parseMemoryJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
     procedure: procedure ?? undefined,
-    procedureDefinition: procedureDefinition ?? undefined,
     maxAutoTurns: typeof caseType.maxAutoTurns === 'number' ? caseType.maxAutoTurns : undefined,
   }
 }
@@ -695,20 +693,18 @@ export async function POST(request: NextRequest) {
 
         // ── Resolve prompt placeholders with live Console config ──
         const existingMemoryData = existingMemory as Record<string, unknown> | null
-        const existingConfirmedFacts = ((parseMemoryJson(existingMemoryData?.confirmedFacts as string) as Record<string, unknown>) || {})
-        const activeProcedureV2 = !!caseSchema?.procedureDefinition && isProcedureV2Definition(caseSchema.procedureDefinition)
+        const existingContextMap = ((parseMemoryJson(existingMemoryData?.contextMap as string) as Record<string, unknown>) || {})
+        const activeProcedureV2 = !!caseSchema?.procedure
         const resolvedCaseState = existingMemoryData ? {
-          confirmedFacts: { ...existingConfirmedFacts },
           toolsCalled: (parseMemoryJson(existingMemoryData.toolsCalled as string) as string[]) || [],
           missingFacts: (parseMemoryJson(existingMemoryData.missingFacts as string) as string[]) || [],
+          keyEvents: (parseMemoryJson(existingMemoryData.keyEvents as string) as Array<{ at: string; text: string; source: string }>) || [],
+          summary: typeof existingMemoryData.summary === 'string' ? existingMemoryData.summary : '',
         } : undefined
 
-        // Merge form answers into confirmed facts so the system prompt reflects
-        // structured form data — prevents stale DB-only facts from misleading the agent.
-        if (resolvedCaseState && formAnswers && !activeProcedureV2) {
+        if (resolvedCaseState && formAnswers) {
           for (const [key, value] of Object.entries(formAnswers)) {
             if (value && value.trim()) {
-              resolvedCaseState.confirmedFacts[key] = value.trim()
               resolvedCaseState.missingFacts = resolvedCaseState.missingFacts.filter((f) => f !== key)
             }
           }
@@ -717,7 +713,12 @@ export async function POST(request: NextRequest) {
         const agentConfig = await loadAgentConfig(resolvedAgentConfigId)
 
         // Load tool summaries for {{available_tools}} template var
-        const toolSummaries: Array<{ name: string; description: string; needsMemberId: boolean }> = []
+        const toolSummaries: Array<{
+          name: string
+          description: string
+          needsMemberId: boolean
+          knowledgeSourceId?: string
+        }> = []
         try {
           const dbTools = await prisma.tool.findMany({
             where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
@@ -737,6 +738,7 @@ export async function POST(request: NextRequest) {
               name: knowledgeSourceToolName(ks.name, ks.id),
               description: ks.description || `Search the ${ks.name} knowledge base`,
               needsMemberId: false,
+              knowledgeSourceId: ks.id,
             })
           }
           // Include built-in tools not in DB
@@ -757,7 +759,12 @@ export async function POST(request: NextRequest) {
           hasActiveCase: isCaseActive,
           caseSchema,
           caseState: isCaseActive
-            ? { confirmedFacts: resolvedCaseState.confirmedFacts as Record<string, unknown>, toolsCalled: resolvedCaseState.toolsCalled, missingFacts: resolvedCaseState.missingFacts }
+            ? {
+                toolsCalled: resolvedCaseState.toolsCalled,
+                missingFacts: resolvedCaseState.missingFacts,
+                keyEvents: resolvedCaseState.keyEvents,
+                summary: resolvedCaseState.summary,
+              }
             : null,
           sessionBinding: { userId: resolvedUserId, userLabel: userLabel || undefined },
           availableTools: toolSummaries,
@@ -909,11 +916,11 @@ export async function POST(request: NextRequest) {
                   ...(shouldClearFollowupBlocker ? { blocker: null } : {}),
                 },
               })
-              const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : followupMem.confirmedFacts
+              const persistedContextMap = activeProcedureV2 ? existingContextMap : followupMem.contextMap
               await prisma.chatMemory.upsert({
                 where: { caseId: resolvedCaseId },
                 update: {
-                  confirmedFacts: JSON.stringify(persistedConfirmedFacts),
+                  contextMap: JSON.stringify(persistedContextMap),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
                   toolsCalled: JSON.stringify(followupMem.toolsCalled),
                   toolResults: JSON.stringify(followupMem.toolResults),
@@ -923,7 +930,7 @@ export async function POST(request: NextRequest) {
                 },
                 create: {
                   caseId: resolvedCaseId,
-                  confirmedFacts: JSON.stringify(persistedConfirmedFacts),
+                  contextMap: JSON.stringify(persistedContextMap),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
                   toolsCalled: JSON.stringify(followupMem.toolsCalled),
                   toolResults: JSON.stringify(followupMem.toolResults),
@@ -971,7 +978,7 @@ export async function POST(request: NextRequest) {
         // ── Persist case memory — only if real work was done (not casual chat) ──
         const mem = agentLoop.getMemorySummary()
         const hasRealWork = mem.toolsCalled.length > 0 ||
-          Object.keys(mem.confirmedFacts).length > 0 ||
+          Object.keys(mem.contextMap).length > 0 ||
           result.transition !== 'next_turn' ||
           (mem.summary && mem.summary.length > 0) ||
           (mem.caseStatus && mem.caseStatus !== 'created')
@@ -998,11 +1005,11 @@ export async function POST(request: NextRequest) {
                 ...(shouldClearCaseBlocker ? { blocker: null } : {}),
               },
             })
-            const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : mem.confirmedFacts
+            const persistedContextMap = activeProcedureV2 ? existingContextMap : mem.contextMap
             await prisma.chatMemory.upsert({
               where: { caseId: resolvedCaseId },
               update: {
-                confirmedFacts: JSON.stringify(persistedConfirmedFacts),
+                contextMap: JSON.stringify(persistedContextMap),
                 missingFacts: JSON.stringify(mem.missingFacts),
                 toolsCalled: JSON.stringify(mem.toolsCalled),
                 toolResults: JSON.stringify(mem.toolResults),
@@ -1012,7 +1019,7 @@ export async function POST(request: NextRequest) {
               },
               create: {
                 caseId: resolvedCaseId,
-                confirmedFacts: JSON.stringify(persistedConfirmedFacts),
+                contextMap: JSON.stringify(persistedContextMap),
                 missingFacts: JSON.stringify(mem.missingFacts),
                 toolsCalled: JSON.stringify(mem.toolsCalled),
                 toolResults: JSON.stringify(mem.toolResults),

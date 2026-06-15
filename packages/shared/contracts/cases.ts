@@ -55,7 +55,6 @@ export const CaseDetailSchema = z.object({
   resolvedAt: z.string().nullable(),
   memory: z
     .object({
-      confirmedFacts: z.string(),
       missingFacts: z.string(),
       toolsCalled: z.string(),
       toolResults: z.string(),

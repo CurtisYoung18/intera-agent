@@ -34,7 +34,7 @@ describe('Playground safety invariants', () => {
     const { port, cases, memories, messages, traces } = createMemoryPersistence()
 
     await port.ensureCase({ id: 'c1', orgId: 'org1', userId: 'u1', type: 'general', status: 'created', chatId: 'chat1' })
-    await port.saveMemory('c1', { caseId: 'c1', confirmedFacts: '{}', missingFacts: '[]', toolsCalled: '[]', toolResults: '{}', keyEvents: '[]' })
+    await port.saveMemory('c1', { caseId: 'c1', contextMap: '{}', missingFacts: '[]', toolsCalled: '[]', toolResults: '{}', keyEvents: '[]' })
     await port.saveMessages([{ id: 'm1', caseId: 'c1', role: 'user', content: 'hi' }])
     await port.saveTrace({ caseId: 'c1', actionType: 'test', title: 'test trace' })
 

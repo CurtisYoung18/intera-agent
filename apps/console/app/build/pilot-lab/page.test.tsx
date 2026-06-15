@@ -69,6 +69,8 @@ const scenario: SavedScenario = {
     hooks: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
     humanTransfer: true,
     finalStatus: 'waiting_human',
+    procedureStatus: 'completed',
+    procedureOutcome: 'handed_off',
     forbiddenPhrases: ['guaranteed compensation'],
     requiredPhrases: ['human specialist'],
   },
@@ -97,6 +99,8 @@ const runtimeReceipt: ScenarioReceipt = {
     handoff: [{ required: true, target: 'human', reason: 'Needs manual provider review' }],
     finalResponse: 'I checked the available evidence and will transfer this case to a human specialist.',
     finalStatus: 'waiting_human',
+    procedureStatus: 'completed',
+    procedureOutcome: 'handed_off',
   },
   checks: [
     { name: 'tool:get_latest_deposit', passed: true },

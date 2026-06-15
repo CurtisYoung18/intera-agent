@@ -105,6 +105,30 @@ describe('aggregateTraces', () => {
     expect(tools?.events?.[0]?.executionTruth?.label).toBe('Runtime-backed knowledge tool')
   })
 
+  it('maps structured knowledge-tool payloads to Knowledge retrieval even when the tool name has no kb_search_ prefix', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'tool_result',
+        title: 'Tool: faq_lookup_default',
+        payload: JSON.stringify({
+          toolName: 'faq_lookup_default',
+          knowledgeSourceId: 'ks_faq',
+          knowledgeSourceName: 'FAQ',
+          output: { hits: [{ id: 'faq-1', title: 'Deposit FAQ' }] },
+        }),
+        createdAt: new Date(t0 + 55).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, false, ['Knowledge retrieval'])
+    const knowledge = result.find((step) => step.stage === 'Knowledge retrieval')
+
+    expect(knowledge?.fired).toBe(true)
+    expect(knowledge?.events?.[0]?.toolName).toBe('faq_lookup_default')
+    expect(knowledge?.summary).toContain('faq_lookup_default')
+  })
+
   it('uses real llmWallMs from Iteration Snapshot for Model generation ms (AC-C2)', () => {
     const t0 = Date.now()
     const traces = [

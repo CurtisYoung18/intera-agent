@@ -1,37 +1,8 @@
 import { z } from 'zod'
 import type {
-  ProcedureV2Branch as SharedProcedureV2Branch,
   ProcedureCondition as SharedProcedureCondition,
-  ProcedureDefinition as SharedProcedureDefinition,
-  ProcedureV2 as SharedProcedureV2,
   ProcedureV2Action as SharedProcedureV2Action,
-  ProcedureV2Step as SharedProcedureV2Step,
 } from '../types'
-
-export const PROCEDURE_ACTIONS = [
-  'use',
-  'read',
-  'ask',
-  'decide',
-  'tag',
-  'escalate',
-  'finalize',
-] as const
-export const procedureActionSchema = z.enum(PROCEDURE_ACTIONS)
-
-export const procedureStepSchema = z.object({
-  id: z.string().min(1, 'step id is required'),
-  action: procedureActionSchema,
-  target: z.string().optional(),
-  guidance: z.string().optional(),
-  when: z.string().optional(),
-  required: z.boolean().optional(),
-})
-
-export const procedureSchema = z.object({
-  steps: z.array(procedureStepSchema),
-})
-export type ProcedureContract = z.infer<typeof procedureSchema>
 
 export const PROCEDURE_V2_ACTION_KINDS = [
   'ask',
@@ -152,12 +123,10 @@ export const procedureV2Schema = z.object({
 })
 export type ProcedureV2Contract = z.infer<typeof procedureV2Schema>
 
-export const procedureDefinitionSchema = z.union([procedureSchema, procedureV2Schema])
-export type ProcedureDefinitionContract = z.infer<typeof procedureDefinitionSchema>
-
 export const procedureSimulationInputSchema = z.object({
   signals: z.array(procedureRuntimeSignalSchema).default([]),
   toolNames: z.array(z.string()).default([]),
+  knowledgeToolNames: z.array(z.string()).default([]),
   formFields: z.array(z.string()).default([]),
   knowledgeSearches: z.number().int().nonnegative().default(0),
   handoffRequested: z.boolean().default(false),
@@ -184,7 +153,7 @@ export const procedureSimulationReceiptSchema = z.object({
 })
 export type ProcedureSimulationReceiptContract = z.infer<typeof procedureSimulationReceiptSchema>
 
-export function parseProcedureDefinition(json: string | null | undefined): ProcedureDefinitionContract | null {
+export function parseProcedure(json: string | null | undefined): ProcedureV2Contract | null {
   if (!json) return null
   let raw: unknown
   try {
@@ -192,29 +161,8 @@ export function parseProcedureDefinition(json: string | null | undefined): Proce
   } catch {
     return null
   }
-  const parsed = procedureDefinitionSchema.safeParse(raw)
+  const parsed = procedureV2Schema.safeParse(raw)
   return parsed.success ? parsed.data : null
-}
-
-export function isProcedureV2Definition(
-  value: ProcedureDefinitionContract | SharedProcedureDefinition | null | undefined,
-): value is ProcedureV2Contract | SharedProcedureV2 {
-  return !!value && 'version' in value && value.version === 'v2'
-}
-
-export function parseProcedure(json: string | null | undefined): ProcedureContract | null {
-  const definition = parseProcedureDefinition(json)
-  if (!definition) return null
-  return normalizeProcedureDefinition(definition)
-}
-
-export function normalizeProcedureDefinition(
-  definition: ProcedureDefinitionContract | SharedProcedureDefinition,
-): ProcedureContract {
-  if (!isProcedureV2Definition(definition)) return definition
-  return {
-    steps: definition.steps.map((step) => normalizeProcedureV2Step(step)),
-  }
 }
 
 export function buildProcedureConditionLabel(
@@ -254,29 +202,11 @@ export function buildProcedureActionSummary(
   }
 }
 
-export function simulateProcedureDefinition(
-  definition: ProcedureDefinitionContract | SharedProcedureDefinition,
+export function simulateProcedure(
+  definition: ProcedureV2Contract,
   rawInput?: Partial<ProcedureSimulationInputContract>,
 ): ProcedureSimulationReceiptContract {
   const input = procedureSimulationInputSchema.parse(rawInput ?? {})
-  const legacy = normalizeProcedureDefinition(definition)
-  if (!isProcedureV2Definition(definition)) {
-    return procedureSimulationReceiptSchema.parse({
-      status: input.handoffRequested ? 'handoff' : input.ended ? 'completed' : 'ready',
-      activeStepId: legacy.steps.find((step) => !toolMatchForLegacyStep(step, input.toolNames, input.knowledgeSearches, input.handoffRequested, input.ended))?.id
-        ?? legacy.steps[legacy.steps.length - 1]?.id,
-      steps: legacy.steps.map((step, index) => ({
-        stepId: step.id,
-        title: `${index + 1}. ${step.action}${step.target ? ` ${step.target}` : ''}`,
-        status: toolMatchForLegacyStep(step, input.toolNames, input.knowledgeSearches, input.handoffRequested, input.ended)
-          ? 'completed'
-          : index === 0 ? 'active' : 'pending',
-      })),
-      notes: [],
-      matchedSignals: input.signals,
-    })
-  }
-
   const steps: ProcedureSimulationStepContract[] = []
   const notes: string[] = []
   let status: ProcedureSimulationReceiptContract['status'] = 'ready'
@@ -337,67 +267,10 @@ export function simulateProcedureDefinition(
   })
 }
 
-function normalizeProcedureV2Step(
-  step: ProcedureV2StepContract | SharedProcedureV2Step,
-): z.infer<typeof procedureStepSchema> {
-  const primaryBranch = step.branches?.[0]
-  const primaryAction = step.actions?.[0] ?? primaryBranch?.actions?.[0]
-  const normalizedAction = primaryAction
-    ? legacyActionForProcedureV2Action(primaryAction.kind)
-    : 'decide'
-  const normalizedTarget = primaryAction ? targetForProcedureV2Action(primaryAction) : undefined
-  const guidanceParts = [step.title, step.guidance]
-  if (primaryBranch) {
-    guidanceParts.push(`${primaryBranch.kind.toUpperCase()}: ${buildProcedureConditionLabel(primaryBranch.condition)}`)
-  }
-  if (primaryAction?.guidance) guidanceParts.push(primaryAction.guidance)
-  if (step.completionGuidance) guidanceParts.push(`Done when: ${step.completionGuidance}`)
-  return {
-    id: step.id,
-    action: normalizedAction,
-    target: normalizedTarget,
-    guidance: guidanceParts.filter(Boolean).join(' -- '),
-    when: primaryBranch?.condition ? buildProcedureConditionLabel(primaryBranch.condition) : undefined,
-    required: true,
-  }
-}
-
-function legacyActionForProcedureV2Action(kind: ProcedureV2ActionKindContract): z.infer<typeof procedureActionSchema> {
-  switch (kind) {
-    case 'ask':
-      return 'ask'
-    case 'search_knowledge':
-      return 'read'
-    case 'call_tool':
-      return 'use'
-    case 'request_human_handoff':
-      return 'escalate'
-    case 'end':
-      return 'finalize'
-  }
-}
-
-function targetForProcedureV2Action(
-  action: ProcedureV2ActionContract | SharedProcedureV2Action,
-): string | undefined {
-  switch (action.kind) {
-    case 'ask':
-      return action.fields?.length ? action.fields.join(', ') : 'customer_details'
-    case 'search_knowledge':
-      return action.suggestedSources?.[0] || 'knowledge_base'
-    case 'call_tool':
-      return action.toolName
-    case 'request_human_handoff':
-      return action.queue || 'general'
-    case 'end':
-      return action.status
-  }
-}
-
 function findMatchingBranch(
-  step: ProcedureV2StepContract | SharedProcedureV2Step,
+  step: ProcedureV2StepContract,
   input: ProcedureSimulationInputContract,
-): ProcedureV2BranchContract | SharedProcedureV2Branch | undefined {
+): ProcedureV2BranchContract | undefined {
   for (const branch of step.branches ?? []) {
     if (!branch.condition) {
       if (branch.kind === 'else') return branch
@@ -415,7 +288,7 @@ function conditionMatchesSimulation(
   switch (condition.kind) {
     case 'tool_event':
       return input.toolNames.includes(condition.toolName) ||
-        (condition.toolName.startsWith('kb_search_') && input.knowledgeSearches > 0)
+        input.knowledgeToolNames.includes(condition.toolName)
     case 'form_field':
       return input.formFields.includes(condition.field)
     case 'runtime_signal':
@@ -441,19 +314,4 @@ function actionMatchesSimulation(
     case 'end':
       return input.ended
   }
-}
-
-function toolMatchForLegacyStep(
-  step: ProcedureContract['steps'][number],
-  toolNames: string[],
-  knowledgeSearches: number,
-  handoffRequested: boolean,
-  ended: boolean,
-): boolean {
-  if (step.action === 'use' && step.target) return toolNames.includes(step.target)
-  if (step.action === 'read') return knowledgeSearches > 0 || (step.target ? toolNames.includes(step.target) : false)
-  if (step.action === 'ask') return true
-  if (step.action === 'escalate') return handoffRequested
-  if (step.action === 'finalize') return ended
-  return false
 }

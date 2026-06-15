@@ -1,87 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import {
-  PROCEDURE_ACTIONS,
   PROCEDURE_V2_ACTION_KINDS,
   buildProcedureConditionLabel,
-  isProcedureV2Definition,
-  normalizeProcedureDefinition,
-  procedureActionSchema,
-  procedureDefinitionSchema,
-  procedureStepSchema,
-  procedureSchema,
   parseProcedure,
-  parseProcedureDefinition,
   procedureV2Schema,
-  simulateProcedureDefinition,
+  simulateProcedure,
 } from '../case-types'
-
-// Procedure contract guards: ordered steps with a closed action vocabulary.
-
-describe('Procedure contract (Phase 1)', () => {
-  it('exposes the closed action vocabulary', () => {
-    expect([...PROCEDURE_ACTIONS].sort()).toEqual(
-      ['ask', 'decide', 'escalate', 'finalize', 'read', 'tag', 'use'],
-    )
-    expect(procedureActionSchema.safeParse('use').success).toBe(true)
-  })
-
-  it('round-trips a valid procedure', () => {
-    const proc = {
-      steps: [
-        { id: 'ask_member', action: 'ask', target: 'member_id', required: true },
-        {
-          id: 'check_deposit',
-          action: 'use',
-          target: 'get_latest_deposit',
-          guidance: 'Look up the latest deposit',
-          when: 'only if balance unchanged',
-          required: true,
-        },
-        { id: 'close', action: 'finalize', target: 'resolved' },
-      ],
-    }
-    const parsed = procedureSchema.parse(proc)
-    expect(parsed.steps).toHaveLength(3)
-    expect(parsed.steps[1]).toEqual({
-      id: 'check_deposit',
-      action: 'use',
-      target: 'get_latest_deposit',
-      guidance: 'Look up the latest deposit',
-      when: 'only if balance unchanged',
-      required: true,
-    })
-  })
-
-  it('rejects an unknown action', () => {
-    expect(procedureStepSchema.safeParse({ id: 's1', action: 'frobnicate' }).success).toBe(false)
-  })
-
-  it('rejects a step missing id', () => {
-    expect(procedureStepSchema.safeParse({ action: 'use', target: 'get_latest_deposit' }).success).toBe(false)
-  })
-
-  it('rejects an empty-string id', () => {
-    expect(procedureStepSchema.safeParse({ id: '', action: 'use' }).success).toBe(false)
-  })
-})
-
-describe('parseProcedure (safe runtime parse)', () => {
-  it('parses a JSON procedure string', () => {
-    const p = parseProcedure('{"steps":[{"id":"a","action":"finalize"}]}')
-    expect(p?.steps[0]).toEqual({ id: 'a', action: 'finalize' })
-  })
-
-  it('returns null for null / empty / malformed JSON', () => {
-    expect(parseProcedure(null)).toBeNull()
-    expect(parseProcedure(undefined)).toBeNull()
-    expect(parseProcedure('')).toBeNull()
-    expect(parseProcedure('{not json')).toBeNull()
-  })
-
-  it('returns null when the shape is invalid (unknown action)', () => {
-    expect(parseProcedure('{"steps":[{"id":"a","action":"nope"}]}')).toBeNull()
-  })
-})
 
 describe('Procedure v2 contract', () => {
   const procedureV2 = {
@@ -129,23 +53,20 @@ describe('Procedure v2 contract', () => {
     )
   })
 
-  it('parses a v2 definition and keeps the rich shape available', () => {
-    const parsed = parseProcedureDefinition(JSON.stringify(procedureV2))
-    expect(parsed && isProcedureV2Definition(parsed)).toBe(true)
-    expect(isProcedureV2Definition(parsed) ? parsed.whenToUse : '').toContain('missing deposit')
-  })
-
-  it('normalizes a v2 definition into the legacy ordered-step runtime shape for compatibility', () => {
-    const normalized = normalizeProcedureDefinition(procedureDefinitionSchema.parse(procedureV2))
-    expect(normalized.steps).toHaveLength(2)
-    expect(normalized.steps[0].action).toBe('ask')
-    expect(normalized.steps[1].action).toBe('use')
-  })
-
-  it('lets parseProcedure stay backward-compatible by returning a normalized step list for v2', () => {
+  it('parses only v2 definitions from storage JSON', () => {
     const parsed = parseProcedure(JSON.stringify(procedureV2))
-    expect(parsed?.steps.map((step) => step.id)).toEqual(['understand_issue', 'investigate'])
-    expect(parsed?.steps[1].target).toBe('get_latest_deposit')
+    expect(parsed?.version).toBe('v2')
+    expect(parsed?.whenToUse).toContain('missing deposit')
+  })
+
+  it('rejects legacy step-list JSON from the v2 parser', () => {
+    expect(parseProcedure('{"steps":[{"id":"ask_member","action":"ask"}]}')).toBeNull()
+  })
+
+  it('keeps v2 action semantics explicit instead of collapsing steps into legacy action strings', () => {
+    const parsed = procedureV2Schema.parse(procedureV2)
+    expect(parsed.steps[0].actions.map((action) => action.kind)).toEqual(['ask', 'search_knowledge'])
+    expect(parsed.steps[1].actions.map((action) => action.kind)).toEqual(['call_tool', 'end'])
   })
 
   it('builds readable condition labels for the authoring and preview surfaces', () => {
@@ -154,7 +75,7 @@ describe('Procedure v2 contract', () => {
   })
 
   it('produces a lightweight simulation receipt for preview', () => {
-    const receipt = simulateProcedureDefinition(procedureV2, {
+    const receipt = simulateProcedure(procedureV2, {
       signals: ['explicit_human_request'],
       handoffRequested: true,
     })
@@ -163,6 +84,48 @@ describe('Procedure v2 contract', () => {
       stepId: 'understand_issue',
       status: 'completed',
       matchedBranchId: 'if_human',
+    })
+  })
+
+  it('matches knowledge tool events in simulation from explicit knowledge tool names, not kb_search_ prefixes', () => {
+    const procedureWithKnowledgeEvent = {
+      version: 'v2' as const,
+      whenToUse: 'Use this when a docs lookup tool should drive the next branch.',
+      steps: [
+        {
+          id: 'docs_step',
+          title: 'Search docs',
+          guidance: 'Use the configured docs search tool.',
+          actions: [],
+          branches: [
+            {
+              id: 'docs_hit',
+              kind: 'if' as const,
+              condition: {
+                id: 'docs_tool_hit',
+                kind: 'tool_event' as const,
+                toolName: 'faq_lookup_default',
+                event: 'succeeded' as const,
+              },
+              actions: [
+                { id: 'finish', kind: 'end' as const, label: 'Done', status: 'completed' as const },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+
+    const receipt = simulateProcedure(procedureWithKnowledgeEvent, {
+      knowledgeToolNames: ['faq_lookup_default'],
+      knowledgeSearches: 1,
+      ended: true,
+    })
+
+    expect(receipt.steps[0]).toMatchObject({
+      stepId: 'docs_step',
+      status: 'completed',
+      matchedBranchId: 'docs_hit',
     })
   })
 })

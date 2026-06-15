@@ -16,7 +16,7 @@ export interface CaseRecord {
 
 export interface MemoryRecord {
   caseId: string
-  confirmedFacts?: string
+  contextMap?: string
   missingFacts?: string
   toolsCalled?: string
   toolResults?: string
@@ -97,7 +97,7 @@ export function createPrismaPersistence(): PersistencePort {
       await prisma.chatMemory.upsert({
         where: { caseId },
         update: {
-          confirmedFacts: record.confirmedFacts,
+          contextMap: record.contextMap,
           missingFacts: record.missingFacts,
           toolsCalled: record.toolsCalled,
           toolResults: record.toolResults,
@@ -108,7 +108,7 @@ export function createPrismaPersistence(): PersistencePort {
         },
         create: {
           caseId,
-          confirmedFacts: record.confirmedFacts,
+          contextMap: record.contextMap,
           missingFacts: record.missingFacts,
           toolsCalled: record.toolsCalled,
           toolResults: record.toolResults,

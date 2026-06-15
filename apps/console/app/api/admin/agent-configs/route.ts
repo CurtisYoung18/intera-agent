@@ -18,16 +18,16 @@ export const GET = defineRoute({
     const configs = await repo.agentConfig.findMany({
       orderBy: [{ name: 'asc' }, { version: 'asc' }], select: AGENT_CARD_SELECT,
     })
-    const publisherIds = [...new Set(configs.map((config) => config.publishedBy).filter((value): value is string => Boolean(value)))]
+    const publisherIds = [...new Set(configs.map((config: (typeof configs)[number]) => config.publishedBy).filter((value): value is string => Boolean(value)))]
     const publishers = publisherIds.length > 0
       ? await repo.raw.user.findMany({
           where: { id: { in: publisherIds } },
           select: { id: true, email: true, name: true },
         })
       : []
-    const publishersById = new Map(publishers.map((publisher) => [publisher.id, publisher]))
+    const publishersById = new Map(publishers.map((publisher: (typeof publishers)[number]) => [publisher.id, publisher] as const))
     return apiOk({
-      configs: configs.map((config) => {
+      configs: configs.map((config: (typeof configs)[number]) => {
         const publisher = config.publishedBy ? publishersById.get(config.publishedBy) ?? null : null
         return {
           ...config,

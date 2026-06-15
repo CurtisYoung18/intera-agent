@@ -60,7 +60,6 @@ describe('GET /api/admin/playground/sessions', () => {
       where: {
         orgId: 'org-1',
         userId: 'user-1',
-        type: 'playground',
         chatId: { startsWith: 'pg_agent-1_' },
       },
     }))

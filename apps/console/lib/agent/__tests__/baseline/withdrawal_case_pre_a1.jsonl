@@ -1,6 +1,6 @@
 data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:26:27.098Z"}
 
-data: {"type":"memory_update","data":{"caseId":"case_20260527_032627_57b7c08a","confirmedFacts":{"userReportedNotReceived":true},"missingFacts":[],"skillsCalled":[],"skillResults":{},"keyEvents":[{"at":"2026-05-27T03:26:43.591Z","text":"Fact updated: userReportedNotReceived=true","source":"dashboard"},{"at":"2026-05-27T03:26:43.591Z","text":"User: 我的提现还没到账","source":"heuristic"}],"summary":"","dashboardVersion":1},"timestamp":"2026-05-27T03:26:43.591Z"}
+data: {"type":"memory_update","data":{"caseId":"case_20260527_032627_57b7c08a","contextMap":{"userReportedNotReceived":true},"missingFacts":[],"skillsCalled":[],"skillResults":{},"keyEvents":[{"at":"2026-05-27T03:26:43.591Z","text":"Fact updated: userReportedNotReceived=true","source":"dashboard"},{"at":"2026-05-27T03:26:43.591Z","text":"User: 我的提现还没到账","source":"heuristic"}],"summary":"","dashboardVersion":1},"timestamp":"2026-05-27T03:26:43.591Z"}
 
 data: {"type":"stream_request_start","data":null,"timestamp":"2026-05-27T03:26:43.592Z"}
 
@@ -55,4 +55,3 @@ data: {"type":"skill_result","data":{"name":"request_user_input","status":"compl
 data: {"type":"form_request","data":{"caseId":"case_20260527_032627_57b7c08a","skillCallId":"call_function_wlx88oz4zjg8_1","title":"提现问题咨询","description":"","fields":[{"key":"member_id","label":"会员ID / 登录账号","type":"text","required":true,"placeholder":"请输入您的会员ID或登录账号"},{"key":"issueType","label":"问题类型","type":"select","required":true,"options":["未到账","打码量不足","申请被拒","金额有误","其他"]},{"key":"amount","label":"提现金额（选填）","type":"number","required":false,"placeholder":"如有请填写"}]},"timestamp":"2026-05-27T03:27:10.795Z"}
 
 data: {"type":"message_stop","data":{"transition":"waiting_form"},"timestamp":"2026-05-27T03:27:15.231Z"}
-

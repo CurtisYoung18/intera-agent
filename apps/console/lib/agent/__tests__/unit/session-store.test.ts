@@ -19,6 +19,43 @@ import {
   finalizeProcedureRun,
 } from '../../session-store'
 
+function simpleToolProcedure(toolName: string) {
+  return {
+    version: 'v2' as const,
+    whenToUse: `Use when ${toolName} is needed.`,
+    steps: [
+      {
+        id: 'lookup',
+        title: 'Lookup',
+        guidance: `Call ${toolName}.`,
+        actions: [
+          {
+            id: 'lookup_action',
+            kind: 'call_tool' as const,
+            label: `Call ${toolName}`,
+            toolName,
+          },
+        ],
+        branches: [],
+      },
+      {
+        id: 'close',
+        title: 'Close',
+        guidance: 'Finalize when done.',
+        actions: [
+          {
+            id: 'finish',
+            kind: 'end' as const,
+            label: 'Finish',
+            status: 'completed' as const,
+          },
+        ],
+        branches: [],
+      },
+    ],
+  }
+}
+
 describe('hasSession', () => {
   beforeEach(() => {
     // Clean up any sessions created by other tests
@@ -110,12 +147,7 @@ describe('R3 runtime event protocol', () => {
   it('keeps stale tool results as evidence until reconcile clears the current epoch', () => {
     const caseId = 'r3-stale-tool'
     recordInitialInputEvent(caseId, { content: 'deposit missing' })
-    const procedure = {
-      steps: [
-        { id: 'lookup', action: 'use' as const, target: 'get_latest_deposit', required: true },
-        { id: 'close', action: 'finalize' as const, target: 'resolved' },
-      ],
-    }
+    const procedure = simpleToolProcedure('get_latest_deposit')
     const started = startProcedureRun(caseId, { procedureId: 'deposit_issue', displayName: 'Deposit', procedure, requestId: 'req-1' })
     expect(started.run.currentStepId).toBe('lookup')
 
@@ -144,12 +176,7 @@ describe('R3 runtime event protocol', () => {
     startProcedureRun(caseId, {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
-      procedure: {
-        steps: [
-          { id: 'lookup', action: 'use' as const, target: 'get_latest_deposit', required: true },
-          { id: 'close', action: 'finalize' as const, target: 'resolved' },
-        ],
-      },
+      procedure: simpleToolProcedure('get_latest_deposit'),
       requestId: 'req-empty',
     })
 
@@ -163,19 +190,14 @@ describe('R3 runtime event protocol', () => {
     expect(empty.stale).toBe(false)
     expect(empty.run?.currentStepId).toBe('lookup')
     expect(empty.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('blocked')
-    expect(empty.run?.blockers).toContain('[action:lookup] get_latest_deposit returned no usable result. Ask a clarifying question, retry with a better query, or hand off safely before proceeding.')
+    expect(empty.run?.blockers).toContain('[action:lookup_action] get_latest_deposit returned no usable result. Ask a clarifying question, retry with a better query, or hand off safely before proceeding.')
     closeSession(caseId)
   })
 
   it('does not advance a required step when the tool returned a J1B business failure payload', () => {
     const caseId = 'r3-blocking-tool-result'
     recordInitialInputEvent(caseId, { content: 'withdrawal missing' })
-    const procedure = {
-      steps: [
-        { id: 'lookup', action: 'use' as const, target: 'get_latest_withdrawal', required: true },
-        { id: 'close', action: 'finalize' as const, target: 'resolved' },
-      ],
-    }
+    const procedure = simpleToolProcedure('get_latest_withdrawal')
     startProcedureRun(caseId, { procedureId: 'withdrawal_issue', displayName: 'Withdrawal', procedure, requestId: 'req-1' })
 
     const failed = recordProcedureToolResult(caseId, {
@@ -206,7 +228,7 @@ describe('R3 runtime event protocol', () => {
     const started = startProcedureRun(caseId, {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
-      procedure: { steps: [{ id: 'lookup', action: 'use', target: 'get_latest_deposit' }] },
+      procedure: simpleToolProcedure('get_latest_deposit'),
     })
     recordInitialInputEvent(caseId, { content: 'newer input' })
 
@@ -463,10 +485,72 @@ describe('R3 runtime event protocol', () => {
       toolUseId: 'kb-1',
       basedOnInputEpoch: 2,
       toolOutput: { hits: [{ id: 'faq-1', title: 'Deposit receipt guide' }] },
+      isKnowledgeTool: true,
     })
     expect(knowledge.stale).toBe(false)
     expect(knowledge.run?.signals.find((signal) => signal.signal === 'knowledge_gap')?.active).toBe(false)
     expect(knowledge.run?.steps.find((step) => step.id === 'orient_customer')?.status).toBe('completed')
+    closeSession(caseId)
+  })
+
+  it('clears knowledge-gap blockers for structured knowledge tools even when the tool name has no kb_search_ prefix', () => {
+    const caseId = 'r3-knowledge-metadata'
+    const session = getOrCreateSession(caseId)
+    session.loop = {
+      getToolDefinition(name: string) {
+        if (name !== 'faq_lookup_default') return undefined
+        return {
+          name,
+          description: 'Search FAQ',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+          mode: 'system_managed',
+          isConcurrencySafe: true,
+          enabled: true,
+          knowledgeSourceId: 'ks_faq',
+        }
+      },
+    } as any
+
+    recordInitialInputEvent(caseId, { content: 'deposit missing' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'orient_customer',
+            title: 'Orient the customer',
+            guidance: 'Use knowledge before answering.',
+            actions: [
+              {
+                id: 'knowledge_lookup',
+                kind: 'search_knowledge',
+                label: 'Search FAQ',
+                suggestedSources: ['deposit_faq'],
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    const runBeforeResult = getActiveProcedureRun(caseId)
+    expect(runBeforeResult?.steps.find((step) => step.id === 'orient_customer')?.status).toBe('active')
+
+    const knowledge = recordProcedureToolResult(caseId, {
+      toolName: 'faq_lookup_default',
+      toolUseId: 'faq-hit',
+      basedOnInputEpoch: 1,
+      toolOutput: { hits: [{ title: 'FAQ hit' }] },
+      isKnowledgeTool: true,
+    })
+
+    expect(knowledge.stale).toBe(false)
+    expect(knowledge.run?.steps.find((step) => step.id === 'orient_customer')?.status).toBe('completed')
+    expect(knowledge.run?.evidence.find((entry) => entry.id === 'faq-hit')?.kind).toBe('knowledge')
     closeSession(caseId)
   })
 
@@ -588,7 +672,6 @@ describe('R3 runtime event protocol', () => {
     })
 
     const active = getActiveProcedureRun(caseId)
-    expect(active?.legacyFacts).toEqual({})
     expect(active?.inputs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -644,6 +727,7 @@ describe('R3 runtime event protocol', () => {
       toolUseId: 'kb-empty',
       basedOnInputEpoch: 1,
       toolOutput: { hits: [] },
+      isKnowledgeTool: true,
     })
     expect(knowledge.run?.steps.find((step) => step.id === 'orient_customer')).toMatchObject({
       status: 'blocked',
@@ -658,7 +742,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('pauses the ProcedureRun after persisted handoff and clears stale blockers from prior empty knowledge results', () => {
+  it('finalizes the ProcedureRun after persisted handoff and clears stale blockers from prior empty knowledge results', () => {
     const caseId = 'r3-v2-handoff-terminal'
     recordInitialInputEvent(caseId, { content: 'Where do I find the deposit receipt page?' })
     const started = startProcedureRun(caseId, {
@@ -732,6 +816,7 @@ describe('R3 runtime event protocol', () => {
       toolUseId: 'kb-empty',
       basedOnInputEpoch: 1,
       toolOutput: { hits: [] },
+      isKnowledgeTool: true,
     })
 
     const pendingHandoff = recordProcedureToolResult(caseId, {
@@ -755,15 +840,16 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(getActiveProcedureRun(caseId)).toBeUndefined()
-    const paused = getProcedureRuntime(caseId).pausedProcedureRuns[0]
-    expect(paused).toMatchObject({
+    const completed = getProcedureRuntime(caseId).completedProcedureRuns[0]
+    expect(completed).toMatchObject({
       runId: started.run.runId,
-      status: 'paused',
+      status: 'completed',
       currentStepId: null,
-      reason: 'Waiting for human handoff task task-1.',
+      reason: 'Finalized after human handoff task task-1.',
+      outcome: 'handed_off',
       blockers: [],
     })
-    const step = paused.steps.find((entry) => entry.id === 'guide_or_handoff')
+    const step = completed.steps.find((entry) => entry.id === 'guide_or_handoff')
     expect(step).toMatchObject({
       status: 'completed',
       completionReason: 'Persisted human handoff task task-1 created.',
@@ -777,11 +863,11 @@ describe('R3 runtime event protocol', () => {
       status: 'skipped',
       reason: 'Another branch already matched.',
     })
-    expect(paused.evidence.find((entry) => entry.id === 'handoff-1')?.metadata).toMatchObject({
+    expect(completed.evidence.find((entry) => entry.id === 'handoff-1')?.metadata).toMatchObject({
       outcome: 'succeeded',
       output: expect.objectContaining({ persisted: true }),
     })
-    expect(persistedHandoff.run?.status).toBe('paused')
+    expect(persistedHandoff.run?.status).toBe('completed')
     expect(persistedHandoff.run?.blockers).toEqual([])
     closeSession(caseId)
   })
