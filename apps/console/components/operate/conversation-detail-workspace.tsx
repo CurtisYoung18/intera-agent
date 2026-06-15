@@ -27,7 +27,7 @@ import {
   summarizeConversationSourceTruth,
   summarizeToolPairing,
 } from '@/lib/operate/runtime-truth'
-import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
+import type { ChatDeleteResponse } from '@intera/shared/contracts/chats'
 import type { ContentBlock } from '@intera/shared/types'
 
 interface MsgItem {
@@ -49,6 +49,7 @@ function normalizeTraceActionType(actionType: string): string {
 interface ChatSession {
   chatId: string; userId: string; cases: CaseSummary[]
   messageCount: number; lastActivity: string; hasHumanTask: boolean
+  externalChatId?: string | null
 }
 
 interface TraceItem {
@@ -117,6 +118,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   const isZh = locale === 'zh'
 
   const [session, setSession] = useState<ChatSession | null>(null)
+  const [resolvedChatId, setResolvedChatId] = useState(decodedChatId)
   const [messages, setMessages] = useState<MsgItem[]>([])
   const [traces, setTraces] = useState<TraceItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -131,10 +133,12 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   const [updatingProfile, setUpdatingProfile] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  const activeChatId = resolvedChatId || decodedChatId
+
   const loadMemory = async () => {
     setMemoryLoading(true)
     try {
-      const r = await apiClient(`/api/chats/${encodeURIComponent(decodedChatId)}/memory`)
+      const r = await apiClient(`/api/chats/${encodeURIComponent(activeChatId)}/memory`)
       setMemoryData(r.data)
     } catch { /* ignore */ }
     finally { setMemoryLoading(false) }
@@ -148,7 +152,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     setCompacting(true)
     setCompactResult(null)
     try {
-      const r = await apiClient(`/api/chats/${encodeURIComponent(decodedChatId)}/compact`, { method: 'POST' })
+      const r = await apiClient(`/api/chats/${encodeURIComponent(activeChatId)}/compact`, { method: 'POST' })
       setCompactResult(r.data)
       loadMemory()
     } catch { setCompactResult({ error: 'Compact failed' }) }
@@ -158,7 +162,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     setUpdatingProfile(true)
     setProfileResult(null)
     try {
-      const r = await apiClient(`/api/chats/${encodeURIComponent(decodedChatId)}/update-profile`, { method: 'POST' })
+      const r = await apiClient(`/api/chats/${encodeURIComponent(activeChatId)}/update-profile`, { method: 'POST' })
       setProfileResult(r.data)
     } catch { setProfileResult({ error: 'Update failed' }) }
     finally { setUpdatingProfile(false) }
@@ -206,19 +210,24 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     async function load() {
       setLoading(true)
       try {
-        const [sessResult, tracesResult] = await Promise.all([
-          apiClient<ChatsListResponse>('/api/chats?limit=200'),
-          apiClient<{ traces: TraceItem[] }>(`/api/chats/${encodeURIComponent(decodedChatId)}/traces?limit=200`),
-        ])
-        const found = sessResult.data.sessions.find((s) => s.chatId === decodedChatId)
-        if (!found) { setLoading(false); return }
+        const detail = await apiClient<{
+          session: ChatSession
+          requestedChatId: string
+          resolvedChatId: string
+          externalChatId?: string | null
+        }>(`/api/chats/${encodeURIComponent(decodedChatId)}`)
+        const found = detail.data.session
         setSession(found)
+        setResolvedChatId(detail.data.resolvedChatId || found.chatId)
 
+        const canonicalChatId = detail.data.resolvedChatId || found.chatId
+        const [tracesResult, msgResult] = await Promise.all([
+          apiClient<{ traces: TraceItem[] }>(`/api/chats/${encodeURIComponent(canonicalChatId)}/traces?limit=200`),
+          apiClient<{ messages: MsgItem[] }>(
+            `/api/chats/${encodeURIComponent(canonicalChatId)}/messages?limit=500`,
+          ),
+        ])
         setTraces(tracesResult.data.traces ?? [])
-
-        const msgResult = await apiClient<{ messages: MsgItem[] }>(
-          `/api/chats/${encodeURIComponent(decodedChatId)}/messages?limit=500`,
-        )
         setMessages((msgResult.data.messages ?? []).sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
       } catch (e) { console.error('Chat load failed:', e) }
@@ -245,7 +254,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     if (!confirm(isZh ? `删除会话 ${decodedChatId.slice(0, 16)}… 以及关联的 ${session.cases.length} 个 ProcedureRun？` : `Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} linked ProcedureRun(s)?`)) return
     setDeleting(true)
     try {
-      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(decodedChatId)}`, { method: 'DELETE' })
+      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(activeChatId)}`, { method: 'DELETE' })
       router.push('/operate/conversations')
     } catch { alert(isZh ? '删除失败' : 'Delete failed'); setDeleting(false) }
   }

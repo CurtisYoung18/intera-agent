@@ -3,14 +3,92 @@
 
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { resolveChatAlias } from '@/lib/operate/chat-alias'
+import type { RepoForOrg } from '@/lib/db/repo-for-org'
+import type { ChatSession } from '@intera/shared/contracts/chats'
+
+type ChatDetailResponse = {
+  session: ChatSession & { externalChatId?: string }
+  requestedChatId: string
+  resolvedChatId: string
+  externalChatId?: string
+}
+
+async function buildChatSession(repo: RepoForOrg, requestedChatId: string): Promise<ChatDetailResponse> {
+  const alias = await resolveChatAlias(repo, requestedChatId)
+  const chatId = alias.resolvedChatId
+
+  const cases = await repo.case.findMany({
+    where: { chatId },
+    orderBy: { updatedAt: 'desc' as const },
+    include: {
+      humanTasks: { select: { id: true }, take: 1 },
+      _count: { select: { messages: true } },
+    },
+  })
+
+  if (cases.length === 0) {
+    throw new NotFoundError('Chat not found')
+  }
+
+  const activeRuns = await repo.raw.procedureRun.findMany({
+    where: { orgId: repo.orgId, caseId: { in: cases.map((c) => c.id) } },
+    orderBy: { updatedAt: 'desc' as const },
+    select: { id: true, caseId: true },
+  })
+  const runByCase = new Map<string, string>()
+  for (const run of activeRuns) {
+    if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
+  }
+
+  const session: ChatSession & { externalChatId?: string } = {
+    chatId,
+    userId: cases[0]?.userId ?? '',
+    externalChatId: alias.externalChatId,
+    cases: cases.map((c) => ({
+      id: runByCase.get(c.id) ?? c.id,
+      runId: runByCase.get(c.id) ?? null,
+      type: c.type,
+      status: c.status,
+      source: c.source,
+      goal: c.goal,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+      _count: c._count as { messages: number },
+    })),
+    messageCount: cases.reduce((sum: number, c) => sum + c._count.messages, 0),
+    lastActivity: cases.reduce(
+      (latest: string, c) => (c.updatedAt.toISOString() > latest ? c.updatedAt.toISOString() : latest),
+      cases[0]?.updatedAt.toISOString() ?? new Date(0).toISOString(),
+    ),
+    hasHumanTask: cases.some((c) => c.humanTasks.length > 0),
+  }
+
+  return {
+    session,
+    requestedChatId,
+    resolvedChatId: chatId,
+    externalChatId: alias.externalChatId,
+  }
+}
+
+export const GET = defineRoute<void, { chatId: string }>({
+  method: 'GET',
+  async handler({ params, repo }) {
+    const requestedChatId = decodeURIComponent(params.chatId)
+    return apiOk(await buildChatSession(repo, requestedChatId))
+  },
+})
 
 export const DELETE = defineRoute<void, { chatId: string }>({
   method: 'DELETE',
   async handler({ params, repo, audit }) {
     const decoded = decodeURIComponent(params.chatId)
+    const alias = await resolveChatAlias(repo, decoded)
+    const chatId = alias.resolvedChatId
 
     const cases = await repo.case.findMany({
-      where: { chatId: decoded },
+      where: { chatId },
       select: { id: true },
     })
 
@@ -21,16 +99,16 @@ export const DELETE = defineRoute<void, { chatId: string }>({
     }
 
     // Clean up dependents via raw prisma (belt-and-suspenders with onDelete: Cascade)
-    await repo.raw.humanTask.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
-    await repo.raw.actionTrace.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
-    await repo.raw.message.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
-    await repo.raw.chatMemory.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
+    await repo.raw.humanTask.deleteMany({ where: { orgId: repo.orgId, chatId } })
+    await repo.raw.actionTrace.deleteMany({ where: { orgId: repo.orgId, chatId } })
+    await repo.raw.message.deleteMany({ where: { orgId: repo.orgId, chatId } })
+    await repo.raw.chatMemory.deleteMany({ where: { orgId: repo.orgId, chatId } })
     await repo.case.deleteMany({ where: { id: { in: caseIds } } })
 
     await audit({
       action: 'chat.delete',
-      target: `chat:${decoded}`,
-      before: { caseIds },
+      target: `chat:${chatId}`,
+      before: { caseIds, requestedChatId: decoded, resolvedChatId: chatId },
     })
 
     return apiOk({ ok: true, deleted: caseIds.length })

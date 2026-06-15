@@ -24,6 +24,10 @@ vi.mock('@/lib/hooks/use-session', () => ({
   useSession: vi.fn(() => ({ orgId: 'default' })),
 }))
 
+vi.mock('@/components/locale-provider', () => ({
+  useConsoleLocale: vi.fn(() => ({ locale: 'en', t: (key: string) => key })),
+}))
+
 const models = [
   {
     id: 'deepseek-v4-flash',

@@ -141,4 +141,103 @@ describe('tool-interceptor start_procedure truth alignment', () => {
       runId: 'run-1',
     })
   })
+
+  it('returns waiting_form only for a completed ask_user_questions with renderable fields', async () => {
+    const sendEvent = vi.fn()
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-123',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {} as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+      },
+      [{
+        name: 'ask_user_questions',
+        output: { ok: true, output: { ok: true, handled: 'channel' }, latencyMs: 0 },
+        toolUse: {
+          id: 'toolu_form_1',
+          status: 'completed',
+          input: {
+            title: 'Need member ID',
+            description: 'Please fill the form.',
+            fields: [{ key: 'member_id', label: 'Member ID', type: 'text', required: true }],
+          },
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(result.action).toMatchObject({
+      kind: 'return',
+      result: expect.objectContaining({
+        transition: 'waiting_form',
+      }),
+    })
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'form_request',
+      data: expect.objectContaining({
+        title: 'Need member ID',
+      }),
+    }))
+  })
+
+  it('ignores malformed ask_user_questions results instead of rendering an empty form', async () => {
+    const sendEvent = vi.fn()
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-123',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {} as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+      },
+      [{
+        name: 'ask_user_questions',
+        output: {
+          ok: false,
+          output: null,
+          error: 'Input validation failed',
+          latencyMs: 0,
+        },
+        toolUse: {
+          id: 'toolu_form_2',
+          status: 'error',
+          input: {},
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(result.action).toEqual({ kind: 'pass' })
+    expect(sendEvent).not.toHaveBeenCalled()
+  })
 })

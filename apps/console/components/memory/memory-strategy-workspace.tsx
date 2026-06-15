@@ -16,6 +16,7 @@ import {
 import type { ModelInfo } from '@/app/admin/agent/types'
 import { DEFAULT_MODEL } from '@intera/shared/defaults'
 import { PageLoader } from '@/components/ui/page-loader'
+import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { emitAgentConfigUpdated } from '@/lib/agent-config-events'
 import { useSession } from '@/lib/hooks/use-session'
@@ -28,16 +29,235 @@ import {
   type MemoryStrategyUi,
 } from './memory-strategy-utils'
 
-const MODE_OPTIONS: Array<{
-  id: MemoryMode
-  label: string
-  description: string
-}> = [
-  { id: 'short', label: 'Short', description: 'Prefer quick compaction for short support turns.' },
-  { id: 'balanced', label: 'Balanced', description: 'Default delivery setting for most agents.' },
-  { id: 'long', label: 'Long', description: 'Keep more recent context before compacting.' },
-  { id: 'custom', label: 'Custom', description: 'Current thresholds no longer match a preset.' },
-]
+type MemoryCopy = {
+  eyebrow: string
+  pageTitle: string
+  pageDescription: string
+  loadFailed: string
+  saveDraft: string
+  saving: string
+  saved: string
+  saveFailed: string
+  unsaved: string
+  postureTitle: string
+  postureDescription: string
+  autoCompact: string
+  autoCompactDescription: string
+  compactModel: string
+  compactModelDescription: string
+  longTermTitle: string
+  longTermDescription: string
+  longTermEnabled: string
+  longTermEnabledDescription: string
+  longTermBudget: string
+  sessionMemoryAge: string
+  factTitle: string
+  factDescription: string
+  factModel: string
+  factGuidance: string
+  factPlaceholder: string
+  advancedTitle: string
+  advancedDescription: string
+  groups: {
+    thresholds: string
+    compaction: string
+    estimation: string
+    prompt: string
+  }
+  modes: Record<
+    MemoryMode,
+    {
+      label: string
+      description: string
+    }
+  >
+  fields: {
+    autoCompactThreshold: string
+    warningThreshold: string
+    errorThreshold: string
+    blockingThreshold: string
+    l1MaxMessages: string
+    compactMaxMessages: string
+    keepMinimumMessages: string
+    keepRatio: string
+    compactTemperature: string
+    compactMaxTokens: string
+    minimumSummaryLength: string
+    circuitBreakerFailures: string
+    keyEventMaxChars: string
+    tokensPerKeyEvent: string
+    tokensPerFact: string
+    tokensPerTool: string
+    cjkCharsPerToken: string
+    latinCharsPerToken: string
+    minimumTokenEstimate: string
+    toolResultTokenRatio: string
+    contextWindow: string
+    reservedOutputTokens: string
+    compactPrompt: string
+    compactPromptPlaceholder: string
+  }
+  units: {
+    tokens: string
+    messages: string
+    chars: string
+    failures: string
+    ms: string
+  }
+}
+
+const MEMORY_COPY: Record<'en' | 'zh', MemoryCopy> = {
+  en: {
+    eyebrow: 'Build / Components / Brain',
+    pageTitle: 'Memory strategy',
+    pageDescription: 'Tune compaction, long-term memory, and fact extraction with runtime-backed controls only.',
+    loadFailed: 'Failed to load memory strategy',
+    saveDraft: 'Save draft',
+    saving: 'Saving',
+    saved: 'Saved',
+    saveFailed: 'Save failed',
+    unsaved: 'Unsaved changes',
+    postureTitle: 'Compaction posture',
+    postureDescription: 'Choose how aggressively the agent compacts working context before it reaches pressure.',
+    autoCompact: 'Auto compact',
+    autoCompactDescription: 'Run compaction when the current posture reaches its token threshold.',
+    compactModel: 'Compact model',
+    compactModelDescription: 'Used for internal summary passes only.',
+    longTermTitle: 'Long-term memory',
+    longTermDescription: 'Keep only the long-term memory controls the runtime actually consumes.',
+    longTermEnabled: 'Enable long-term memory',
+    longTermEnabledDescription: 'Allow the runtime to accumulate durable user memory across sessions.',
+    longTermBudget: 'Long-term memory budget',
+    sessionMemoryAge: 'Session memory age',
+    factTitle: 'Fact extraction',
+    factDescription: 'Control the model and instructions used when stable business facts are written into memory.',
+    factModel: 'Fact extraction model',
+    factGuidance: 'Extraction guidance',
+    factPlaceholder: 'Extract stable business facts only.',
+    advancedTitle: 'Advanced engineering parameters',
+    advancedDescription: 'Thresholds, retention knobs, compact temperature, circuit breaker, and custom compact prompt.',
+    groups: {
+      thresholds: 'Pressure thresholds',
+      compaction: 'Compaction limits',
+      estimation: 'Token estimation knobs',
+      prompt: 'Custom compact prompt',
+    },
+    modes: {
+      short: { label: 'Short', description: 'Prefer quick compaction for short support turns.' },
+      balanced: { label: 'Balanced', description: 'Default delivery setting for most agents.' },
+      long: { label: 'Long', description: 'Keep more recent context before compacting.' },
+      custom: { label: 'Custom', description: 'Current thresholds no longer match a preset.' },
+    },
+    fields: {
+      autoCompactThreshold: 'Auto compact threshold',
+      warningThreshold: 'Warning threshold',
+      errorThreshold: 'Error threshold',
+      blockingThreshold: 'Blocking threshold',
+      l1MaxMessages: 'L1 max messages',
+      compactMaxMessages: 'Compact max messages',
+      keepMinimumMessages: 'Keep minimum messages',
+      keepRatio: 'Keep ratio',
+      compactTemperature: 'Compact temperature',
+      compactMaxTokens: 'Compact max tokens',
+      minimumSummaryLength: 'Minimum summary length',
+      circuitBreakerFailures: 'Circuit breaker failures',
+      keyEventMaxChars: 'Key event max chars',
+      tokensPerKeyEvent: 'Tokens per key event',
+      tokensPerFact: 'Tokens per fact',
+      tokensPerTool: 'Tokens per tool',
+      cjkCharsPerToken: 'CJK chars per token',
+      latinCharsPerToken: 'Latin chars per token',
+      minimumTokenEstimate: 'Minimum token estimate',
+      toolResultTokenRatio: 'Tool result token ratio',
+      contextWindow: 'Context window',
+      reservedOutputTokens: 'Reserved output tokens',
+      compactPrompt: 'Compact prompt',
+      compactPromptPlaceholder: 'Leave empty to use the built-in compact prompt.',
+    },
+    units: {
+      tokens: 'tokens',
+      messages: 'messages',
+      chars: 'chars',
+      failures: 'failures',
+      ms: 'ms',
+    },
+  },
+  zh: {
+    eyebrow: '构建 / 组件 / 大脑',
+    pageTitle: '记忆策略',
+    pageDescription: '只保留 runtime 真正使用的压缩、长期记忆与事实提取配置。',
+    loadFailed: '记忆策略加载失败',
+    saveDraft: '保存草稿',
+    saving: '保存中',
+    saved: '已保存',
+    saveFailed: '保存失败',
+    unsaved: '有未保存更改',
+    postureTitle: '压缩策略',
+    postureDescription: '决定上下文在接近压力阈值前如何被压缩和保留。',
+    autoCompact: '自动压缩',
+    autoCompactDescription: '达到当前策略阈值后自动运行压缩。',
+    compactModel: '压缩模型',
+    compactModelDescription: '仅用于内部摘要轮次。',
+    longTermTitle: '长期记忆',
+    longTermDescription: '这里只保留 runtime 真正消费的长期记忆控制项。',
+    longTermEnabled: '启用长期记忆',
+    longTermEnabledDescription: '允许 runtime 跨会话累积稳定的用户记忆。',
+    longTermBudget: '长期记忆预算',
+    sessionMemoryAge: '会话记忆时长',
+    factTitle: '事实提取',
+    factDescription: '控制稳定业务事实写入记忆时所使用的模型和附加指令。',
+    factModel: '事实提取模型',
+    factGuidance: '提取指引',
+    factPlaceholder: '只提取稳定的业务事实。',
+    advancedTitle: '高级工程参数',
+    advancedDescription: '阈值、保留策略、压缩温度、熔断次数和自定义压缩提示词。',
+    groups: {
+      thresholds: '压力阈值',
+      compaction: '压缩限制',
+      estimation: 'Token 估算参数',
+      prompt: '自定义压缩提示词',
+    },
+    modes: {
+      short: { label: '短', description: '更快压缩，适合短轮次支持对话。' },
+      balanced: { label: '均衡', description: '默认交付配置，适合大多数 Agent。' },
+      long: { label: '长', description: '在压缩前保留更多近期上下文。' },
+      custom: { label: '自定义', description: '当前阈值已不再匹配预设。' },
+    },
+    fields: {
+      autoCompactThreshold: '自动压缩阈值',
+      warningThreshold: '预警阈值',
+      errorThreshold: '高压阈值',
+      blockingThreshold: '阻断阈值',
+      l1MaxMessages: 'L1 最大消息数',
+      compactMaxMessages: '压缩最大消息数',
+      keepMinimumMessages: '最少保留消息数',
+      keepRatio: '保留比例',
+      compactTemperature: '压缩温度',
+      compactMaxTokens: '压缩最大 Token',
+      minimumSummaryLength: '最小摘要长度',
+      circuitBreakerFailures: '熔断失败次数',
+      keyEventMaxChars: '关键事件最大字符数',
+      tokensPerKeyEvent: '每条关键事件 Token',
+      tokensPerFact: '每条事实 Token',
+      tokensPerTool: '每个 Tool Token',
+      cjkCharsPerToken: '中日韩字符 / Token',
+      latinCharsPerToken: '拉丁字符 / Token',
+      minimumTokenEstimate: '最小 Token 估算',
+      toolResultTokenRatio: '工具结果倍率',
+      contextWindow: '上下文窗口',
+      reservedOutputTokens: '预留输出 Token',
+      compactPrompt: '压缩提示词',
+      compactPromptPlaceholder: '留空使用内置压缩提示词。',
+    },
+    units: {
+      tokens: 'Token',
+      messages: '条消息',
+      chars: '字符',
+      failures: '次',
+      ms: '毫秒',
+    },
+  },
+}
 
 function renderModelOptions(models: ModelInfo[], fallbackModel: string) {
   if (!models.length) {
@@ -70,16 +290,22 @@ function renderModelOptions(models: ModelInfo[], fallbackModel: string) {
 }
 
 function panelClass(extra = '') {
-  return `rounded-lg border border-black/[0.08] bg-white/[0.74] shadow-[0_18px_40px_-34px_rgba(15,23,42,0.5)] ${extra}`
+  return `rounded-[20px] border border-black/[0.08] bg-white/[0.8] shadow-[0_22px_44px_-34px_rgba(15,23,42,0.5)] ${extra}`
 }
 
 function fieldClass(extra = '') {
-  return `w-full rounded-lg border border-black/[0.09] bg-white px-3 py-2 text-[13px] text-[var(--mist)] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition focus:border-[rgba(53,127,124,0.34)] focus:ring-2 focus:ring-[rgba(53,127,124,0.12)] ${extra}`
+  return `w-full rounded-xl border border-black/[0.09] bg-white px-3 py-2.5 text-[13px] text-[var(--mist)] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)] outline-none transition focus:border-[rgba(53,127,124,0.34)] focus:ring-2 focus:ring-[rgba(53,127,124,0.12)] ${extra}`
+}
+
+function headerBandClass() {
+  return 'border-b border-black/[0.06] bg-[linear-gradient(135deg,rgba(53,127,124,0.08),rgba(255,255,255,0.86))]'
 }
 
 export default function MemoryStrategyWorkspace({ embedded = false }: { embedded?: boolean }) {
   const agentId = useSelectedAgentId()
   const { orgId } = useSession()
+  const { locale } = useConsoleLocale()
+  const copy = MEMORY_COPY[locale]
 
   const [memory, setMemory] = useState<MemoryStrategyUi>(() => normalizeMemoryStrategy('{}'))
   const [primaryModel, setPrimaryModel] = useState<string>(DEFAULT_MODEL)
@@ -114,7 +340,7 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
         setError(null)
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message || 'Failed to load memory strategy')
+        if (!cancelled) setError(err.message || copy.loadFailed)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -123,7 +349,7 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
     return () => {
       cancelled = true
     }
-  }, [agentId])
+  }, [agentId, copy.loadFailed])
 
   const setMemoryField = useCallback(<K extends keyof MemoryStrategyUi>(field: K, value: MemoryStrategyUi[K]) => {
     setMemory((prev) => ({ ...prev, [field]: value }))
@@ -164,6 +390,7 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
   }, [agentId, memory, orgId, primaryModel])
 
   const activeMode = useMemo(() => detectMemoryMode(memory), [memory])
+  const modeLabel = copy.modes[activeMode].label
 
   return (
     <PageLoader loading={loading} error={error} onRetry={() => window.location.reload()}>
@@ -171,37 +398,33 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-3xl">
             {!embedded ? (
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]">
-                Build / Components / Brain
-              </p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fog)]">{copy.eyebrow}</p>
             ) : null}
             <h2 className={`${embedded ? '' : 'mt-2 '}text-[24px] font-semibold tracking-tight text-[var(--mist)]`}>
-              Memory strategy
+              {copy.pageTitle}
             </h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-[var(--fog)]">
-              Tune compaction, long-term memory, and fact extraction with runtime-backed controls only.
-            </p>
+            <p className="mt-1 text-[13px] leading-relaxed text-[var(--fog)]">{copy.pageDescription}</p>
           </div>
 
           <div className="flex min-h-9 items-center gap-2">
             {saveStatus === 'saving' ? (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-3 py-2 text-[12px] font-medium text-[var(--color-accent-primary)]">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-3 py-2 text-[12px] font-medium text-[var(--color-accent-primary)]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Saving
+                {copy.saving}
               </span>
             ) : saveStatus === 'saved' ? (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-3 py-2 text-[12px] font-medium text-[var(--color-accent-primary)]">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-[rgba(53,127,124,0.18)] bg-[rgba(53,127,124,0.08)] px-3 py-2 text-[12px] font-medium text-[var(--color-accent-primary)]">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Saved
+                {copy.saved}
               </span>
             ) : saveStatus === 'error' ? (
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-700">
+              <span className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-700">
                 <AlertCircle className="h-3.5 w-3.5" />
-                Save failed
+                {copy.saveFailed}
               </span>
             ) : dirty ? (
-              <span className="rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-[12px] font-medium text-[var(--fog)]">
-                Unsaved changes
+              <span className="rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-[12px] font-medium text-[var(--fog)]">
+                {copy.unsaved}
               </span>
             ) : null}
 
@@ -209,215 +432,214 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
               type="button"
               onClick={saveMemory}
               disabled={!dirty || saveStatus === 'saving'}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--color-accent-primary)] px-3.5 text-[12px] font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--color-accent-primary)] px-4 text-[12px] font-semibold text-white shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {saveStatus === 'saving' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              Save draft
+              {copy.saveDraft}
             </button>
           </div>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-          <section className={panelClass('p-5')}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--mist)]">
-                  <Database className="h-4 w-4 text-[var(--color-accent-primary)]" />
-                  Compaction posture
-                </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
-                  Choose how aggressively the agent compacts working context before it reaches pressure.
-                </p>
+        <section className={panelClass('overflow-hidden')}>
+          <div className={`${headerBandClass()} flex flex-wrap items-start justify-between gap-3 px-5 py-4`}>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--mist)]">
+                <Database className="h-4 w-4 text-[var(--color-accent-primary)]" />
+                {copy.postureTitle}
               </div>
-              <span className="rounded-md border border-[rgba(53,127,124,0.16)] bg-[rgba(53,127,124,0.08)] px-2 py-1 text-[11px] font-medium text-[var(--color-accent-primary)]">
-                {activeMode === 'custom' ? 'Custom' : activeMode}
-              </span>
+              <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-[var(--fog)]">{copy.postureDescription}</p>
             </div>
+            <span className="rounded-full border border-[rgba(53,127,124,0.18)] bg-white/80 px-3 py-1 text-[11px] font-semibold text-[var(--color-accent-primary)]">
+              {modeLabel}
+            </span>
+          </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {MODE_OPTIONS.map((option) => {
-                const active = activeMode === option.id
-                const presetButton = option.id !== 'custom'
+          <div className="space-y-4 px-5 py-5">
+            <div className="grid gap-2 lg:grid-cols-4">
+              {(Object.keys(copy.modes) as MemoryMode[]).map((mode) => {
+                const option = copy.modes[mode]
+                const active = activeMode === mode
+                const presetButton = mode !== 'custom'
                 return (
                   <button
-                    key={option.id}
+                    key={mode}
                     type="button"
                     disabled={!presetButton}
-                    onClick={presetButton ? () => applyMode(option.id as Exclude<MemoryMode, 'custom'>) : undefined}
-                    className={`min-h-[94px] rounded-lg border px-3 py-3 text-left transition ${
+                    onClick={presetButton ? () => applyMode(mode as Exclude<MemoryMode, 'custom'>) : undefined}
+                    className={`min-h-[92px] rounded-2xl border px-3.5 py-3 text-left transition ${
                       active
-                        ? 'border-[rgba(53,127,124,0.24)] bg-[rgba(53,127,124,0.08)] text-[var(--mist)] shadow-sm'
+                        ? 'border-[rgba(53,127,124,0.26)] bg-[rgba(53,127,124,0.08)] text-[var(--mist)] shadow-sm'
                         : 'border-black/[0.08] bg-white/70 text-[var(--mist)] hover:border-black/[0.14] hover:bg-white'
                     } ${presetButton ? '' : 'cursor-default'}`}
                   >
                     <span className="block text-[13px] font-semibold">{option.label}</span>
-                    <span className="mt-1 block text-[11px] leading-snug text-current/70">{option.description}</span>
+                    <span className="mt-1 block text-[11px] leading-snug text-current/72">{option.description}</span>
                   </button>
                 )
               })}
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
               <SwitchField
-                label="Auto compact"
-                description="Run compaction when the current posture reaches its token threshold."
+                label={copy.autoCompact}
+                description={copy.autoCompactDescription}
                 checked={memory.enableAutocompact}
                 onChange={(checked) => setMemoryField('enableAutocompact', checked)}
               />
 
-              <label className="space-y-1.5">
-                <span className="text-[12px] font-medium text-[var(--mist)]">Compact model</span>
+              <label className="rounded-2xl border border-black/[0.07] bg-white/72 px-4 py-3">
+                <span className="block text-[12px] font-semibold text-[var(--mist)]">{copy.compactModel}</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-[var(--fog)]">{copy.compactModelDescription}</span>
                 <select
                   value={memory.compactModel}
                   onChange={(event) => setMemoryField('compactModel', event.target.value)}
-                  className={fieldClass()}
+                  className={fieldClass('mt-3')}
                 >
                   {renderModelOptions(models, memory.compactModel)}
                 </select>
-                <span className="block text-[11px] leading-snug text-[var(--fog)]">
-                  Used for internal summary passes only.
-                </span>
               </label>
             </div>
-          </section>
+          </div>
+        </section>
 
-          <section className={panelClass('p-5')}>
-            <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--mist)]">
-              <ShieldCheck className="h-4 w-4 text-[var(--color-accent-primary)]" />
-              Long-term memory
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)]">
+          <section className={panelClass('overflow-hidden')}>
+            <div className={`${headerBandClass()} px-5 py-4`}>
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--mist)]">
+                <ShieldCheck className="h-4 w-4 text-[var(--color-accent-primary)]" />
+                {copy.longTermTitle}
+              </div>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">{copy.longTermDescription}</p>
             </div>
-            <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
-              Keep only the real long-term memory controls that the runtime actually consumes.
-            </p>
 
-            <div className="mt-4 space-y-3">
+            <div className="space-y-3 px-5 py-5">
               <SwitchField
-                label="Enable long-term memory"
-                description="Allow the runtime to accumulate durable user memory across sessions."
+                label={copy.longTermEnabled}
+                description={copy.longTermEnabledDescription}
                 checked={memory.enableChatMemory}
                 onChange={(checked) => setMemoryField('enableChatMemory', checked)}
               />
 
-              <NumberField
-                label="Long-term memory budget"
-                value={memory.chatMemoryMaxTokens}
-                onChange={(value) => setNumberField('chatMemoryMaxTokens', value)}
-                unit="tokens"
-              />
-
-              <NumberField
-                label="Session memory age"
-                value={memory.sessionMemoryMaxAgeMs}
-                onChange={(value) => setNumberField('sessionMemoryMaxAgeMs', value)}
-                unit="ms"
-              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <NumberField
+                  label={copy.longTermBudget}
+                  value={memory.chatMemoryMaxTokens}
+                  onChange={(value) => setNumberField('chatMemoryMaxTokens', value)}
+                  unit={copy.units.tokens}
+                />
+                <NumberField
+                  label={copy.sessionMemoryAge}
+                  value={memory.sessionMemoryMaxAgeMs}
+                  onChange={(value) => setNumberField('sessionMemoryMaxAgeMs', value)}
+                  unit={copy.units.ms}
+                />
+              </div>
             </div>
           </section>
 
-          <section className={panelClass('p-5 xl:col-span-2')}>
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-              <div>
-                <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--mist)]">
-                  <History className="h-4 w-4 text-[var(--color-accent-primary)]" />
-                  Fact extraction
-                </div>
-                <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">
-                  Control the model and instructions used when stable business facts are written into memory.
-                </p>
-
-                <label className="mt-4 block space-y-1.5">
-                  <span className="text-[12px] font-medium text-[var(--mist)]">Fact extraction model</span>
-                  <select
-                    value={memory.factExtractionModel || memory.compactModel}
-                    onChange={(event) => setMemoryField('factExtractionModel', event.target.value)}
-                    className={fieldClass()}
-                  >
-                    {renderModelOptions(models, memory.factExtractionModel || memory.compactModel)}
-                  </select>
-                </label>
+          <section className={panelClass('overflow-hidden')}>
+            <div className={`${headerBandClass()} px-5 py-4`}>
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--mist)]">
+                <History className="h-4 w-4 text-[var(--color-accent-primary)]" />
+                {copy.factTitle}
               </div>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--fog)]">{copy.factDescription}</p>
+            </div>
 
-              <label className="block space-y-1.5">
-                <span className="text-[12px] font-medium text-[var(--mist)]">Extraction guidance</span>
+            <div className="grid gap-4 px-5 py-5 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <label className="rounded-2xl border border-black/[0.07] bg-white/72 px-4 py-3">
+                <span className="block text-[12px] font-semibold text-[var(--mist)]">{copy.factModel}</span>
+                <select
+                  value={memory.factExtractionModel || memory.compactModel}
+                  onChange={(event) => setMemoryField('factExtractionModel', event.target.value)}
+                  className={fieldClass('mt-3')}
+                >
+                  {renderModelOptions(models, memory.factExtractionModel || memory.compactModel)}
+                </select>
+              </label>
+
+              <label className="rounded-2xl border border-black/[0.07] bg-white/72 px-4 py-3">
+                <span className="block text-[12px] font-semibold text-[var(--mist)]">{copy.factGuidance}</span>
                 <textarea
                   value={memory.factExtractionPrompt || ''}
                   onChange={(event) => setMemoryField('factExtractionPrompt', event.target.value)}
                   rows={7}
-                  className={fieldClass('resize-y leading-relaxed')}
-                  placeholder="Extract stable business facts only."
+                  className={fieldClass('mt-3 resize-y leading-relaxed')}
+                  placeholder={copy.factPlaceholder}
                 />
               </label>
             </div>
           </section>
+        </div>
 
-          <section className={panelClass('xl:col-span-2')}>
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
-              aria-expanded={showAdvanced}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <SlidersHorizontal className="h-4 w-4 text-[var(--fog)]" />
-                <span>
-                  <span className="block text-[13px] font-semibold text-[var(--mist)]">Advanced engineering parameters</span>
-                  <span className="mt-0.5 block text-[11px] text-[var(--fog)]">
-                    Thresholds, retention knobs, compact temperature, circuit breaker, and custom compact prompt.
-                  </span>
-                </span>
+        <section className={panelClass('overflow-hidden')}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+            aria-expanded={showAdvanced}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4 text-[var(--fog)]" />
+              <span>
+                <span className="block text-[13px] font-semibold text-[var(--mist)]">{copy.advancedTitle}</span>
+                <span className="mt-0.5 block text-[11px] text-[var(--fog)]">{copy.advancedDescription}</span>
               </span>
-              {showAdvanced ? <ChevronDown className="h-4 w-4 text-[var(--fog)]" /> : <ChevronRight className="h-4 w-4 text-[var(--fog)]" />}
-            </button>
+            </span>
+            {showAdvanced ? <ChevronDown className="h-4 w-4 text-[var(--fog)]" /> : <ChevronRight className="h-4 w-4 text-[var(--fog)]" />}
+          </button>
 
-            {showAdvanced ? (
-              <div className="border-t border-black/[0.07] p-5">
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <AdvancedGroup title="Pressure thresholds">
-                    <NumberField label="Auto compact threshold" value={memory.autocompactThresholdTokens} onChange={(value) => setNumberField('autocompactThresholdTokens', value)} unit="tokens" />
-                    <NumberField label="Warning threshold" value={memory.warningThresholdTokens} onChange={(value) => setNumberField('warningThresholdTokens', value)} unit="tokens" />
-                    <NumberField label="Error threshold" value={memory.errorThresholdTokens} onChange={(value) => setNumberField('errorThresholdTokens', value)} unit="tokens" />
-                    <NumberField label="Blocking threshold" value={memory.blockingThresholdTokens} onChange={(value) => setNumberField('blockingThresholdTokens', value)} unit="tokens" />
-                  </AdvancedGroup>
+          {showAdvanced ? (
+            <div className="border-t border-black/[0.07] p-5">
+              <div className="grid gap-5 lg:grid-cols-2">
+                <AdvancedGroup title={copy.groups.thresholds}>
+                  <NumberField label={copy.fields.autoCompactThreshold} value={memory.autocompactThresholdTokens} onChange={(value) => setNumberField('autocompactThresholdTokens', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.warningThreshold} value={memory.warningThresholdTokens} onChange={(value) => setNumberField('warningThresholdTokens', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.errorThreshold} value={memory.errorThresholdTokens} onChange={(value) => setNumberField('errorThresholdTokens', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.blockingThreshold} value={memory.blockingThresholdTokens} onChange={(value) => setNumberField('blockingThresholdTokens', value)} unit={copy.units.tokens} />
+                </AdvancedGroup>
 
-                  <AdvancedGroup title="Compaction limits">
-                    <NumberField label="L1 max messages" value={memory.l1MaxMessages} onChange={(value) => setNumberField('l1MaxMessages', value)} unit="messages" />
-                    <NumberField label="Compact max messages" value={memory.compactMaxMessages} onChange={(value) => setNumberField('compactMaxMessages', value)} unit="messages" />
-                    <NumberField label="Keep minimum messages" value={memory.compactionKeepMin} onChange={(value) => setNumberField('compactionKeepMin', value)} unit="messages" />
-                    <NumberField label="Keep ratio" value={memory.compactionKeepRatio} onChange={(value) => setNumberField('compactionKeepRatio', value)} step={0.05} min={0} max={1} />
-                    <NumberField label="Compact temperature" value={memory.compactTemperature} onChange={(value) => setNumberField('compactTemperature', value)} step={0.1} min={0} max={1} />
-                    <NumberField label="Compact max tokens" value={memory.compactMaxTokensCap} onChange={(value) => setNumberField('compactMaxTokensCap', value)} unit="tokens" />
-                    <NumberField label="Minimum summary length" value={memory.compactMinSummaryLength} onChange={(value) => setNumberField('compactMinSummaryLength', value)} unit="tokens" />
-                    <NumberField label="Circuit breaker failures" value={memory.compactCircuitBreakerMaxFailures} onChange={(value) => setNumberField('compactCircuitBreakerMaxFailures', value)} unit="failures" />
-                  </AdvancedGroup>
+                <AdvancedGroup title={copy.groups.compaction}>
+                  <NumberField label={copy.fields.l1MaxMessages} value={memory.l1MaxMessages} onChange={(value) => setNumberField('l1MaxMessages', value)} unit={copy.units.messages} />
+                  <NumberField label={copy.fields.compactMaxMessages} value={memory.compactMaxMessages} onChange={(value) => setNumberField('compactMaxMessages', value)} unit={copy.units.messages} />
+                  <NumberField label={copy.fields.keepMinimumMessages} value={memory.compactionKeepMin} onChange={(value) => setNumberField('compactionKeepMin', value)} unit={copy.units.messages} />
+                  <NumberField label={copy.fields.keepRatio} value={memory.compactionKeepRatio} onChange={(value) => setNumberField('compactionKeepRatio', value)} step={0.05} min={0} max={1} />
+                  <NumberField label={copy.fields.compactTemperature} value={memory.compactTemperature} onChange={(value) => setNumberField('compactTemperature', value)} step={0.1} min={0} max={1} />
+                  <NumberField label={copy.fields.compactMaxTokens} value={memory.compactMaxTokensCap} onChange={(value) => setNumberField('compactMaxTokensCap', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.minimumSummaryLength} value={memory.compactMinSummaryLength} onChange={(value) => setNumberField('compactMinSummaryLength', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.circuitBreakerFailures} value={memory.compactCircuitBreakerMaxFailures} onChange={(value) => setNumberField('compactCircuitBreakerMaxFailures', value)} unit={copy.units.failures} />
+                </AdvancedGroup>
 
-                  <AdvancedGroup title="Token estimation knobs">
-                    <NumberField label="Key event max chars" value={memory.keyEventMaxChars} onChange={(value) => setNumberField('keyEventMaxChars', value)} unit="chars" />
-                    <NumberField label="Tokens per key event" value={memory.tokensPerKeyEvent} onChange={(value) => setNumberField('tokensPerKeyEvent', value)} unit="tokens" />
-                    <NumberField label="Tokens per fact" value={memory.tokensPerFact} onChange={(value) => setNumberField('tokensPerFact', value)} unit="tokens" />
-                    <NumberField label="Tokens per tool" value={memory.tokensPerTool} onChange={(value) => setNumberField('tokensPerTool', value)} unit="tokens" />
-                    <NumberField label="CJK chars per token" value={memory.cjkCharPerToken} onChange={(value) => setNumberField('cjkCharPerToken', value)} step={0.1} />
-                    <NumberField label="Latin chars per token" value={memory.latinCharPerToken} onChange={(value) => setNumberField('latinCharPerToken', value)} step={0.1} />
-                    <NumberField label="Minimum token estimate" value={memory.minTokenEstimate} onChange={(value) => setNumberField('minTokenEstimate', value)} unit="tokens" />
-                    <NumberField label="Tool result token ratio" value={memory.toolResultTokenRatio} onChange={(value) => setNumberField('toolResultTokenRatio', value)} step={0.1} />
-                    <NumberField label="Context window" value={memory.contextWindow} onChange={(value) => setNumberField('contextWindow', value)} unit="tokens" />
-                    <NumberField label="Reserved output tokens" value={memory.outputTokensReserved} onChange={(value) => setNumberField('outputTokensReserved', value)} unit="tokens" />
-                  </AdvancedGroup>
+                <AdvancedGroup title={copy.groups.estimation}>
+                  <NumberField label={copy.fields.keyEventMaxChars} value={memory.keyEventMaxChars} onChange={(value) => setNumberField('keyEventMaxChars', value)} unit={copy.units.chars} />
+                  <NumberField label={copy.fields.tokensPerKeyEvent} value={memory.tokensPerKeyEvent} onChange={(value) => setNumberField('tokensPerKeyEvent', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.tokensPerFact} value={memory.tokensPerFact} onChange={(value) => setNumberField('tokensPerFact', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.tokensPerTool} value={memory.tokensPerTool} onChange={(value) => setNumberField('tokensPerTool', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.cjkCharsPerToken} value={memory.cjkCharPerToken} onChange={(value) => setNumberField('cjkCharPerToken', value)} step={0.1} />
+                  <NumberField label={copy.fields.latinCharsPerToken} value={memory.latinCharPerToken} onChange={(value) => setNumberField('latinCharPerToken', value)} step={0.1} />
+                  <NumberField label={copy.fields.minimumTokenEstimate} value={memory.minTokenEstimate} onChange={(value) => setNumberField('minTokenEstimate', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.toolResultTokenRatio} value={memory.toolResultTokenRatio} onChange={(value) => setNumberField('toolResultTokenRatio', value)} step={0.1} />
+                  <NumberField label={copy.fields.contextWindow} value={memory.contextWindow} onChange={(value) => setNumberField('contextWindow', value)} unit={copy.units.tokens} />
+                  <NumberField label={copy.fields.reservedOutputTokens} value={memory.outputTokensReserved} onChange={(value) => setNumberField('outputTokensReserved', value)} unit={copy.units.tokens} />
+                </AdvancedGroup>
 
-                  <AdvancedGroup title="Custom compact prompt">
+                <AdvancedGroup title={copy.groups.prompt}>
+                  <label className="sm:col-span-2">
+                    <span className="block text-[11px] font-medium text-[var(--fog)]">{copy.fields.compactPrompt}</span>
                     <textarea
                       value={memory.compactPrompt || ''}
                       onChange={(event) => setMemoryField('compactPrompt', event.target.value)}
                       rows={10}
                       spellCheck={false}
-                      className={fieldClass('resize-y font-mono text-[12px] leading-relaxed sm:col-span-2')}
-                      placeholder="Leave empty to use the built-in compact prompt."
+                      className={fieldClass('mt-2 resize-y font-mono text-[12px] leading-relaxed')}
+                      placeholder={copy.fields.compactPromptPlaceholder}
                     />
-                  </AdvancedGroup>
-                </div>
+                  </label>
+                </AdvancedGroup>
               </div>
-            ) : null}
-          </section>
-        </div>
+            </div>
+          ) : null}
+        </section>
       </div>
     </PageLoader>
   )
@@ -435,7 +657,7 @@ function SwitchField({
   onChange: (value: boolean) => void
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-black/[0.07] bg-white/70 px-3 py-3 transition hover:bg-white">
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl border border-black/[0.07] bg-white/72 px-4 py-3 transition hover:bg-white">
       <span className="min-w-0">
         <span className="block text-[12px] font-semibold text-[var(--mist)]">{label}</span>
         <span className="mt-0.5 block text-[11px] leading-snug text-[var(--fog)]">{description}</span>
@@ -488,7 +710,7 @@ function NumberField({
 
 function AdvancedGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-black/[0.07] bg-white/62 p-4">
+    <div className="rounded-2xl border border-black/[0.07] bg-white/62 p-4">
       <h3 className="text-[12px] font-semibold text-[var(--mist)]">{title}</h3>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">{children}</div>
     </div>
