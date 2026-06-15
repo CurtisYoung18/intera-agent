@@ -432,3 +432,16 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: Not yet available. Required production proof after cherry-pick/deploy: authenticated `https://demo.anytrans.ai/operate/procedures` screenshot, `GET /api/operate/procedures/metrics` response shape proof with secrets/state redacted, navigation proof from sidebar, at least one recent-run detail link proof, and confirmation that rates match known seeded ProcedureRun outcomes.
 - Owner decision needed: After the hotfix lane lands, cherry-pick/deploy this commit and run the production proof loop before marking CONS-M6 accepted.
 - Follow-up owner: architect / delivery lead
+
+### 2026-06-16 - CONS-M7C Local Split Passed But Full `npm test` Is Baseline-Blocked On `origin/main`
+
+- Area: i18n governance / dictionaries split / consolidation M7C
+- Status: open
+- Severity: P2
+- Uncertainty: The M7C branch was created from `origin/main` (`77ebc272`) and mechanically split `apps/console/lib/i18n/dictionaries.ts` into per-locale, per-surface modules. The M7C-specific snapshot tests, route invariant tests, typecheck, and build passed, but full `npm test` on this base failed 7 tests unrelated to i18n splitting.
+- Default action taken: Treated M7C as local lane-pass but not full integration-pass. Did not widen the i18n lane into runtime/test-harness repair. Logged the baseline failures for the integration owner to rerun after M1/M3A/M6 consolidation branches are stacked or cherry-picked.
+- Why this default: The failing tests cover `/api/messages` route mocks, an older handoff paused expectation, and a missing `LocaleProvider` test harness in `ModelWorkspace`; none are touched by the dictionary relocation. Expanding this lane would violate the pure-relocation scope and risk mixing runtime semantics into an i18n governance commit.
+- Evidence: `.artifacts/delivery-audit/2026-06-16/cons-m7c/summary.md`; local commands passed: focused i18n Vitest (`1` file / `3` tests), sidebar/native-route/i18n focused Vitest (`3` files / `10` tests), `npm run db:generate && npx tsc --noEmit -p apps/console/tsconfig.json`, `npm run build:console`, `git diff --check`; local screenshot `login-local-after-split.png`.
+- Production URL / screenshot / receipt: Not yet available. Required after integration: authenticated production smoke on `https://demo.anytrans.ai` plus full test rerun on the stacked integration branch.
+- Owner decision needed: None now. Integration owner should rerun full `npm test` after stacking with the current consolidation branches rather than treating this `origin/main` baseline failure as an M7C blocker.
+- Follow-up owner: architect / integration owner
