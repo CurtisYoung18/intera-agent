@@ -125,7 +125,7 @@ describe('MemoryStrategyWorkspace', () => {
     await renderWorkspace()
 
     expect(screen.getByText('20k tokens')).toBeDefined()
-    expect(screen.getByText('10 messages / approx 5 turns')).toBeDefined()
+    expect(screen.getAllByText('10 messages / approx 5 turns').length).toBeGreaterThan(0)
     expect(screen.getByText('24 messages / approx 12 turns')).toBeDefined()
     expect(screen.getAllByText('Keep at least').length).toBe(4)
   })

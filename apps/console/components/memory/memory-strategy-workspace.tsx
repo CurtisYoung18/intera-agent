@@ -551,7 +551,11 @@ export default function MemoryStrategyWorkspace({ embedded = false }: { embedded
                       <div className="flex items-start justify-between gap-3">
                         <span>{copy.modeSummary.keepMinimum}</span>
                         <span className="text-right font-medium text-current">
-                          {summarySource.compactionKeepMin}
+                          {formatMessageTurns(
+                            summarySource.compactionKeepMin,
+                            copy.modeSummary.messageUnit,
+                            copy.modeSummary.turnEstimate,
+                          )}
                         </span>
                       </div>
                     </div>
