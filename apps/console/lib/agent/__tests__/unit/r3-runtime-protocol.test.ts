@@ -8,6 +8,7 @@ import type { ConversationLoop } from '../../conversation-loop'
 import type { CaseAgentLoop } from '../../case-agent-loop'
 import { createMemoryPersistence } from '../../persistence-port'
 import { RuntimeManagedToolResolver } from '../../runtime-managed-tools'
+import { HookContextBuilder } from '../../hook-context-builder'
 import type { ToolExecutionResult } from '../../streaming-tool-executor'
 import {
   closeSession,
@@ -214,13 +215,23 @@ describe('R3 HookContext and memory boundaries', () => {
       procedure: toolProcedure('get_latest_deposit'),
     })
     const loop = makeLoop(caseId)
-    const ctx = (loop as unknown as { buildHookContext: Function }).buildHookContext('PreToolUse', {
+    const anyLoop = loop as any
+    const ctx = new HookContextBuilder({
+      agentConfigId: anyLoop.deps.configId,
+      caseId: anyLoop.deps.caseId,
+      chatId: anyLoop.deps.chatId,
+      chatMemory: anyLoop.chatMemory,
+      getCaseSchema: () => anyLoop.deps.caseSchema,
+      getCurrentStage: () => anyLoop.currentStage,
+      getIterationCount: () => anyLoop.iterationCount,
+    }).build('PreToolUse', {
       toolName: 'get_latest_deposit',
       toolInput: {},
     })
 
     expect(ctx.procedureStepIds).toEqual(['lookup'])
-    expect(ctx.metadata.procedureRun.currentStepId).toBe('lookup')
+    const metadata = ctx.metadata as { procedureRun?: { currentStepId?: string } }
+    expect(metadata.procedureRun?.currentStepId).toBe('lookup')
     closeSession(caseId)
   })
 

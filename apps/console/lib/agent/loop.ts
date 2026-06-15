@@ -24,7 +24,6 @@ import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './d
 import { buildModelList } from './build-model-list'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
-import type { HookCheckpoint, HookContext } from '@intera/shared/contracts/hooks'
 
 // ---------------------------------------------------------------------------
 // StreamingTextSanitizer
@@ -62,6 +61,7 @@ import { StopHookHandler } from './stop-hook-handler'
 import { HumanTaskHandoffHandler, type PendingHumanTaskEscalation } from './human-task-handoff-handler'
 import { buildHookHitCounts, TurnPreflight } from './turn-preflight'
 import { ProcedureConditionCheckpoint } from './procedure-condition-checkpoint'
+import { HookContextBuilder } from './hook-context-builder'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -153,6 +153,7 @@ export class AgentLoop {
   private humanTaskHandoffHandler: HumanTaskHandoffHandler
   private turnPreflight: TurnPreflight
   private procedureConditionCheckpoint: ProcedureConditionCheckpoint
+  private hookContextBuilder: HookContextBuilder
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -220,6 +221,15 @@ export class AgentLoop {
       caseId: deps.caseId,
       config: deps.config,
       traceWriter: this.traceWriter,
+    })
+    this.hookContextBuilder = new HookContextBuilder({
+      agentConfigId: deps.configId,
+      caseId: deps.caseId,
+      chatId: deps.chatId,
+      chatMemory: this.chatMemory,
+      getCaseSchema: () => this.deps.caseSchema,
+      getCurrentStage: () => this.currentStage,
+      getIterationCount: () => this.iterationCount,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -579,7 +589,7 @@ export class AgentLoop {
 
             // PreToolUse Hook checkpoint
             const preHookEval = await this.hookEngine.evaluate('PreToolUse', {
-              ...this.buildHookContext('PreToolUse', {
+              ...this.hookContextBuilder.build('PreToolUse', {
                 toolName: toolUse.name,
                 toolInput: toolUse.input,
               }),
@@ -782,7 +792,7 @@ export class AgentLoop {
         }
 
         const stopEval = await this.hookEngine.evaluate('Stop', {
-          ...this.buildHookContext('Stop', {
+          ...this.hookContextBuilder.build('Stop', {
             replyDraft: fullText,
           }),
         }, buildHitCounts())
@@ -1024,7 +1034,7 @@ export class AgentLoop {
           for (const result of toolResults) {
             const payload = unwrapToolExecutionPayload(result.output)
             const postHookEval = await this.hookEngine.evaluate('PostToolUse', {
-              ...this.buildHookContext('PostToolUse', {
+              ...this.hookContextBuilder.build('PostToolUse', {
                 toolName: result.name,
                 toolInput: result.toolUse?.input,
                 toolOutput: payload,
@@ -1178,71 +1188,6 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
-
-  private buildHookContext(
-    checkpoint: HookCheckpoint,
-    options: {
-      toolName?: string
-      toolInput?: unknown
-      toolOutput?: unknown
-      toolError?: string
-      replyDraft?: string
-      procedureStepIds?: string[]
-    } = {},
-  ): HookContext {
-    const activeProcedureRun = getActiveProcedureRun(this.deps.caseId)
-    const procedureStepIds = options.procedureStepIds ??
-      (activeProcedureRun?.currentStepId ? [activeProcedureRun.currentStepId] : [])
-
-    return {
-      checkpoint,
-      agentConfigId: this.deps.configId,
-      caseId: this.deps.caseId,
-      chatId: this.deps.chatId ?? undefined,
-      caseType: this.deps.caseSchema
-        ? {
-            type: this.deps.caseSchema.type,
-            displayName: this.deps.caseSchema.displayName,
-          }
-        : undefined,
-      procedureStepIds,
-      tool: options.toolName
-        ? {
-            name: options.toolName,
-            input: options.toolInput,
-            output: options.toolOutput,
-            error: options.toolError,
-          }
-        : undefined,
-      caseFacts: this.chatMemory.getContextMap(),
-      missingFacts: this.chatMemory.getMissingFacts(),
-      previousToolCalls: this.chatMemory.getToolsCalled().map((name) => ({
-        name,
-        output: this.chatMemory.getToolResult(name),
-      })),
-      traceSummary: this.chatMemory.getKeyEvents().slice(-10).map((event) => ({
-        at: event.at,
-        text: event.text,
-        source: event.source,
-      })),
-      replyDraft: options.replyDraft,
-      metadata: {
-        currentStage: this.currentStage,
-        iteration: this.iterationCount,
-        procedureRun: activeProcedureRun
-          ? {
-              runId: activeProcedureRun.runId,
-              procedureId: activeProcedureRun.procedureId,
-              status: activeProcedureRun.status,
-              currentStepId: activeProcedureRun.currentStepId,
-              inputEpoch: activeProcedureRun.inputEpoch,
-              lastReconciledInputEpoch: activeProcedureRun.lastReconciledInputEpoch,
-              needsReconcile: activeProcedureRun.needsReconcile,
-            }
-          : undefined,
-      },
-    }
-  }
 
   private buildToolInterceptorContext(): ToolInterceptorContext {
     return {
