@@ -24,7 +24,6 @@
 
 import type { AgentLoop } from './loop'
 import type {
-  ContentBlock,
   ProcedureRuntimeSignal,
   ProcedureV2,
   ProcedureV2Action,
@@ -39,261 +38,65 @@ import {
   type ProcedureRunKernelEffect,
   type ProcedureRunKernelMatch,
 } from '@intera/runtime-core/procedure-run-kernel'
-import { prisma } from '@intera/shared/prisma'
-
-// ─── Queued message shape ─────────────────────────────────────────────────────
-
-export type RuntimeEventOrigin = 'customer' | 'operator' | 'system' | 'human'
-export type RuntimeEventSource =
-  | 'customer_message'
-  | 'customer_form_result'
-  | 'human_task_result'
-  | 'tool_call'
-  | 'tool_result'
-  | 'text_reply'
-  | 'evaluator'
-  | 'hook_decision'
-  | 'reconcile'
-  | 'remember'
-  | 'control'
-
-export interface RuntimeEvent {
-  eventId: string
-  inputEpoch: number
-  origin: RuntimeEventOrigin
-  source: RuntimeEventSource
-  createdAt: string
-  enqueuedAt: string
-  caseId: string
-  sessionId: string
-  runId?: string
-  content?: string
-  contentBlocks?: ContentBlock[]
-  formAnswers?: Record<string, string>
-  isMeta?: boolean
-  isControl?: boolean
-  priority: number
-  enqueuePolicy: 'fifo' | 'front' | 'replace'
-  basedOnInputEpoch?: number
-  summary?: string
-  metadata?: Record<string, unknown>
-}
-
-export interface QueuedMessage extends RuntimeEvent {
-  content: string
-}
-
-export type QueuedMessageInput = {
-  content: string
-  contentBlocks?: ContentBlock[]
-  formAnswers?: Record<string, string>
-  origin?: RuntimeEventOrigin
-  source?: RuntimeEventSource
-  runId?: string
-  isMeta?: boolean
-  isControl?: boolean
-  priority?: number
-  enqueuePolicy?: 'fifo' | 'front' | 'replace'
-  basedOnInputEpoch?: number
-  summary?: string
-  metadata?: Record<string, unknown>
-}
-
-export type ProcedureRunStatus = 'active' | 'paused' | 'completed' | 'cancelled'
-export type ProcedureStepStatus = 'pending' | 'active' | 'completed' | 'skipped' | 'blocked'
-
-export interface ProcedureRunStepState {
-  id: string
-  title?: string
-  guidance?: string
-  status: ProcedureStepStatus
-  startedAt?: string
-  completedAt?: string
-  evidenceToolCallIds: string[]
-  actions?: ProcedureRunActionState[]
-  branches?: ProcedureRunBranchState[]
-  skipReason?: string
-  completionReason?: string
-}
-
-export interface ProcedureRunActionState {
-  id: string
-  kind: string
-  label: string
-  target?: string
-  guidance?: string
-  branchId?: string
-  required?: boolean
-  status: ProcedureStepStatus
-  evidenceIds: string[]
-}
-
-export interface ProcedureRunBranchState {
-  id: string
-  kind: 'if' | 'else_if' | 'else'
-  label?: string
-  conditionLabel?: string
-  status: 'pending' | 'matched' | 'skipped'
-  reason?: string
-  actionIds: string[]
-}
-
-export interface ProcedureRunInputState {
-  eventId: string
-  inputEpoch: number
-  source: Extract<RuntimeEventSource, 'customer_message' | 'customer_form_result' | 'human_task_result'>
-  origin: RuntimeEventOrigin
-  createdAt: string
-  content?: string
-  formAnswers?: Record<string, string>
-  summary?: string
-}
-
-export type ProcedureConditionEvaluationDecision = 'matched' | 'skipped' | 'pending' | 'error'
-
-export interface ProcedureRunConditionEvaluationState {
-  id: string
-  branchId: string
-  conditionId: string
-  label: string
-  decision: ProcedureConditionEvaluationDecision
-  reason: string
-  basedOnInputEpoch: number
-  model?: string
-  createdAt: string
-  metadata?: Record<string, unknown>
-}
-
-export interface ProcedureRunEvidenceState {
-  id: string
-  kind: 'tool' | 'knowledge' | 'form' | 'handoff' | 'text_reply' | 'runtime_signal' | 'evaluator'
-  stepId?: string
-  actionId?: string
-  branchId?: string
-  label: string
-  toolName?: string
-  basedOnInputEpoch?: number
-  state: 'canonical' | 'stale'
-  createdAt: string
-  metadata?: Record<string, unknown>
-}
-
-export interface ProcedureRunSignalState {
-  signal: ProcedureRuntimeSignal
-  active: boolean
-  reason: string
-}
-
-export interface ProcedureRunState {
-  runId: string
-  agentConfigId?: string
-  procedureId: string
-  caseType: string
-  displayName: string
-  status: ProcedureRunStatus
-  inputEpoch: number
-  lastReconciledInputEpoch: number
-  needsReconcile: boolean
-  currentStepId: string | null
-  steps: ProcedureRunStepState[]
-  inputs: ProcedureRunInputState[]
-  evidenceToolCallIds: string[]
-  evidence: ProcedureRunEvidenceState[]
-  evaluations: ProcedureRunConditionEvaluationState[]
-  signals: ProcedureRunSignalState[]
-  blockers: string[]
-  timeline: RuntimeEvent[]
-  definition?: ProcedureV2
-  reason?: string
-  outcome?: string | null
-  confidence?: number
-  currentProcedureAction?: 'pause' | 'complete' | 'abandon'
-  startedAt: string
-  updatedAt: string
-  lastStartRequestId?: string
-}
-
-export interface ProcedureRuntimeState {
-  activeProcedureRun?: ProcedureRunState
-  pausedProcedureRuns: ProcedureRunState[]
-  completedProcedureRuns: ProcedureRunState[]
-}
-
-export interface PendingProcedureLlmEvaluation {
-  caseId: string
-  runId: string
-  procedureId: string
-  procedureDisplayName: string
-  stepId: string
-  stepTitle?: string
-  branchId: string
-  branchLabel?: string
-  conditionId: string
-  prompt: string
-  basedOnInputEpoch: number
-  recentInputs: ProcedureRunInputState[]
-  recentEvidence: ProcedureRunEvidenceState[]
-}
-
-// ─── MessageQueue ─────────────────────────────────────────────────────────────
-
-/**
- * Single-consumer, multi-producer async queue.
- * Designed for one SSE-loop consumer awaiting messages sent by HTTP POST handlers.
- */
-export class MessageQueue {
-  private queue: QueuedMessage[] = []
-  private waiter: ((msg: QueuedMessage) => void) | null = null
-
-  /** Enqueue a message. If the consumer is already waiting, wake it immediately. */
-  enqueue(msg: QueuedMessage): void {
-    if (this.waiter) {
-      const resolve = this.waiter
-      this.waiter = null
-      resolve(msg)
-    } else {
-      this.queue.push(msg)
-    }
-  }
-
-  /** Await the next message. Returns immediately if one is already buffered. */
-  dequeue(): Promise<QueuedMessage> {
-    if (this.queue.length > 0) {
-      return Promise.resolve(this.queue.shift()!)
-    }
-    return new Promise<QueuedMessage>((resolve) => {
-      this.waiter = resolve
-    })
-  }
-
-  /** Non-blocking dequeue: returns the next message or null if queue is empty. */
-  dequeueNonBlocking(): QueuedMessage | null {
-    if (this.queue.length > 0) return this.queue.shift()!
-    return null
-  }
-
-  /** Abort the waiting consumer with an error (e.g. on session close). */
-  abort(): void {
-    if (this.waiter) {
-      this.waiter(createRuntimeEvent({
-        caseId: 'closed',
-        sessionId: 'closed',
-        inputEpoch: 0,
-        origin: 'system',
-        source: 'control',
-        content: '__SESSION_CLOSED__',
-        isControl: true,
-        priority: -100,
-        enqueuePolicy: 'front',
-      }) as QueuedMessage)
-      this.waiter = null
-    }
-  }
-
-  get pendingCount(): number {
-    return this.queue.length
-  }
-}
+import {
+  enqueueCaseInputEpochPersist,
+  enqueueProcedureRunPersist,
+  flushProcedureRunPersistence,
+  loadProcedureRuntime,
+  setProcedureRunPersistenceForTest,
+  type PersistedProcedureRunRecord,
+  type ProcedureRunPersistenceAdapter,
+} from './procedure-run-persistence'
+import { MessageQueue } from './session-queue'
+import type {
+  QueuedMessage,
+  QueuedMessageInput,
+  RuntimeEvent,
+  RuntimeEventOrigin,
+  RuntimeEventSource,
+} from './session-queue'
+export { MessageQueue } from './session-queue'
+export type {
+  QueuedMessage,
+  QueuedMessageInput,
+  RuntimeEvent,
+  RuntimeEventOrigin,
+  RuntimeEventSource,
+} from './session-queue'
+export {
+  flushProcedureRunPersistence,
+  setProcedureRunPersistenceForTest,
+} from './procedure-run-persistence'
+import type {
+  PendingProcedureLlmEvaluation,
+  ProcedureConditionEvaluationDecision,
+  ProcedureRunActionState,
+  ProcedureRunBranchState,
+  ProcedureRunConditionEvaluationState,
+  ProcedureRunEvidenceState,
+  ProcedureRunInputState,
+  ProcedureRunSignalState,
+  ProcedureRunState,
+  ProcedureRunStatus,
+  ProcedureRunStepState,
+  ProcedureRuntimeState,
+  ProcedureStepStatus,
+} from './procedure-run-state'
+export type {
+  PendingProcedureLlmEvaluation,
+  ProcedureConditionEvaluationDecision,
+  ProcedureRunActionState,
+  ProcedureRunBranchState,
+  ProcedureRunConditionEvaluationState,
+  ProcedureRunEvidenceState,
+  ProcedureRunInputState,
+  ProcedureRunSignalState,
+  ProcedureRunState,
+  ProcedureRunStatus,
+  ProcedureRunStepState,
+  ProcedureRuntimeState,
+  ProcedureStepStatus,
+} from './procedure-run-state'
 
 // ─── CaseSession ─────────────────────────────────────────────────────────────
 
@@ -316,154 +119,14 @@ export interface CaseSession {
   lastActiveAt: number
 }
 
+export type { ProcedureRunPersistenceAdapter }
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 const sessions = new Map<string, CaseSession>()
 
 /** TTL for idle sessions (30 minutes). */
 const SESSION_TTL_MS = 30 * 60 * 1000
-
-interface PersistedProcedureRunRecord {
-  id: string
-  caseId: string
-  orgId?: string
-  chatId?: string
-  agentConfigId: string
-  procedureId: string
-  status: string
-  inputEpoch: number
-  needsReconcile: boolean
-  currentStepId: string | null
-  outcome: string | null
-  state: unknown
-  createdAt?: Date | string
-  updatedAt?: Date | string
-}
-
-interface HydratedProcedureRuntime {
-  latestInputEpoch: number
-  runs: PersistedProcedureRunRecord[]
-}
-
-interface ProcedureRunPersistenceAdapter {
-  loadProcedureRuntime(caseId: string): Promise<HydratedProcedureRuntime>
-  saveProcedureRun(record: PersistedProcedureRunRecord): Promise<void>
-  saveCaseInputEpoch(caseId: string, inputEpoch: number): Promise<void>
-}
-
-const noopProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
-  async loadProcedureRuntime() {
-    return { latestInputEpoch: 0, runs: [] }
-  },
-  async saveProcedureRun() {},
-  async saveCaseInputEpoch() {},
-}
-
-const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
-  async loadProcedureRuntime(caseId) {
-    const [caseRow, runs] = await Promise.all([
-      prisma.case.findUnique({
-        where: { id: caseId },
-        select: { runtimeInputEpoch: true, orgId: true, chatId: true },
-      }),
-      prisma.procedureRun.findMany({
-        where: { caseId },
-        orderBy: { updatedAt: 'desc' },
-      }),
-    ])
-    return {
-      latestInputEpoch: caseRow?.runtimeInputEpoch ?? 0,
-      runs: runs.map((run) => ({
-        id: run.id,
-        caseId: run.caseId,
-        orgId: (run as { orgId?: string }).orgId ?? caseRow?.orgId,
-        chatId: (run as { chatId?: string }).chatId ?? caseRow?.chatId,
-        agentConfigId: run.agentConfigId,
-        procedureId: run.procedureId,
-        status: run.status,
-        inputEpoch: run.inputEpoch,
-        needsReconcile: run.needsReconcile,
-        currentStepId: run.currentStepId,
-        outcome: run.outcome,
-        state: run.state,
-        createdAt: run.createdAt,
-        updatedAt: run.updatedAt,
-      })),
-    }
-  },
-  async saveProcedureRun(record) {
-    const caseRow = await prisma.case.findUnique({
-      where: { id: record.caseId },
-      select: { orgId: true, chatId: true },
-    }).catch(() => null)
-    const orgId = record.orgId ?? caseRow?.orgId ?? 'default'
-    const chatId = record.chatId ?? caseRow?.chatId ?? record.caseId
-    await prisma.procedureRun.upsert({
-      where: { id: record.id },
-      update: {
-        caseId: record.caseId,
-        orgId,
-        chatId,
-        agentConfigId: record.agentConfigId,
-        procedureId: record.procedureId,
-        status: record.status,
-        inputEpoch: record.inputEpoch,
-        needsReconcile: record.needsReconcile,
-        currentStepId: record.currentStepId,
-        outcome: record.outcome,
-        state: record.state as object,
-      },
-      create: {
-        id: record.id,
-        caseId: record.caseId,
-        orgId,
-        chatId,
-        agentConfigId: record.agentConfigId,
-        procedureId: record.procedureId,
-        status: record.status,
-        inputEpoch: record.inputEpoch,
-        needsReconcile: record.needsReconcile,
-        currentStepId: record.currentStepId,
-        outcome: record.outcome,
-        state: record.state as object,
-      },
-    })
-  },
-  async saveCaseInputEpoch(caseId, inputEpoch) {
-    await prisma.case.updateMany({
-      where: { id: caseId },
-      data: { runtimeInputEpoch: inputEpoch },
-    })
-  },
-}
-
-let procedureRunPersistence: ProcedureRunPersistenceAdapter =
-  process.env.NODE_ENV === 'test'
-    ? noopProcedureRunPersistence
-    : prismaProcedureRunPersistence
-
-const runPersistQueues = new Map<string, Promise<void>>()
-const caseEpochPersistQueues = new Map<string, Promise<void>>()
-
-export function setProcedureRunPersistenceForTest(adapter: ProcedureRunPersistenceAdapter | null): void {
-  procedureRunPersistence = adapter ?? (
-    process.env.NODE_ENV === 'test'
-      ? noopProcedureRunPersistence
-      : prismaProcedureRunPersistence
-  )
-  runPersistQueues.clear()
-  caseEpochPersistQueues.clear()
-}
-
-export async function flushProcedureRunPersistence(caseId?: string): Promise<void> {
-  const runPromises = [...runPersistQueues.entries()]
-    .filter(([runId]) => !caseId || runId.startsWith(`${caseId}:`))
-    .map(([, promise]) => promise)
-  const casePromises = [...caseEpochPersistQueues.entries()]
-    .filter(([key]) => !caseId || key === caseId)
-    .map(([, promise]) => promise)
-  await Promise.all([...runPromises, ...casePromises])
-}
 
 /**
  * Return the existing session for caseId, or create a new one.
@@ -491,7 +154,7 @@ export async function hydrateProcedureRuntime(
   const session = bindProcedureRuntimeAgentConfig(caseId, options.agentConfigId)
   if (session.procedureRuntimeHydrated) return session
 
-  const hydrated = await procedureRunPersistence.loadProcedureRuntime(caseId)
+  const hydrated = await loadProcedureRuntime(caseId)
   session.latestInputEpoch = Math.max(session.latestInputEpoch, hydrated.latestInputEpoch)
   const runs = hydrated.runs
     .map(hydratePersistedRun)
@@ -1443,28 +1106,13 @@ export function clearSessionsForTest(caseId?: string): void {
 }
 
 function scheduleCaseInputEpochPersist(session: CaseSession): void {
-  const previous = caseEpochPersistQueues.get(session.caseId) ?? Promise.resolve()
-  const inputEpoch = session.latestInputEpoch
-  const next = previous
-    .catch(() => undefined)
-    .then(() => procedureRunPersistence.saveCaseInputEpoch(session.caseId, inputEpoch))
-  caseEpochPersistQueues.set(session.caseId, next)
-  void next.catch((error) => {
-    console.error('[SessionStore] Failed to persist Case.runtimeInputEpoch:', error)
-  })
+  enqueueCaseInputEpochPersist(session.caseId, session.latestInputEpoch)
 }
 
 function scheduleRunPersist(session: CaseSession, run: ProcedureRunState): void {
   const record = toPersistedProcedureRun(session, run)
   const queueKey = `${session.caseId}:${run.runId}`
-  const previous = runPersistQueues.get(queueKey) ?? Promise.resolve()
-  const next = previous
-    .catch(() => undefined)
-    .then(() => procedureRunPersistence.saveProcedureRun(record))
-  runPersistQueues.set(queueKey, next)
-  void next.catch((error) => {
-    console.error('[SessionStore] Failed to persist ProcedureRun:', error)
-  })
+  enqueueProcedureRunPersist(queueKey, record)
 }
 
 function toPersistedProcedureRun(session: CaseSession, run: ProcedureRunState): PersistedProcedureRunRecord {
