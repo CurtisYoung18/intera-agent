@@ -102,6 +102,27 @@ export interface LoopResult {
   reason?: string
 }
 
+function isInternalProcedureUserMessage(message: Message): boolean {
+  if (message.role !== 'user') return false
+
+  const transcriptKind = message.providerMeta?.transcriptKind
+  if (transcriptKind === 'tool_result' || transcriptKind === 'hook_feedback') {
+    return true
+  }
+
+  if (Array.isArray(message.providerContent)) {
+    if (message.providerContent.some((block: any) => block?.type === 'tool_result')) {
+      return true
+    }
+  }
+
+  if (Array.isArray(message.content)) {
+    return message.content.some((block: any) => block?.type === 'tool_result')
+  }
+
+  return false
+}
+
 // ---------------------------------------------------------------------------
 // AgentLoop
 // ---------------------------------------------------------------------------
@@ -387,6 +408,7 @@ export class AgentLoop {
       let assistantMessage: AssistantMessage | null = null
       let assistantPushed = false
       let fullText = ''
+      let reconcileGateBlockedThisIteration = false
       const visibleTextBuffer: string[] = []
       const streamSendEvent = (event: SSEEvent) => {
         if (event.type === 'text_delta') {
@@ -530,6 +552,7 @@ export class AgentLoop {
               activeRun?.needsReconcile &&
               !['reconcile_procedure_input', 'read_chat_memory', 'read_user_profile'].includes(toolUse.name)
             ) {
+              reconcileGateBlockedThisIteration = true
               await this.traceWriter.write('loop_decision', `ProcedureRun reconcile gate blocked Tool: ${toolUse.name}`, {
                 runId: activeRun.runId,
                 procedureId: activeRun.procedureId,
@@ -905,6 +928,26 @@ export class AgentLoop {
       }
 
       if (toolResults.length === 0) {
+        if (reconcileGateBlockedThisIteration && !fullText && this.nudgeCount < 3) {
+          this.nudgeCount++
+          const reconcileNudge = '[PROCEDURE RUNTIME] Your previous tool call was blocked because newer customer input arrived. ' +
+            'You MUST call reconcile_procedure_input next with the active runId and latest inputEpoch before any other tool call, finalization, or customer-visible reply.'
+          if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
+          this.messages.push(makeUserMessage(reconcileNudge))
+          await this.traceWriter.write('loop_decision', 'Procedure nudge: reconcile required after blocked tool', {
+            stage: this.currentStage,
+            nudgeCount: this.nudgeCount,
+            iteration: this.iterationCount,
+          })
+          sendEvent({
+            type: 'message_stop',
+            data: { reason: 'procedure_reconcile_nudge', stage: this.currentStage },
+            timestamp: new Date().toISOString(),
+          })
+          this.iterationCount--
+          continue
+        }
+
         // ── Procedure mode: guard against silent end_turn after tool results ──────
         // When the agent just received tool results (there ARE previous tool
         // messages) but produced empty text and no new tool calls, it silently
@@ -912,7 +955,7 @@ export class AgentLoop {
         if (this.caseLoop?.isProcedureMode() && !fullText) {
           const lastFewMessages = this.messages.slice(-6)
           const hasPendingToolResults = lastFewMessages.some(
-            (m) => m.role === 'user' && Array.isArray(m.content),
+            (m) => isInternalProcedureUserMessage(m),
           )
           if (hasPendingToolResults && this.nudgeCount < 3) {
             this.nudgeCount++
