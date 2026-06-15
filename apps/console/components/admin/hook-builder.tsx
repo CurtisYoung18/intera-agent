@@ -29,7 +29,7 @@ type HandlerKind = 'declarative' | 'code' | 'http'
 type ScopeType = 'agent' | 'caseType' | 'procedureStep' | 'tool'
 type EvaluatorMode = 'rule' | 'llm'
 type MatchAction = 'block' | 'warn' | 'escalate'
-type RuleCondition = 'always' | 'inputContains' | 'outputContains' | 'forbiddenPhrases' | 'requireTools' | 'requireToolsAny' | 'requireFacts' | 'denyTools'
+type RuleCondition = 'always' | 'inputContains' | 'outputContains' | 'forbiddenPhrases' | 'requireTools' | 'requireToolsAny' | 'denyTools'
 
 interface HookBinding {
   id: string
@@ -68,8 +68,6 @@ interface ProcedureStepOption {
   caseTypeType: string
   caseTypeDisplayName: string
   id: string
-  action: string
-  target?: string | null
   guidance?: string | null
   label: string
 }
@@ -125,7 +123,7 @@ const EVALUATOR_MODES: Array<{ value: EvaluatorMode; icon: typeof ShieldCheck | 
   { value: 'llm', icon: Sparkles },
 ]
 const MATCH_ACTIONS: MatchAction[] = ['block', 'warn', 'escalate']
-const RULE_CONDITIONS: RuleCondition[] = ['always', 'inputContains', 'outputContains', 'forbiddenPhrases', 'requireTools', 'requireToolsAny', 'requireFacts', 'denyTools']
+const RULE_CONDITIONS: RuleCondition[] = ['always', 'inputContains', 'outputContains', 'forbiddenPhrases', 'requireTools', 'requireToolsAny', 'denyTools']
 
 function jsonText(value: unknown, fallback = '{}') {
   if (value === undefined || value === null) return fallback
@@ -244,7 +242,6 @@ function ruleConditionLabel(condition: RuleCondition, t: TranslateFn): string {
   if (condition === 'forbiddenPhrases') return t('hooks.rule.condition.forbiddenPhrases')
   if (condition === 'requireTools') return t('hooks.rule.condition.requireTools')
   if (condition === 'requireToolsAny') return t('hooks.rule.condition.requireToolsAny')
-  if (condition === 'requireFacts') return t('hooks.rule.condition.requireFacts')
   return t('hooks.rule.condition.denyTools')
 }
 
@@ -255,7 +252,6 @@ function ruleConditionHint(condition: RuleCondition, t: TranslateFn): string {
   if (condition === 'forbiddenPhrases') return t('hooks.rule.condition.forbiddenPhrasesHint')
   if (condition === 'requireTools') return t('hooks.rule.condition.requireToolsHint')
   if (condition === 'requireToolsAny') return t('hooks.rule.condition.requireToolsAnyHint')
-  if (condition === 'requireFacts') return t('hooks.rule.condition.requireFactsHint')
   return t('hooks.rule.condition.denyToolsHint')
 }
 
@@ -264,7 +260,7 @@ function isToolCondition(condition: RuleCondition): boolean {
 }
 
 function isTextCondition(condition: RuleCondition): boolean {
-  return condition === 'inputContains' || condition === 'outputContains' || condition === 'forbiddenPhrases' || condition === 'requireFacts'
+  return condition === 'inputContains' || condition === 'outputContains' || condition === 'forbiddenPhrases'
 }
 
 function ruleDraftFromCheck(check: Record<string, unknown>): RuleDraft {
@@ -286,8 +282,6 @@ function ruleDraftFromCheck(check: Record<string, unknown>): RuleDraft {
   if (requireTools.length > 0) return { matchToolNames, condition: 'requireTools', toolNames: requireTools, textValue: '', reason }
   const requireToolsAny = arrayField('requireToolsAny')
   if (requireToolsAny.length > 0) return { matchToolNames, condition: 'requireToolsAny', toolNames: requireToolsAny, textValue: '', reason }
-  const requireFacts = arrayField('requireFacts')
-  if (requireFacts.length > 0) return { matchToolNames, condition: 'requireFacts', toolNames: [], textValue: requireFacts.join('\n'), reason }
   const denyTools = arrayField('denyTools')
   if (denyTools.length > 0) return { matchToolNames, condition: 'denyTools', toolNames: denyTools, textValue: '', reason }
 
@@ -483,7 +477,6 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
         label: t('hooks.placeholderGroup.case.label'),
         description: t('hooks.placeholderGroup.case.description'),
         items: [
-          { token: 'confirmed_facts', label: t('hooks.placeholder.confirmedFacts'), description: t('hooks.placeholder.confirmedFactsDesc'), typeLabel: t('hooks.placeholder.type.jsonString') },
           { token: 'tools_called', label: t('hooks.placeholder.toolsCalled'), description: t('hooks.placeholder.toolsCalledDesc'), typeLabel: t('hooks.placeholder.type.jsonString') },
         ],
       },
@@ -1082,14 +1075,12 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
 
                     {isTextCondition(draft.rule.condition) ? (
                       <label className="block space-y-1.5">
-                        <span className="text-[12px] font-medium text-[var(--fog)]">
-                          {draft.rule.condition === 'requireFacts' ? t('hooks.rule.factKeys') : t('hooks.rule.textValues')}
-                        </span>
+                        <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.rule.textValues')}</span>
                         <textarea
                           value={draft.rule.textValue}
                           onChange={(event) => setDraft((current) => ({ ...current, rule: { ...current.rule, textValue: event.target.value } }))}
                           className="glass-input-console min-h-[96px] resize-y text-[13px]"
-                          placeholder={draft.rule.condition === 'requireFacts' ? t('hooks.rule.factKeysPlaceholder') : t('hooks.rule.textValuesPlaceholder')}
+                          placeholder={t('hooks.rule.textValuesPlaceholder')}
                         />
                         <p className="text-[11px] leading-5 text-[var(--fog)]">{t('hooks.rule.listHint')}</p>
                       </label>

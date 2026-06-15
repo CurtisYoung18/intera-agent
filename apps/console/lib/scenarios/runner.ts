@@ -42,7 +42,13 @@ export function buildScenarioReceipt(
 ): ScenarioReceipt {
   const startedAt = new Date().toISOString()
   const completedAt = new Date().toISOString()
-  const evidence = scenarioObservedEvidenceSchema.parse(observedInput ?? {})
+  const parsedEvidence = scenarioObservedEvidenceSchema.parse(observedInput ?? {})
+  const procedureSummary = deriveProcedureSummary(parsedEvidence)
+  const evidence = scenarioObservedEvidenceSchema.parse({
+    ...parsedEvidence,
+    procedureStatus: parsedEvidence.procedureStatus ?? procedureSummary.status,
+    procedureOutcome: parsedEvidence.procedureOutcome ?? procedureSummary.outcome,
+  })
   const checks = evaluateScenario(scenario.expected ?? {}, evidence)
   const failureReasons = [
     ...failureReasonsFromChecks(checks),
@@ -75,6 +81,7 @@ export function evaluateScenario(
   evidence: ScenarioObservedEvidence,
 ): ScenarioReceiptCheck[] {
   const checks: ScenarioReceiptCheck[] = []
+  const procedureSummary = deriveProcedureSummary(evidence)
 
   if (expected.caseType) {
     checks.push({
@@ -147,6 +154,32 @@ export function evaluateScenario(
     })
   }
 
+  if (expected.procedureStatus) {
+    checks.push({
+      name: 'procedure_status',
+      expected: expected.procedureStatus,
+      actual: procedureSummary.status,
+      passed: procedureSummary.status === expected.procedureStatus,
+      code: procedureSummary.status === expected.procedureStatus ? undefined : 'procedure_status_mismatch',
+      detail: procedureSummary.status === expected.procedureStatus
+        ? undefined
+        : `Expected Procedure status ${expected.procedureStatus}, saw ${procedureSummary.status ?? 'none'}`,
+    })
+  }
+
+  if (expected.procedureOutcome) {
+    checks.push({
+      name: 'procedure_outcome',
+      expected: expected.procedureOutcome,
+      actual: procedureSummary.outcome,
+      passed: procedureSummary.outcome === expected.procedureOutcome,
+      code: procedureSummary.outcome === expected.procedureOutcome ? undefined : 'procedure_outcome_mismatch',
+      detail: procedureSummary.outcome === expected.procedureOutcome
+        ? undefined
+        : `Expected Procedure outcome ${expected.procedureOutcome}, saw ${procedureSummary.outcome ?? 'none'}`,
+    })
+  }
+
   const response = evidence.finalResponse ?? ''
   for (const phrase of expected.forbiddenPhrases ?? []) {
     const found = response.toLowerCase().includes(phrase.toLowerCase())
@@ -212,8 +245,24 @@ function buildFixtureEvidence(
     handoff: fallbackHandoff,
     finalResponse: fallbackFinalResponse,
     finalStatus: expected.finalStatus ?? (fallbackHumanTransfer ? 'waiting_human' : 'completed'),
+    procedureStatus: expected.procedureStatus,
+    procedureOutcome: expected.procedureOutcome,
     ...observedInput,
   })
+}
+
+function deriveProcedureSummary(evidence: ScenarioObservedEvidence): {
+  status?: string
+  outcome?: string
+} {
+  const runs = evidence.runtime?.procedureRuns ?? []
+  const latest = runs
+    .slice()
+    .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? ''))[0]
+  return {
+    status: evidence.procedureStatus ?? latest?.status,
+    outcome: evidence.procedureOutcome ?? latest?.outcome,
+  }
 }
 
 function failureReasonsFromChecks(checks: ScenarioReceiptCheck[]): ScenarioReceiptFailureReason[] {

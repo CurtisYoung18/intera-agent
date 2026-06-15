@@ -19,7 +19,7 @@ export interface MemoryRecord {
   orgId?: string
   chatId?: string
   runId?: string | null
-  confirmedFacts?: string
+  contextMap?: string
   missingFacts?: string
   toolsCalled?: string
   toolResults?: string
@@ -158,7 +158,7 @@ export function createPrismaPersistence(): PersistencePort {
           orgId,
           chatId,
           runId,
-          confirmedFacts: record.confirmedFacts,
+          contextMap: record.contextMap,
           missingFacts: record.missingFacts,
           toolsCalled: record.toolsCalled,
           toolResults: record.toolResults,
@@ -172,7 +172,7 @@ export function createPrismaPersistence(): PersistencePort {
           orgId,
           chatId,
           runId,
-          confirmedFacts: record.confirmedFacts,
+          contextMap: record.contextMap,
           missingFacts: record.missingFacts,
           toolsCalled: record.toolsCalled,
           toolResults: record.toolResults,

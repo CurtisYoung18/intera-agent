@@ -4,7 +4,7 @@
 // case tool handling. The customer path stays inline.
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { Message, SSEEvent, CaseSchemaConfig, TodoItem } from '@intera/shared/types'
+import type { Message, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { ProcedureExecutor } from './procedure-executor'
 import type { ChatMemoryManager } from './memory'
@@ -15,7 +15,6 @@ import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streamin
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
 import { getActiveProcedureRun, recordProcedureToolResult } from './session-store'
-import { buildHumanHandoffQuestion } from './human-handoff'
 
 export interface CaseLoopServices {
   caseId: string
@@ -38,15 +37,6 @@ export type CaseToolResult =
   | { type: 'continue' }
   | { type: 'terminal'; result: LoopResult }
 
-function latestCustomerMessage(messages: Message[]): string | undefined {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role !== 'user') continue
-    if (typeof message.content === 'string' && message.content.trim()) return message.content.trim()
-  }
-  return undefined
-}
-
 export class CaseAgentLoop {
   private procedureExecutor: ProcedureExecutor | null = null
   private _currentStage: CaseStatus
@@ -57,10 +47,13 @@ export class CaseAgentLoop {
     _bootstrapNewCase?: boolean,
   ) {
     if (caseSchema.procedure && caseSchema.procedure.steps.length > 0) {
-      this.procedureExecutor = new ProcedureExecutor(
-        caseSchema.procedureDefinition ?? caseSchema.procedure,
-        caseSchema.type,
+      const knowledgeToolNames = new Set(
+        this.services.toolRouter
+          .getToolDefinitions()
+          .filter((tool) => !!tool.knowledgeSourceId)
+          .map((tool) => tool.name),
       )
+      this.procedureExecutor = new ProcedureExecutor(caseSchema.procedure, caseSchema.type, knowledgeToolNames)
     }
     this._currentStage = this.readCaseStatus()
   }
@@ -69,14 +62,14 @@ export class CaseAgentLoop {
     return this._currentStage
   }
 
-  getProcedureStepIdsForTool(toolName?: string): string[] {
-    if (!this.procedureExecutor) return []
-    return this.procedureExecutor.stepIdsForTool(toolName, this.services.chatMemory.getTodos())
-  }
-
   getStopProcedureStepIds(): string[] {
-    if (!this.procedureExecutor) return []
-    return this.procedureExecutor.stepIdsForStop(this.services.chatMemory.getTodos())
+    const activeRun = getActiveProcedureRun(this.services.caseId)
+    if (!activeRun) return []
+    const current = activeRun.currentStepId ? [activeRun.currentStepId] : []
+    const completed = activeRun.steps
+      .filter((step) => step.status === 'completed')
+      .map((step) => step.id)
+    return [...new Set([...current, ...completed])]
   }
 
   isStageActive(): boolean {
@@ -95,21 +88,7 @@ export class CaseAgentLoop {
     return this.procedureExecutor?.requiredTools() ?? []
   }
 
-  buildProcedurePrompt(basePrompt: string, todos: TodoItem[], facts: Record<string, unknown>): string {
-    if (!this.procedureExecutor) {
-      return [
-        `## Procedure Execution Context`,
-        `- procedureType: ${this.caseSchema.type}`,
-        `- status: ${this._currentStage}`,
-        'This case type has no Procedure configured. Ask concise clarifying questions or escalate with create_human_task if needed.',
-        '',
-        basePrompt,
-      ].join('\n')
-    }
-    return this.procedureExecutor.buildPrompt(basePrompt, this._currentStage, todos, facts)
-  }
-
-  buildProcedureDefinitionPrompt(_todos: TodoItem[], _facts: Record<string, unknown>): string {
+  buildProcedurePrompt(): string {
     if (!this.procedureExecutor) {
       return [
         `Procedure type: ${this.caseSchema.type}`,
@@ -191,16 +170,10 @@ export class CaseAgentLoop {
   ): Promise<CaseToolResult> {
     const toolInput = humanTaskResult.toolUse?.input || {}
     const queue = String(toolInput.queue || 'general')
-    const question = buildHumanHandoffQuestion({
-      baseQuestion: String(toolInput.question || 'Human task requested'),
-      caseType: this.caseSchema.type,
-      latestCustomerMessage: latestCustomerMessage(this.services.getMessages()),
-      confirmedFacts: this.services.chatMemory.getConfirmedFacts(),
-    })
+    const question = String(toolInput.question || 'Human task requested')
     const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
-    const { caseId, orgId, userId } = this.services
-    const chatId = this.services.chatId ?? caseId
+    const { caseId, orgId, userId, chatId } = this.services
     let taskId: string | null = null
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -221,26 +194,22 @@ export class CaseAgentLoop {
             type: this.caseSchema.type || 'general',
             status: 'waiting_human',
             blocker: `Waiting for ${queue}`,
-            chatId,
+            chatId: chatId ?? caseId,
           },
         })
 
         this.services.chatMemory.setCaseStatus('waiting_human')
         this.syncStage()
-        const runId = getActiveProcedureRun(caseId)?.runId ?? null
 
         await prisma.chatMemory.upsert({
           where: { caseId },
-          update: { orgId, chatId, runId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
-          create: { caseId, orgId, chatId, runId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
+          update: { ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
+          create: { caseId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
         })
 
         const task = await prisma.humanTask.create({
           data: {
             caseId,
-            orgId,
-            chatId,
-            runId,
             queue,
             question,
             fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
@@ -298,7 +267,7 @@ export class CaseAgentLoop {
 
         sendEvent({
           type: 'human_task_created',
-          data: { taskId: task.id, queue, question, status: 'pending' },
+          data: { taskId: task.id, queue, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
         await this.services.traceWriter.writeEscalated('human_task_created', { taskId: task.id, queue })
@@ -409,7 +378,7 @@ export class CaseAgentLoop {
           input: finalizeResult.toolUse?.input,
           output: finalizedPayload,
         },
-        caseFacts: this.services.chatMemory.getConfirmedFacts(),
+        caseFacts: this.services.chatMemory.getContextMap(),
         missingFacts: this.services.chatMemory.getMissingFacts(),
         previousToolCalls: this.services.chatMemory.getToolsCalled().map((name) => ({
           name,

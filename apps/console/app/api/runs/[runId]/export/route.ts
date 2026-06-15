@@ -111,8 +111,8 @@ export const GET = defineRoute<void, { runId: string }>({
 
     if (memory) {
       sections.push('## Memory')
-      sections.push('### Confirmed Facts')
-      sections.push(formatValue(stripInternalKeysFromValue(safeJson(memory.confirmedFacts))))
+      sections.push('### Context Map')
+      sections.push(formatValue(stripInternalKeysFromValue(safeJson(memory.contextMap))))
       sections.push('')
       sections.push('### Missing Facts')
       sections.push(formatValue(safeJson(memory.missingFacts)))

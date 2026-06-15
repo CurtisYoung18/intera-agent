@@ -128,7 +128,7 @@ export async function executeScenarioThroughPlayground(input: RuntimeExecutorInp
 
   return {
     evidence,
-    toolExecutionMode: 'mocked',
+    toolExecutionMode: deriveScenarioToolExecutionMode(latestTrace, evidence),
     traceId: latestTrace?.turnId ?? caseId ?? chatId,
     statusOverride: errors.length > 0 ? 'blocked' : undefined,
     failureReasons,
@@ -146,7 +146,7 @@ export function buildRuntimeEvidence(input: {
   procedureRuns?: NonNullable<NonNullable<ScenarioObservedEvidenceInput['runtime']>['procedureRuns']>
 }): ScenarioObservedEvidenceInput {
   const rawTrace = input.rawTrace ?? []
-  const toolCalls = collectToolCalls(input.events)
+  const toolCalls = collectToolCalls(input.events, rawTrace)
   const toolResults = collectToolResults(input.events, rawTrace)
   const knowledgeHits = collectKnowledgeHits(toolResults)
   const hookDecisions = collectHookDecisions(input.events, rawTrace)
@@ -158,6 +158,7 @@ export function buildRuntimeEvidence(input: {
   const transcriptHealth = collectTranscriptHealth(rawTrace)
   const blockedEvent = input.events.find((event) => event.type === 'error')
   const transition = latestMessageStopReason(input.events) ?? 'next_turn'
+  const latestProcedureRun = latestProcedureRuntime(input.procedureRuns ?? [])
   const finalStatus = blockedEvent
     ? 'blocked'
     : humanEvidence.humanTransfer
@@ -177,6 +178,8 @@ export function buildRuntimeEvidence(input: {
     handoff: humanEvidence.handoff,
     finalResponse: input.finalResponse,
     finalStatus,
+    procedureStatus: latestProcedureRun?.status,
+    procedureOutcome: latestProcedureRun?.outcome,
     traceId: input.traceId ?? input.caseId ?? input.chatId,
     runtime: {
       sessionId: input.traceId,
@@ -208,8 +211,10 @@ function snapshotProcedureRuns(
     procedureId: run.procedureId,
     displayName: run.displayName,
     status: run.status,
+    outcome: run.outcome ?? undefined,
     reason: run.reason,
-    version: run.procedureVersion,
+    version: 'v2',
+    updatedAt: run.updatedAt,
     currentStepId: run.currentStepId,
     blockers: [...run.blockers],
     inputs: run.inputs.map((entry) => ({
@@ -261,7 +266,18 @@ function snapshotProcedureRuns(
   }))
 }
 
-function collectToolCalls(events: SSEEvent[]): NonNullable<ScenarioObservedEvidenceInput['toolCalls']> {
+function latestProcedureRuntime(
+  runs: NonNullable<NonNullable<ScenarioObservedEvidenceInput['runtime']>['procedureRuns']>,
+) {
+  return runs
+    .slice()
+    .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? ''))[0]
+}
+
+function collectToolCalls(
+  events: SSEEvent[],
+  rawTrace: TraceRecord[],
+): NonNullable<ScenarioObservedEvidenceInput['toolCalls']> {
   const calls: NonNullable<ScenarioObservedEvidenceInput['toolCalls']> = []
   for (const event of events) {
     if (event.type !== 'tool_executing') continue
@@ -271,11 +287,33 @@ function collectToolCalls(events: SSEEvent[]): NonNullable<ScenarioObservedEvide
     calls.push({
       name,
       input: isRecord(data.input) ? data.input : undefined,
-      executionMode: 'mocked',
+      executionMode: detectToolExecutionMode(data),
       at: event.timestamp,
     })
   }
-  return calls
+
+  for (const record of rawTrace) {
+    if (record.actionType !== 'tool_call') continue
+    const payload = parsePayload(record.payload)
+    const name = typeof payload?.toolName === 'string' ? payload.toolName : undefined
+    if (!name) continue
+    const nextCall = {
+      name,
+      input: payload?.input,
+      executionMode: detectToolExecutionMode(payload),
+      knowledgeSourceId: typeof payload?.knowledgeSourceId === 'string' ? payload.knowledgeSourceId : undefined,
+      knowledgeSourceName: typeof payload?.knowledgeSourceName === 'string' ? payload.knowledgeSourceName : undefined,
+      at: asIso(record.createdAt),
+    }
+    const existingIndex = calls.findIndex((call) => toolInvocationMatches(call, nextCall))
+    if (existingIndex >= 0) {
+      calls[existingIndex] = { ...calls[existingIndex], ...nextCall }
+      continue
+    }
+    calls.push(nextCall)
+  }
+
+  return dedupeBy(calls, (call) => `${call.name}:${call.toolUseId ?? ''}:${JSON.stringify(call.input ?? null)}`)
 }
 
 function collectToolResults(
@@ -294,6 +332,8 @@ function collectToolResults(
       output: result?.output ?? result,
       error: typeof result?.error === 'string' ? result.error : undefined,
       executionMode: detectToolExecutionMode(result),
+      knowledgeSourceId: typeof data.knowledgeSourceId === 'string' ? data.knowledgeSourceId : undefined,
+      knowledgeSourceName: typeof data.knowledgeSourceName === 'string' ? data.knowledgeSourceName : undefined,
       at: event.timestamp,
     })
   }
@@ -303,19 +343,33 @@ function collectToolResults(
     const payload = parsePayload(record.payload)
     const name = typeof payload?.toolName === 'string' ? payload.toolName : undefined
     if (!name) continue
-    results.push({
+    const evidenceState: 'stale' | 'canonical' | undefined =
+      payload?.evidenceState === 'stale'
+        ? 'stale'
+        : payload?.evidenceState === 'canonical'
+          ? 'canonical'
+          : undefined
+    const nextResult: NonNullable<ScenarioObservedEvidenceInput['toolResults']>[number] = {
       name,
       input: payload?.input,
       output: payload?.output,
       error: typeof payload?.error === 'string' ? payload.error : undefined,
-      executionMode: detectToolExecutionMode(payload?.output),
+      executionMode: detectToolExecutionMode(payload),
+      knowledgeSourceId: typeof payload?.knowledgeSourceId === 'string' ? payload.knowledgeSourceId : undefined,
+      knowledgeSourceName: typeof payload?.knowledgeSourceName === 'string' ? payload.knowledgeSourceName : undefined,
       basedOnInputEpoch: typeof payload?.basedOnInputEpoch === 'number' ? payload.basedOnInputEpoch : undefined,
-      evidenceState: payload?.evidenceState === 'stale' ? 'stale' : undefined,
+      evidenceState,
       at: asIso(record.createdAt),
-    })
+    }
+    const existingIndex = results.findIndex((result) => toolResultMatches(result, nextResult))
+    if (existingIndex >= 0) {
+      results[existingIndex] = { ...results[existingIndex], ...nextResult }
+      continue
+    }
+    results.push(nextResult)
   }
   return dropProvisionalSystemManagedResults(
-    dedupeBy(results, (result) => `${result.name}:${result.toolUseId ?? ''}:${result.at ?? ''}:${JSON.stringify(result.output ?? null)}`),
+    dedupeBy(results, (result) => `${result.name}:${result.toolUseId ?? ''}:${JSON.stringify(result.output ?? null)}:${result.error ?? ''}`),
   )
 }
 
@@ -325,11 +379,12 @@ function collectKnowledgeHits(
   const hits: NonNullable<ScenarioObservedEvidenceInput['knowledgeHits']> = []
 
   for (const result of toolResults) {
-    if (!result.name.startsWith('kb_search_')) continue
+    const explicitSource = firstNonEmptyString(result as Record<string, unknown>, ['knowledgeSourceName', 'knowledgeSourceId'])
+    if (!explicitSource && !result.name.startsWith('kb_search_')) continue
     const query = isRecord(result.input) && typeof result.input.query === 'string'
       ? result.input.query
       : undefined
-    const source = knowledgeSourceFromToolName(result.name)
+    const source = explicitSource ?? knowledgeSourceFromToolName(result.name)
     const docs = extractKnowledgeDocuments(result.output)
 
     for (const doc of docs) {
@@ -533,8 +588,61 @@ function collectTranscriptHealth(rawTrace: TraceRecord[]): NonNullable<NonNullab
 }
 
 function detectToolExecutionMode(value: unknown): ScenarioToolExecutionMode {
+  if (isRecord(value) && isRecord(value.executionTruth)) {
+    const effectiveMode = value.executionTruth.effectiveMode
+    if (effectiveMode === 'mocked_dry_run') return 'mocked'
+    if (
+      effectiveMode === 'runtime_backed'
+      || effectiveMode === 'runtime_managed'
+      || effectiveMode === 'static_fixture'
+    ) {
+      return 'runtime'
+    }
+  }
   if (hasDryRunMarker(value)) return 'mocked'
   return 'runtime'
+}
+
+function deriveScenarioToolExecutionMode(
+  latestTrace: PlaygroundResult | null,
+  evidence: ScenarioObservedEvidenceInput,
+): ScenarioToolExecutionMode {
+  const runtimeTruth = latestTrace?.trace.find((step) => step.runtimeTruth)?.runtimeTruth
+  switch (runtimeTruth?.executionSurface.mode) {
+    case 'dry_run_mixed':
+    case 'dry_run_mock_only':
+      return 'mocked'
+    case 'runtime_only':
+      return 'runtime'
+    default:
+      break
+  }
+
+  const executionModes = [
+    ...(evidence.toolCalls ?? []).map((call) => call.executionMode),
+    ...(evidence.toolResults ?? []).map((result) => result.executionMode),
+  ]
+  return executionModes.includes('runtime') ? 'runtime' : 'mocked'
+}
+
+function toolInvocationMatches(
+  left: NonNullable<ScenarioObservedEvidenceInput['toolCalls']>[number],
+  right: NonNullable<ScenarioObservedEvidenceInput['toolCalls']>[number],
+): boolean {
+  return left.name === right.name
+    && (left.toolUseId ?? '') === (right.toolUseId ?? '')
+    && JSON.stringify(left.input ?? null) === JSON.stringify(right.input ?? null)
+}
+
+function toolResultMatches(
+  left: NonNullable<ScenarioObservedEvidenceInput['toolResults']>[number],
+  right: NonNullable<ScenarioObservedEvidenceInput['toolResults']>[number],
+): boolean {
+  return left.name === right.name
+    && (left.toolUseId ?? '') === (right.toolUseId ?? '')
+    && JSON.stringify(left.input ?? null) === JSON.stringify(right.input ?? null)
+    && JSON.stringify(left.output ?? null) === JSON.stringify(right.output ?? null)
+    && (left.error ?? '') === (right.error ?? '')
 }
 
 function hasDryRunMarker(value: unknown): boolean {

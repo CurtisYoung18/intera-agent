@@ -21,7 +21,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
   {
     name: 'read_chat_memory',
     description:
-      'Read chat-scoped working memory for the current conversation. Returns confirmed facts, tools run, key events, compact summary, and open items. Memory is context only, not ProcedureRun authority.',
+      'Read chat-scoped working memory for the current conversation. Returns tools run, key events, compact summary, open items, and missing-info stats. Memory is context only, not ProcedureRun authority.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -53,11 +53,11 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
   {
     name: 'remember',
     description:
-      'Write a scoped memory item. Use scope="chat" for this conversation only, or scope="user" for long-term cross-chat profile. Do not store ProcedureRun runtime state, currentStepId, needsReconcile, stale evidence, or completion authority.',
+      'Write a scoped memory item. Use scope="user" for long-term cross-chat profile. Chat-scoped fact writes are no longer accepted; rely on runtime evidence, form results, and tool results instead. Do not store ProcedureRun runtime state, currentStepId, needsReconcile, stale evidence, or completion authority.',
     inputSchema: {
       type: 'object',
       properties: {
-        scope: { type: 'string', enum: ['chat', 'user'], description: 'Memory scope to write.' },
+        scope: { type: 'string', enum: ['user'], description: 'Memory scope to write. Only user profile writes are accepted.' },
         key: { type: 'string', description: 'Stable memory key or short label.' },
         value: { description: 'Memory value, fact, or profile item to store.' },
         facts: { type: 'object', description: 'Optional map of facts/items to store.' },
@@ -71,7 +71,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
     toolCategory: 'system_info',
     displayVerb: { text: 'Saving memory', icon: 'scan' },
     zodSchema: z.object({
-      scope: z.enum(['chat', 'user']),
+      scope: z.enum(['user']),
       key: z.string().optional(),
       value: z.unknown().optional(),
       facts: z.record(z.string(), z.unknown()).optional(),
@@ -104,7 +104,6 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
         procedureId: { type: 'string', description: 'Procedure id / Procedure type slug, e.g. deposit_issue, account_access.' },
         reason: { type: 'string', description: 'Why this Procedure matches the customer message.' },
         confidence: { type: 'number', description: 'Optional confidence from 0 to 1.' },
-        collectedFacts: { type: 'object', description: 'Optional structured details already observed from the customer message. Procedure v2 treats these as unverified context, not runtime truth.' },
         currentProcedureAction: {
           type: 'string',
           enum: ['pause', 'complete', 'abandon'],
@@ -123,7 +122,6 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
       procedureId: z.string(),
       reason: z.string().optional(),
       confidence: z.number().optional(),
-      collectedFacts: z.record(z.string(), z.unknown()).optional(),
       currentProcedureAction: z.enum(['pause', 'complete', 'abandon']).optional(),
       requestId: z.string().optional(),
     }),
@@ -193,8 +191,8 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_chat_memory',
     description:
-      'Read the per-case working memory for the current investigation. Returns confirmed facts, tools called so far, ' +
-      'key events, and any compaction summary from earlier turns. Use this to recall what has already been done in this case.',
+      'Read the per-case working memory for the current investigation. Returns tool history, key events, ' +
+      'compact summary, open items, and missing-info stats. Use this to recall what has already been done in this case.',
     inputSchema: { type: 'object', properties: {}, required: [] },
     isConcurrencySafe: true,
     mode: 'system_managed',
@@ -224,10 +222,11 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     description:
       'Create a human task for manual confirmation or processing. ' +
       'Call this when a human must take over — do not only say you will transfer. ' +
-      'This will pause the agent loop until a human responds. ' +
+      'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
+      'even if the outer case or chat remains waiting_human for operator work. ' +
       'It creates the durable handoff record and triggers channel-specific handoff UI/transfer behavior. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
-      'their answers come back as structured runtime input for the next Procedure step.',
+      'their answers come back as structured runtime input for follow-up operator handling or later customer work, not to resume the finalized handoff Procedure.',
     inputSchema: {
       type: 'object',
       properties: {

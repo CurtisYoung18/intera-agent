@@ -13,7 +13,7 @@ import {
   type HookContract,
   type HookHandler,
 } from '@intera/shared/contracts/hooks'
-import { parseProcedureDefinition, procedureDefinitionSchema } from '@intera/shared/contracts/case-types'
+import { parseProcedure, procedureV2Schema } from '@intera/shared/contracts/case-types'
 import { normalizeToolMode } from '@intera/shared/contracts/tools'
 import { DEFAULT_MEMORY_STRATEGY, DEFAULT_MODEL } from '@intera/shared/defaults'
 import { listScenarios, saveScenario } from '@/lib/scenarios/store'
@@ -572,7 +572,7 @@ function validateTemplateReferences(template: InteraAgentTemplateV1): void {
 }
 
 function exportProcedureSummary(ct: any) {
-  const parsed = procedureDefinitionSchema.safeParse(parseJsonLoose(ct.procedure))
+  const parsed = procedureV2Schema.safeParse(parseJsonLoose(ct.procedure))
   if (!parsed.success) return null
   return compactRecord({
     procedureId: toStableName(ct.type, 'procedure'),
@@ -586,7 +586,7 @@ function exportProcedureSummary(ct: any) {
 }
 
 function exportCaseType(ct: any) {
-  const procedure = procedureDefinitionSchema.safeParse(parseJsonLoose(ct.procedure))
+  const procedure = procedureV2Schema.safeParse(parseJsonLoose(ct.procedure))
   const legacy = compactRecord({ id: ct.id })
 
   return compactRecord({
@@ -903,7 +903,7 @@ function resolveImportedScope(
     if (!caseType || !caseTypeName) {
       throw new AgentTemplateValidationError(`HookBinding references unknown CaseType "${caseTypeName ?? binding.scopeKey}"`)
     }
-      const stepExists = parseProcedureDefinition(
+      const stepExists = parseProcedure(
         caseType.procedure ? JSON.stringify(caseType.procedure) : null,
       )?.steps.some((step) => step.id === binding.procedureStepId)
     if (!stepExists) {

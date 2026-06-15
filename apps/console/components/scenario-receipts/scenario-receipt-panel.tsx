@@ -43,6 +43,8 @@ const RECEIPT_COPY = {
     none: 'none',
     finalStatus: 'Final status',
     noFinalStatus: 'No final status recorded.',
+    procedureStatus: 'Procedure status',
+    procedureOutcome: 'Procedure outcome',
     notRecorded: 'Not recorded',
     staleRuntimeWarning: 'Runtime recorded stale evidence that still requires reconciliation.',
     transcriptHealth: 'Transcript health',
@@ -95,6 +97,8 @@ const RECEIPT_COPY = {
     none: '无',
     finalStatus: '最终状态',
     noFinalStatus: '还没有记录最终状态。',
+    procedureStatus: 'Procedure 状态',
+    procedureOutcome: 'Procedure 结果',
     notRecorded: '未记录',
     staleRuntimeWarning: '运行时记录到了仍待对齐的过期证据。',
     transcriptHealth: 'Transcript 健康度',
@@ -255,6 +259,8 @@ export function ScenarioReceiptPanel({
             <div className="rounded-md border border-[var(--color-border-subtle)] bg-white/70 px-3 py-2 text-sm text-[var(--color-text-primary)]">
               {evidence.finalStatus ?? copy.notRecorded}
             </div>
+            <HealthRow label={copy.procedureStatus} value={evidence.procedureStatus ?? copy.notRecorded} />
+            <HealthRow label={copy.procedureOutcome} value={evidence.procedureOutcome ?? copy.notRecorded} />
             {evidence.finalResponse && <p className="rounded-md border border-[var(--color-border-subtle)] bg-white px-3 py-2 text-sm leading-5 text-[var(--color-text-secondary)]">{evidence.finalResponse}</p>}
             {evidence.runtime?.staleEvidence?.length ? <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{copy.staleRuntimeWarning}</p> : null}
           </div>

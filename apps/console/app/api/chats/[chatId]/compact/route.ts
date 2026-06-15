@@ -73,7 +73,7 @@ export const POST = defineRoute<void, { chatId: string }>({
             chatId: params.chatId,
             runId: runByCase.get(caseId) ?? null,
             summary,
-            confirmedFacts: '{}',
+            contextMap: '{}',
             missingFacts: '[]',
             toolsCalled: '[]',
             toolResults: '{}',

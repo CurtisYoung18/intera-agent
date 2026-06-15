@@ -74,7 +74,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         caseSchema: null,
         chatMemory: {
           setCaseStatus,
-          setConfirmedFactsBulk: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
         } as any,
         persistence: {} as any,
         traceWriter: {
@@ -124,6 +124,10 @@ describe('tool-interceptor start_procedure truth alignment', () => {
       type: 'deposit_not_credited',
       displayName: 'Deposit not credited',
     }))
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-123', expect.objectContaining({
+      procedureId: 'deposit_not_credited',
+    }))
+    expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
     expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
       type: 'case_status',
       data: expect.objectContaining({
@@ -139,22 +143,38 @@ describe('tool-interceptor start_procedure truth alignment', () => {
       mode: 'inline_procedure',
       caseType: 'deposit_not_credited',
       runId: 'run-1',
+      procedureSummary: {
+        stepCount: 1,
+        steps: [
+          expect.objectContaining({
+            id: 'collect_txid',
+            title: 'Collect TXID',
+            actionKinds: ['ask'],
+            branchCount: 0,
+            requiredActionCount: 1,
+          }),
+        ],
+      },
     })
   })
 
-  it('returns waiting_form only for a completed ask_user_questions with renderable fields', async () => {
+  it('ignores nested structured payloads on start_procedure so runtime only trusts customer form events', async () => {
     const sendEvent = vi.fn()
+    const legacyKey = `collected${'Facts'}`
 
-    const result = await interceptToolResults(
+    await interceptToolResults(
       {
-        caseId: 'case-123',
+        caseId: 'case-compat',
         orgId: 'org-a',
         agentConfigId: 'agent-a',
         userId: 'user-1',
         chatId: 'chat-1',
         config: {} as any,
         caseSchema: null,
-        chatMemory: {} as any,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
         persistence: {} as any,
         traceWriter: {
           write: vi.fn(async () => {}),
@@ -165,79 +185,28 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         messages: [],
         getCurrentStage: () => 'created',
         setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
       },
       [{
-        name: 'ask_user_questions',
-        output: { ok: true, output: { ok: true, handled: 'channel' }, latencyMs: 0 },
+        name: 'start_procedure',
+        output: { ok: true },
         toolUse: {
-          id: 'toolu_form_1',
-          status: 'completed',
+          id: 'toolu_start_compat',
           input: {
-            title: 'Need member ID',
-            description: 'Please fill the form.',
-            fields: [{ key: 'member_id', label: 'Member ID', type: 'text', required: true }],
+            procedureId: 'deposit_not_credited',
+            [legacyKey]: {
+              member_id: 'JAYA113C88F',
+              request_human_support: true,
+            },
           },
         },
       } as any],
       sendEvent,
     )
 
-    expect(result.action).toMatchObject({
-      kind: 'return',
-      result: expect.objectContaining({
-        transition: 'waiting_form',
-      }),
-    })
-    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'form_request',
-      data: expect.objectContaining({
-        title: 'Need member ID',
-      }),
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-compat', expect.objectContaining({
+      procedureId: 'deposit_not_credited',
     }))
-  })
-
-  it('ignores malformed ask_user_questions results instead of rendering an empty form', async () => {
-    const sendEvent = vi.fn()
-
-    const result = await interceptToolResults(
-      {
-        caseId: 'case-123',
-        orgId: 'org-a',
-        agentConfigId: 'agent-a',
-        userId: 'user-1',
-        chatId: 'chat-1',
-        config: {} as any,
-        caseSchema: null,
-        chatMemory: {} as any,
-        persistence: {} as any,
-        traceWriter: {
-          write: vi.fn(async () => {}),
-        } as any,
-        toolRouter: {} as any,
-        getCaseLoop: () => null,
-        dryRun: false,
-        messages: [],
-        getCurrentStage: () => 'created',
-        setPendingEscalation: vi.fn(),
-      },
-      [{
-        name: 'ask_user_questions',
-        output: {
-          ok: false,
-          output: null,
-          error: 'Input validation failed',
-          latencyMs: 0,
-        },
-        toolUse: {
-          id: 'toolu_form_2',
-          status: 'error',
-          input: {},
-        },
-      } as any],
-      sendEvent,
-    )
-
-    expect(result.action).toEqual({ kind: 'pass' })
-    expect(sendEvent).not.toHaveBeenCalled()
+    expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
   })
 })

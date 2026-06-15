@@ -216,6 +216,10 @@ export class AgentLoop {
     return loop
   }
 
+  getToolDefinition(name: string): ToolDefinition | undefined {
+    return this.toolRouter.getTool(name)
+  }
+
   // -----------------------------------------------------------------------
   // Main entry point
   // -----------------------------------------------------------------------
@@ -400,7 +404,6 @@ export class AgentLoop {
         nudgeCount: this.nudgeCount,
         conversationLoop: this.conversationLoop,
         caseLoop: this.caseLoop,
-        chatMemory: this.chatMemory,
         allTools: this.toolRouter.getTools(),
         procedureRunTail: procedureRunPromptTail(this.deps.caseId),
       })
@@ -751,6 +754,19 @@ export class AgentLoop {
           stopReason = null
           continue
         }
+        if (textReplyRuntime.blockedReason) {
+          discardVisibleText()
+          assistantMessage.content = ''
+          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-facing human-handoff promise was withheld because no persisted create_human_task evidence exists yet. Call create_human_task first or revise the reply so it does not claim that handoff is already arranged.'))
+          await this.traceWriter.write('loop_decision', 'Unsafe human-handoff promise withheld', {
+            basedOnInputEpoch: iterationBasedOnInputEpoch,
+            latestInputEpoch: latestInputEpoch(this.deps.caseId),
+            runId: textReplyRuntime.run?.runId,
+            blockedReason: textReplyRuntime.blockedReason,
+          })
+          stopReason = null
+          continue
+        }
 
         const stopEval = await this.hookEngine.evaluate('Stop', {
           ...this.buildHookContext('Stop', {
@@ -1011,12 +1027,14 @@ export class AgentLoop {
         }
         const basedOnInputEpoch = result.toolUse?.id ? toolBasedOnEpoch.get(result.toolUse.id) : undefined
         if (this.shouldRecordProcedureEvidence(result.name)) {
+          const toolDefinition = this.toolRouter.getTool(result.name)
           recordProcedureToolResult(this.deps.caseId, {
             toolName: result.name,
             toolUseId: result.toolUse?.id,
             basedOnInputEpoch: basedOnInputEpoch ?? iterationBasedOnInputEpoch,
             toolOutput: payload,
             toolError: (result.output as { error?: string })?.error,
+            isKnowledgeTool: !!toolDefinition?.knowledgeSourceId,
           })
         }
         await this.traceWriter.write(
@@ -1348,7 +1366,7 @@ export class AgentLoop {
           baseQuestion: String(input.question || 'Human task requested'),
           caseType: this.deps.caseSchema?.type,
           latestCustomerMessage: latestUserText(this.messages),
-          confirmedFacts: this.chatMemory.getConfirmedFacts(),
+          contextMap: this.chatMemory.getSummary().contextMap,
         })
         const taskFields = Array.isArray(input.fields) ? input.fields : undefined
         const resolvedCaseType = this.deps.caseSchema?.type || 'general'
@@ -1405,13 +1423,9 @@ export class AgentLoop {
 
   private readChatMemoryToolOutput(): Record<string, unknown> {
     const summary = this.chatMemory.getSummary()
-    const activeRun = getActiveProcedureRun(this.deps.caseId)
-    const exposeConfirmedFacts = activeRun?.procedureVersion !== 'v2'
     return {
       scope: 'chat',
       authority: 'context_only_not_procedure_run_state',
-      confirmedFacts: exposeConfirmedFacts ? summary.confirmedFacts : {},
-      confirmedFactsAvailable: exposeConfirmedFacts,
       toolsCalled: summary.toolsCalled,
       keyEvents: summary.keyEvents.slice(-20),
       compactSummary: summary.summary || '',
@@ -1477,50 +1491,26 @@ export class AgentLoop {
     const filteredFacts = filterRuntimeAuthorityKeys(candidateFacts)
     const rejectedKeys = Object.keys(candidateFacts).filter((candidateKey) => !(candidateKey in filteredFacts))
     const reason = String(input.reason || 'No reason supplied.')
-    const activeRun = getActiveProcedureRun(this.deps.caseId)
 
     if (scope === 'chat') {
-      if (activeRun?.procedureVersion === 'v2' && Object.keys(filteredFacts).length > 0) {
-        appendRuntimeEvent(this.deps.caseId, {
-          origin: 'system',
-          source: 'remember',
-          summary: `remember(scope="chat") rejected during Procedure v2: ${reason}`,
-          metadata: {
-            attemptedKeys: Object.keys(filteredFacts),
-            rejectedKeys,
-            memoryScope: 'chat',
-            procedureVersion: 'v2',
-          },
-        })
-        return {
-          ok: false,
-          scope: 'chat',
-          writtenKeys: [],
-          rejectedKeys: [...rejectedKeys, ...Object.keys(filteredFacts)],
-          error: 'Procedure v2 does not accept chat confirmed-fact writes. Use runtime evidence, form results, tool results, or UserProfile instead.',
-          authority: 'runtime_truth_only',
-        }
-      }
-      if (Object.keys(filteredFacts).length > 0) {
-        this.chatMemory.setConfirmedFactsBulk(filteredFacts)
-      }
       appendRuntimeEvent(this.deps.caseId, {
         origin: 'system',
         source: 'remember',
-        summary: `remember(scope="chat"): ${reason}`,
-        metadata: { writtenKeys: Object.keys(filteredFacts), rejectedKeys, memoryScope: 'chat' },
+        summary: `remember(scope="chat") rejected: ${reason}`,
+        metadata: {
+          attemptedKeys: Object.keys(filteredFacts),
+          rejectedKeys,
+          memoryScope: 'chat',
+          status: 'rejected',
+        },
       })
-      if (this.shouldPersistRuntimeMemory()) {
-        await this.persistChatMemory()
-        await this.persistChatSession()
-      }
       return {
-        ok: true,
+        ok: false,
         scope: 'chat',
-        writtenKeys: Object.keys(filteredFacts),
-        rejectedKeys,
-        readsFrom: 'read_chat_memory',
-        authority: 'memory_context_only',
+        writtenKeys: [],
+        rejectedKeys: [...rejectedKeys, ...Object.keys(filteredFacts)],
+        error: 'Chat-scoped fact writes are no longer supported. Use runtime evidence, form results, tool results, or UserProfile instead.',
+        authority: 'read_only_context',
       }
     }
 
@@ -1660,7 +1650,7 @@ export class AgentLoop {
             error: options.toolError,
           }
         : undefined,
-      caseFacts: this.chatMemory.getConfirmedFacts(),
+      caseFacts: this.chatMemory.getContextMap(),
       missingFacts: this.chatMemory.getMissingFacts(),
       previousToolCalls: this.chatMemory.getToolsCalled().map((name) => ({
         name,
@@ -1742,7 +1732,7 @@ export class AgentLoop {
         baseQuestion: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
         caseType: this.deps.caseSchema?.type,
         latestCustomerMessage: latestUserText(this.messages),
-        confirmedFacts: this.chatMemory.getConfirmedFacts(),
+        contextMap: this.chatMemory.getSummary().contextMap,
       })
       const task = await this.persistence.createHumanTask({
         caseId: this.deps.caseId,
@@ -1992,18 +1982,22 @@ export class AgentLoop {
   private async persistChatSession(): Promise<void> {
     if (!this.deps.chatId) return
     if (!this.shouldPersistRuntimeMemory()) return
+    const activeRun = getActiveProcedureRun(this.deps.caseId)
+    const persistedContextMap = activeRun?.definition?.version === 'v2'
+      ? {}
+      : this.chatMemory.getContextMap()
     try {
       await prisma.chatSession.upsert({
         where: { orgId_chatId: { orgId: this.deps.orgId, chatId: this.deps.chatId } },
         update: {
-          confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
+          contextMap: JSON.stringify(persistedContextMap),
           keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
           summary: this.chatMemory.getSummary().summary || undefined,
         },
         create: {
           chatId: this.deps.chatId,
           orgId: this.deps.orgId,
-          confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
+          contextMap: JSON.stringify(persistedContextMap),
           keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
           summary: this.chatMemory.getSummary().summary || undefined,
         },

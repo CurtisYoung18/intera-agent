@@ -45,7 +45,7 @@ const bootstrap = {
     { id: 'ct1', type: 'deposit_issue', displayName: 'Deposit Issue', enabled: true },
   ],
   procedureSteps: [
-    { caseTypeId: 'ct1', caseTypeType: 'deposit_issue', caseTypeDisplayName: 'Deposit Issue', id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit', label: 'Deposit Issue / lookup_deposit' },
+    { caseTypeId: 'ct1', caseTypeType: 'deposit_issue', caseTypeDisplayName: 'Deposit Issue', id: 'lookup_deposit', label: 'Deposit Issue / lookup_deposit' },
   ],
   tools: [
     { id: 't1', name: 'get_latest_deposit', description: 'Deposit lookup', mode: 'http', enabled: true },

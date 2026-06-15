@@ -469,7 +469,7 @@ export async function* runPlaygroundTurn(input: {
     }).catch(() => null)
     if (persistedChatSession) {
       agentLoop.loadMemory({
-        confirmedFacts: persistedChatSession.confirmedFacts,
+        contextMap: persistedChatSession.contextMap,
         keyEvents: persistedChatSession.keyEvents,
         summary: persistedChatSession.summary,
       })

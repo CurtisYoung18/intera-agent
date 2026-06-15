@@ -79,6 +79,8 @@ interface ScenarioEditorState {
   expectedCaseType: string
   expectedToolsCalledText: string
   expectedFinalStatus: string
+  expectedProcedureStatus: string
+  expectedProcedureOutcome: string
   expectedHumanTransfer: boolean
   expectedRequiredPhrasesText: string
   expectedForbiddenPhrasesText: string
@@ -134,6 +136,8 @@ function createBlankScenarioEditorState(): ScenarioEditorState {
     expectedCaseType: '',
     expectedToolsCalledText: '',
     expectedFinalStatus: '',
+    expectedProcedureStatus: '',
+    expectedProcedureOutcome: '',
     expectedHumanTransfer: false,
     expectedRequiredPhrasesText: '',
     expectedForbiddenPhrasesText: '',
@@ -161,6 +165,8 @@ function scenarioEditorFromScenario(scenario: SavedScenario | null): ScenarioEdi
     expectedCaseType: scenario.expected.caseType ?? '',
     expectedToolsCalledText: (scenario.expected.toolsCalled ?? []).join(', '),
     expectedFinalStatus: scenario.expected.finalStatus ?? '',
+    expectedProcedureStatus: scenario.expected.procedureStatus ?? '',
+    expectedProcedureOutcome: scenario.expected.procedureOutcome ?? '',
     expectedHumanTransfer: scenario.expected.humanTransfer ?? false,
     expectedRequiredPhrasesText: (scenario.expected.requiredPhrases ?? []).join('\n'),
     expectedForbiddenPhrasesText: (scenario.expected.forbiddenPhrases ?? []).join('\n'),
@@ -216,6 +222,8 @@ function scenarioPayloadFromEditor(editor: ScenarioEditorState): ScenarioCreateR
       hooks,
       humanTransfer: editor.expectedHumanTransfer || undefined,
       finalStatus: editor.expectedFinalStatus.trim() || undefined,
+      procedureStatus: editor.expectedProcedureStatus.trim() || undefined,
+      procedureOutcome: editor.expectedProcedureOutcome.trim() || undefined,
       requiredPhrases,
       forbiddenPhrases,
     },
@@ -1272,6 +1280,8 @@ function ScenarioAuthoringPanel({
         expectedProcedure: '期望 Procedure',
         expectedTools: '期望 Tools',
         expectedFinalStatus: '期望最终状态',
+        expectedProcedureStatus: '期望 Procedure 状态',
+        expectedProcedureOutcome: '期望 Procedure 结果',
         expectHumanTransfer: '期望人工转接',
         requiredPhrases: '必须出现的短语',
         forbiddenPhrases: '禁止出现的短语',
@@ -1301,6 +1311,8 @@ function ScenarioAuthoringPanel({
         expectedProcedure: 'Expected Procedure',
         expectedTools: 'Expected tools',
         expectedFinalStatus: 'Expected final status',
+        expectedProcedureStatus: 'Expected Procedure status',
+        expectedProcedureOutcome: 'Expected Procedure outcome',
         expectHumanTransfer: 'Expect human transfer',
         requiredPhrases: 'Required phrases',
         forbiddenPhrases: 'Forbidden phrases',
@@ -1439,6 +1451,14 @@ function ScenarioAuthoringPanel({
         <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
           {labels.expectedFinalStatus}
           <input value={editor.expectedFinalStatus} onChange={(event) => updateField('expectedFinalStatus', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {labels.expectedProcedureStatus}
+          <input value={editor.expectedProcedureStatus} onChange={(event) => updateField('expectedProcedureStatus', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
+        </label>
+        <label className="grid gap-1 text-[12px] font-medium text-[var(--color-text-secondary)]">
+          {labels.expectedProcedureOutcome}
+          <input value={editor.expectedProcedureOutcome} onChange={(event) => updateField('expectedProcedureOutcome', event.target.value)} className="h-9 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-accent-primary)]" />
         </label>
         <label className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--color-text-secondary)] md:self-end">
           <input type="checkbox" checked={editor.expectedHumanTransfer} onChange={(event) => updateField('expectedHumanTransfer', event.target.checked)} />

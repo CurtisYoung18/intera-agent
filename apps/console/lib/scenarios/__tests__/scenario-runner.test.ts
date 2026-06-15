@@ -21,6 +21,8 @@ const baseScenario: SavedScenario = {
     hooks: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
     humanTransfer: true,
     finalStatus: 'waiting_human',
+    procedureStatus: 'completed',
+    procedureOutcome: 'handed_off',
     forbiddenPhrases: ['guaranteed compensation'],
   },
   createdAt: '2026-06-08T00:00:00.000Z',
@@ -78,6 +80,8 @@ describe('Scenario runner harness', () => {
       handoff: [{ required: true, reason: 'create_human_task observed', target: 'human' }],
       finalResponse: 'I will transfer this to a human specialist.',
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
     }, {
       executionMode: 'agentRuntime',
       toolExecutionMode: 'mocked',
@@ -88,6 +92,45 @@ describe('Scenario runner harness', () => {
     expect(receipt.evidence.toolCalls[0]).toMatchObject({ name: 'get_latest_deposit', executionMode: 'mocked' })
     expect(receipt.evidence.toolResults[0]).toMatchObject({ name: 'get_latest_deposit', executionMode: 'mocked' })
     expect(receipt.evidence.hookDecisions[0]).toMatchObject({ hookName: 'conflict_requires_human', decision: 'escalate' })
+  })
+
+  it('backfills Procedure status and outcome from runtime procedureRuns when top-level evidence fields are missing', () => {
+    const receipt = buildScenarioReceipt(baseScenario, {
+      caseType: 'deposit_issue',
+      toolsCalled: ['get_latest_deposit'],
+      toolCalls: [{ name: 'get_latest_deposit', executionMode: 'runtime' }],
+      toolResults: [{ name: 'get_latest_deposit', output: { status: 'needs_review' }, executionMode: 'runtime' }],
+      hookDecisions: [{ hookName: 'conflict_requires_human', checkpoint: 'PostToolUse', decision: 'escalate' }],
+      humanTransfer: true,
+      handoff: [{ required: true, target: 'human' }],
+      finalResponse: 'I will transfer this to a human specialist.',
+      finalStatus: 'waiting_human',
+      runtime: {
+        procedureRuns: [{
+          runId: 'run-1',
+          procedureId: 'deposit_issue',
+          displayName: 'Deposit',
+          status: 'completed',
+          outcome: 'handed_off',
+          version: 'v2',
+          updatedAt: '2026-06-15T10:00:00.000Z',
+          currentStepId: null,
+          blockers: [],
+          inputs: [],
+          branches: [],
+          evaluations: [],
+          evidence: [],
+        }],
+      },
+    }, {
+      executionMode: 'agentRuntime',
+      toolExecutionMode: 'runtime',
+    })
+
+    expect(receipt.evidence.procedureStatus).toBe('completed')
+    expect(receipt.evidence.procedureOutcome).toBe('handed_off')
+    expect(receipt.checks.find((check) => check.name === 'procedure_status')?.passed).toBe(true)
+    expect(receipt.checks.find((check) => check.name === 'procedure_outcome')?.passed).toBe(true)
   })
 
   it('supports explicit Tool call count ranges', () => {

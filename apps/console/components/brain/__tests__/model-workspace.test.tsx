@@ -82,9 +82,14 @@ afterEach(() => {
 describe('ModelWorkspace', () => {
   it('saves the selected model and notifies Playground to refresh', async () => {
     const { default: ModelWorkspace } = await import('../model-workspace')
+    const { LocaleProvider } = await import('@/components/locale-provider')
 
     await act(async () => {
-      render(<ModelWorkspace />)
+      render(
+        <LocaleProvider>
+          <ModelWorkspace />
+        </LocaleProvider>,
+      )
     })
 
     await screen.findByText('Model configuration')

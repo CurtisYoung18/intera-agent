@@ -85,7 +85,7 @@ function mockLoop(overrides: Partial<{
       reason: 'end_turn',
     })),
     getMemorySummary: overrides.getMemorySummary ?? vi.fn(() => ({
-      confirmedFacts: {},
+      contextMap: {},
       missingFacts: [],
       toolsCalled: [],
       toolResults: {},
@@ -388,7 +388,17 @@ describe('POST /api/messages runtime session guards', () => {
 
   it('hydrates persisted provider transcript before a follow-up HTTP turn runs', async () => {
     const priorCreatedAt = new Date('2026-06-12T00:00:00Z')
-    h.prisma.case.findUnique.mockResolvedValueOnce({ id: 'case-provider-reload', status: 'open' })
+    const providerReloadCase = {
+      id: 'case-provider-reload',
+      orgId: 'org-a',
+      userId: 'user-1',
+      type: 'general',
+      status: 'open',
+      chatId: 'chat-1',
+      memory: null,
+    }
+    h.prisma.case.findUnique.mockResolvedValueOnce(providerReloadCase)
+    h.prisma.case.findFirst.mockResolvedValueOnce(providerReloadCase)
     h.prisma.message.findMany.mockResolvedValueOnce([
       {
         id: 'assistant-tool-use',
@@ -445,8 +455,17 @@ describe('POST /api/messages runtime session guards', () => {
   })
 
   it('drains queued follow-up turns and persists the follow-up result before returning', async () => {
+    h.prisma.case.findFirst.mockResolvedValue({
+      id: 'case-drain',
+      orgId: 'org-a',
+      userId: 'user-1',
+      type: 'general',
+      status: 'created',
+      chatId: 'chat-1',
+      memory: null,
+    })
     const primaryMemory = {
-      confirmedFacts: {},
+      contextMap: {},
       missingFacts: [],
       toolsCalled: [],
       toolResults: {},
@@ -456,7 +475,7 @@ describe('POST /api/messages runtime session guards', () => {
       caseStatus: 'created',
     }
     const followupMemory = {
-      confirmedFacts: { memberId: 'M123' },
+      contextMap: { memberId: 'M123' },
       missingFacts: [],
       toolsCalled: ['lookup_balance'],
       toolResults: { lookup_balance: { ok: true } },
@@ -556,8 +575,8 @@ describe('POST /api/messages runtime session guards', () => {
     }))
     expect(h.prisma.chatMemory.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { caseId: 'case-drain' },
-      update: expect.objectContaining({
-        confirmedFacts: JSON.stringify(followupMemory.confirmedFacts),
+        update: expect.objectContaining({
+        contextMap: JSON.stringify(followupMemory.contextMap),
         toolResults: JSON.stringify(followupMemory.toolResults),
       }),
     }))
@@ -582,20 +601,25 @@ describe('POST /api/messages runtime session guards', () => {
     expect(hasSession('case-drain')).toBe(false)
   })
 
-  it('does not merge form answers into confirmedFacts or persist new chatMemory facts for active Procedure v2 cases', async () => {
-    h.prisma.case.findUnique.mockResolvedValue({
+  it('does not merge form answers into contextMap or persist new chatMemory facts for active Procedure v2 cases', async () => {
+    const v2FormCase = {
       id: 'case-v2-form',
+      orgId: 'org-a',
+      userId: 'user-1',
       type: 'deposit_issue',
       status: 'open',
+      chatId: 'chat-1',
       memory: {
-        confirmedFacts: JSON.stringify({ legacyMemberId: 'LEG-1' }),
+        contextMap: JSON.stringify({ legacyMemberId: 'LEG-1' }),
         missingFacts: JSON.stringify(['memberId']),
         toolsCalled: JSON.stringify([]),
         toolResults: JSON.stringify({}),
         keyEvents: JSON.stringify([]),
         summary: '',
       },
-    })
+    }
+    h.prisma.case.findUnique.mockResolvedValue(v2FormCase)
+    h.prisma.case.findFirst.mockResolvedValue(v2FormCase)
     h.prisma.caseType.findUnique.mockResolvedValue({
       type: 'deposit_issue',
       displayName: 'Deposit issue',
@@ -630,7 +654,7 @@ describe('POST /api/messages runtime session guards', () => {
 
     const loop = mockLoop({
       getMemorySummary: vi.fn(() => ({
-        confirmedFacts: { memberId: 'M123', legacyMemberId: 'LEG-1' },
+        contextMap: { memberId: 'M123', legacyMemberId: 'LEG-1' },
         missingFacts: [],
         toolsCalled: [],
         toolResults: {},
@@ -656,14 +680,15 @@ describe('POST /api/messages runtime session guards', () => {
 
     expect(h.buildModePrompt).toHaveBeenCalledWith(expect.objectContaining({
       caseState: expect.objectContaining({
-        confirmedFacts: { legacyMemberId: 'LEG-1' },
-        missingFacts: ['memberId'],
+        missingFacts: [],
+        toolsCalled: [],
+        summary: '',
       }),
     }))
     expect(h.prisma.chatMemory.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { caseId: 'case-v2-form' },
       update: expect.objectContaining({
-        confirmedFacts: JSON.stringify({ legacyMemberId: 'LEG-1' }),
+        contextMap: JSON.stringify({ legacyMemberId: 'LEG-1' }),
       }),
     }))
 
@@ -693,19 +718,24 @@ describe('POST /api/messages runtime session guards', () => {
         userId: 'user-1',
       },
     })
-    h.prisma.case.findUnique.mockResolvedValue({
+    const resumeCase = {
       id: 'case-resume',
+      orgId: 'org-a',
+      userId: 'user-1',
       type: 'general',
       status: 'created',
+      chatId: 'chat-1',
       memory: {
-        confirmedFacts: JSON.stringify({ member_id: 'JAYA113C88F' }),
+        contextMap: JSON.stringify({ member_id: 'JAYA113C88F' }),
         missingFacts: JSON.stringify([]),
         toolsCalled: JSON.stringify(['create_human_task']),
         toolResults: JSON.stringify({}),
         keyEvents: JSON.stringify([]),
         summary: 'Paused for payment ops review.',
       },
-    })
+    }
+    h.prisma.case.findUnique.mockResolvedValue(resumeCase)
+    h.prisma.case.findFirst.mockResolvedValue(resumeCase)
     h.prisma.procedureRun.findFirst.mockResolvedValue({
       procedureId: 'deposit_not_credited',
       status: 'paused',
@@ -736,7 +766,7 @@ describe('POST /api/messages runtime session guards', () => {
         reason: 'resumed',
       })),
       getMemorySummary: vi.fn(() => ({
-        confirmedFacts: {},
+        contextMap: {},
         missingFacts: [],
         toolsCalled: ['resume_case'],
         toolResults: {},
@@ -777,19 +807,24 @@ describe('POST /api/messages runtime session guards', () => {
   })
 
   it('prefers active ProcedureRun truth over stale general case rows when hydrating an existing case', async () => {
-    h.prisma.case.findUnique.mockResolvedValue({
+    const runtimeTruthCase = {
       id: 'case-runtime-truth',
+      orgId: 'org-a',
+      userId: 'user-1',
       type: 'general',
       status: 'created',
+      chatId: 'chat-1',
       memory: {
-        confirmedFacts: JSON.stringify({ memberId: 'M123' }),
+        contextMap: JSON.stringify({ memberId: 'M123' }),
         missingFacts: JSON.stringify(['txid']),
         toolsCalled: JSON.stringify([]),
         toolResults: JSON.stringify({}),
         keyEvents: JSON.stringify([]),
         summary: 'Need transaction proof.',
       },
-    })
+    }
+    h.prisma.case.findUnique.mockResolvedValue(runtimeTruthCase)
+    h.prisma.case.findFirst.mockResolvedValue(runtimeTruthCase)
     h.prisma.procedureRun.findFirst.mockResolvedValue({
       procedureId: 'deposit_not_credited',
       status: 'active',
@@ -825,7 +860,7 @@ describe('POST /api/messages runtime session guards', () => {
         reason: 'hydrated',
       })),
       getMemorySummary: vi.fn(() => ({
-        confirmedFacts: { memberId: 'M123' },
+        contextMap: { memberId: 'M123' },
         missingFacts: ['txid'],
         toolsCalled: ['resume_case'],
         toolResults: {},
@@ -853,7 +888,7 @@ describe('POST /api/messages runtime session guards', () => {
     }))
     expect(loop.loadMemory).toHaveBeenCalledWith(expect.objectContaining({
       caseStatus: 'investigating',
-      confirmedFacts: JSON.stringify({ memberId: 'M123' }),
+      contextMap: JSON.stringify({ memberId: 'M123' }),
     }))
 
     const truthWrites = h.prisma.case.upsert.mock.calls

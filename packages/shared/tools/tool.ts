@@ -20,8 +20,8 @@ export interface RenderHint {
 export interface ChatMemoryReader {
   caseId: string
   getSummary(): unknown
-  getConfirmedFacts(): Record<string, unknown>
-  setConfirmedFactsBulk(facts: Record<string, unknown>): void
+  getContextMap(): Record<string, unknown>
+  setContextEntriesBulk(facts: Record<string, unknown>): void
   getTodos?(): unknown[]
   applyTodoAction?(action: string, id?: string, text?: string, notes?: string): unknown
 }

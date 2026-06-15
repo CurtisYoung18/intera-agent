@@ -17,7 +17,6 @@ import {
   recordProcedureTextReply,
   recordProcedureToolCall,
   recordProcedureToolResult,
-  confirmProcedureHumanHandoff,
   setProcedureRunPersistenceForTest,
   sessionCount,
   startProcedureRun,
@@ -28,7 +27,6 @@ type PersistedRecord = {
   caseId: string
   agentConfigId: string
   procedureId: string
-  procedureVersion: string
   status: string
   inputEpoch: number
   needsReconcile: boolean
@@ -236,7 +234,136 @@ describe('ProcedureRun durability', () => {
     expect(adapter.epochs.get(caseId)).toBe(2)
   })
 
-  it('rehydrates a finalized handoff run without resuming it on human_task_result', async () => {
+  it('persists fresh ProcedureRun steps without legacy normalized step fields', async () => {
+    const adapter = new MemoryProcedureRunPersistence()
+    setProcedureRunPersistenceForTest(adapter)
+    const caseId = 'durable-v2-step-shape'
+
+    const started = startSimpleRun(caseId)
+    await flushProcedureRunPersistence(caseId)
+
+    const persisted = adapter.runs.get(started.run.runId)
+    const step = (persisted?.state as { steps?: Array<Record<string, unknown>> } | undefined)?.steps?.[0]
+    expect(step).toBeDefined()
+    expect(step).not.toHaveProperty('action')
+    expect(step).not.toHaveProperty('target')
+    expect(step).not.toHaveProperty('required')
+    expect(step).toMatchObject({
+      id: 'lookup',
+      title: 'Lookup deposit',
+      actions: [
+        expect.objectContaining({
+          id: 'lookup_latest',
+          kind: 'call_tool',
+          target: 'get_latest_deposit',
+        }),
+      ],
+    })
+  })
+
+  it('hydrates legacy-normalized persisted steps into the v2 runtime shape', async () => {
+    const adapter = new MemoryProcedureRunPersistence()
+    setProcedureRunPersistenceForTest(adapter)
+    const caseId = 'durable-legacy-step-hydrate'
+    const now = new Date().toISOString()
+
+    adapter.epochs.set(caseId, 1)
+    adapter.runs.set('legacy-run', {
+      id: 'legacy-run',
+      caseId,
+      agentConfigId: 'agent-1',
+      procedureId: 'deposit_issue',
+      status: 'paused',
+      inputEpoch: 1,
+      needsReconcile: false,
+      currentStepId: 'lookup',
+      outcome: null,
+      state: {
+        runId: 'legacy-run',
+        agentConfigId: 'agent-1',
+        procedureId: 'deposit_issue',
+        caseType: 'deposit_issue',
+        displayName: 'Deposit',
+        status: 'paused',
+        inputEpoch: 1,
+        lastReconciledInputEpoch: 1,
+        needsReconcile: false,
+        currentStepId: 'lookup',
+        steps: [
+          {
+            id: 'lookup',
+            action: 'use',
+            target: 'get_latest_deposit',
+            required: true,
+            title: 'Lookup deposit',
+            guidance: 'Run lookup.',
+            status: 'active',
+            evidenceToolCallIds: [],
+            actions: [
+              {
+                id: 'lookup_latest',
+                kind: 'call_tool',
+                label: 'Lookup latest deposit',
+                target: 'get_latest_deposit',
+                status: 'pending',
+                evidenceIds: [],
+              },
+            ],
+            branches: [],
+          },
+        ],
+        inputs: [],
+        evidenceToolCallIds: [],
+        evidence: [],
+        evaluations: [],
+        signals: [],
+        blockers: [],
+        timeline: [],
+        definition: {
+          version: 'v2',
+          whenToUse: 'Use for deposit issues.',
+          steps: [
+            {
+              id: 'lookup',
+              title: 'Lookup deposit',
+              guidance: 'Run lookup.',
+              actions: [
+                {
+                  id: 'lookup_latest',
+                  kind: 'call_tool',
+                  label: 'Lookup latest deposit',
+                  toolName: 'get_latest_deposit',
+                },
+              ],
+              branches: [],
+            },
+          ],
+        },
+        startedAt: now,
+        updatedAt: now,
+      },
+    })
+
+    await hydrateProcedureRuntime(caseId, { agentConfigId: 'agent-1' })
+
+    const hydrated = getProcedureRuntime(caseId).pausedProcedureRuns[0]
+    expect(hydrated).toBeDefined()
+    expect(hydrated?.steps[0]).not.toHaveProperty('action')
+    expect(hydrated?.steps[0]).not.toHaveProperty('target')
+    expect(hydrated?.steps[0]).not.toHaveProperty('required')
+    expect(hydrated?.steps[0]).toMatchObject({
+      id: 'lookup',
+      actions: [
+        expect.objectContaining({
+          id: 'lookup_latest',
+          kind: 'call_tool',
+          target: 'get_latest_deposit',
+        }),
+      ],
+    })
+  })
+
+  it('rehydrates a persisted handoff run as finalized instead of resumable', async () => {
     const adapter = new MemoryProcedureRunPersistence()
     setProcedureRunPersistenceForTest(adapter)
     const caseId = 'durable-handoff-resume'
@@ -300,22 +427,20 @@ describe('ProcedureRun durability', () => {
       basedOnInputEpoch: 1,
       toolOutput: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
     })
-    await confirmProcedureHumanHandoff(caseId, { taskId: 'task-1', queue: 'general' })
     await flushProcedureRunPersistence(caseId)
 
     const completedBeforeRestart = getProcedureRuntime(caseId).completedProcedureRuns[0]
-    expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(0)
     expect(completedBeforeRestart).toMatchObject({
       runId: started.run.runId,
       status: 'completed',
-      outcome: 'human_handoff',
       inputEpoch: 1,
       currentStepId: null,
+      outcome: 'handed_off',
+      reason: 'Finalized after human handoff task task-1.',
     })
 
     clearSessionsForTest(caseId)
     await hydrateProcedureRuntime(caseId, { agentConfigId: 'agent-1' })
-    expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(0)
     expect(clone(getProcedureRuntime(caseId).completedProcedureRuns[0])).toEqual(clone(completedBeforeRestart))
 
     recordInitialInputEvent(caseId, {
@@ -325,9 +450,15 @@ describe('ProcedureRun durability', () => {
     })
     await flushProcedureRunPersistence(caseId)
 
-    const resumed = getActiveProcedureRun(caseId)
-    expect(resumed).toBeUndefined()
+    expect(getActiveProcedureRun(caseId)).toBeUndefined()
     const completedAfterHumanResult = getProcedureRuntime(caseId).completedProcedureRuns[0]
+    expect(completedAfterHumanResult).toMatchObject({
+      runId: started.run.runId,
+      status: 'completed',
+      inputEpoch: 1,
+      reason: 'Finalized after human handoff task task-1.',
+      outcome: 'handed_off',
+    })
     expect(completedAfterHumanResult?.inputs.map((input) => input.source)).toEqual(['customer_message'])
     expect(completedAfterHumanResult?.evidence.find((entry) => entry.id === 'handoff-1')).toMatchObject({
       kind: 'handoff',

@@ -27,8 +27,14 @@ function formatValue(v: unknown, indent = 0): string {
 }
 
 function stripInternalKeysFromValue(value: unknown): unknown {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
-  return stripInternalMemoryKeys(value as Record<string, unknown>)
+  if (Array.isArray(value)) {
+    return value.map((item) => stripInternalKeysFromValue(item))
+  }
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(stripInternalMemoryKeys(value as Record<string, unknown>))
+      .map(([key, item]) => [key, stripInternalKeysFromValue(item)]),
+  )
 }
 
 export const GET = defineRoute<void, { id: string }>({
@@ -120,11 +126,11 @@ export const GET = defineRoute<void, { id: string }>({
 
     if (memory) {
       sections.push('## Memory')
-      sections.push('### Confirmed Facts')
-      sections.push(formatValue(stripInternalKeysFromValue(safeJson(memory.confirmedFacts))))
-      sections.push('')
       sections.push('### Missing Facts')
       sections.push(formatValue(safeJson(memory.missingFacts)))
+      sections.push('')
+      sections.push('### Key Events')
+      sections.push(formatValue(stripInternalKeysFromValue(safeJson(memory.keyEvents))))
       sections.push('')
       sections.push('### Tools Called')
       sections.push(formatValue(safeJson(memory.toolsCalled)))

@@ -42,7 +42,7 @@ export interface CompactionResult {
 }
 
 export class ChatMemoryManager {
-  private confirmedFacts: Record<string, unknown> = {}
+  private contextMap: Record<string, unknown> = {}
   private missingFacts: string[] = []
   private toolsCalled: string[] = []
   private toolResults: Record<string, unknown> = {}
@@ -64,7 +64,7 @@ export class ChatMemoryManager {
   // ─── DB load/restore ──────────────────────────────────────
 
   loadFromDb(data: {
-    confirmedFacts?: unknown; missingFacts?: unknown; toolsCalled?: unknown
+    contextMap?: unknown; missingFacts?: unknown; toolsCalled?: unknown
     toolResults?: unknown; keyEvents?: unknown; summary?: string | null
     caseStatus?: string | null; todos?: unknown
   }): void {
@@ -75,13 +75,13 @@ export class ChatMemoryManager {
       return raw ?? fallback
     }
 
-    const facts = safeParse(data.confirmedFacts, {})
+    const contextMap = safeParse(data.contextMap, {})
     const missing = safeParse(data.missingFacts, [])
     const skills = safeParse(data.toolsCalled, [])
     const results = safeParse(data.toolResults, {})
     const events = safeParse(data.keyEvents, [])
 
-    if (facts && typeof facts === 'object') this.confirmedFacts = facts as Record<string, unknown>
+    if (contextMap && typeof contextMap === 'object') this.contextMap = contextMap as Record<string, unknown>
     if (Array.isArray(missing)) this.missingFacts = missing
     if (Array.isArray(skills)) this.toolsCalled = skills
     if (results && typeof results === 'object') this.toolResults = results as Record<string, unknown>
@@ -100,12 +100,12 @@ export class ChatMemoryManager {
 
   // ─── Fact ingestion ───────────────────────────────────────
 
-  /** Directly ingest structured form answers as confirmed facts — no LLM needed.
+  /** Directly ingest structured form answers into the context map — no LLM needed.
    *  Follows CC's AskUserQuestion pattern: answers are already keyed by the model. */
   ingestFormAnswers(answers: Record<string, string>): void {
     for (const [key, value] of Object.entries(answers)) {
       if (value != null && String(value).trim() !== '') {
-        this.setConfirmedFact(key, String(value).trim())
+        this.setContextEntry(key, String(value).trim())
       }
     }
   }
@@ -120,7 +120,7 @@ export class ChatMemoryManager {
    * Replaces the old regex-based extraction (txnIdPattern, amountPattern, notReceivedKeywords).
    * Fact names are derived from the case type's requiredFacts when available.
    */
-  async ingestUserMessageFacts(message: string, requiredFacts?: string[]): Promise<void> {
+  async ingestUserMessageContext(message: string, requiredFacts?: string[]): Promise<void> {
     const targetFacts = requiredFacts?.length ? requiredFacts : ['txnId', 'amount', 'paymentMethod', 'date']
     const extraHint = this.strategy.factExtractionPrompt || ''
 
@@ -195,16 +195,16 @@ export class ChatMemoryManager {
         if (facts && typeof facts === 'object') {
           for (const [key, value] of Object.entries(facts)) {
             if (value !== null && value !== undefined && value !== '') {
-              this.setConfirmedFact(key, value)
+              this.setContextEntry(key, value)
             }
           }
         }
         const flags: string[] = Array.isArray(parsed.flags) ? parsed.flags : []
         if (flags.includes('userReportedNotReceived')) {
-          this.setConfirmedFact('userReportedNotReceived', true)
+          this.setContextEntry('userReportedNotReceived', true)
         }
         if (flags.includes('userReportedPartialMissing')) {
-          this.setConfirmedFact('userReportedPartialMissing', true)
+          this.setContextEntry('userReportedPartialMissing', true)
         }
       } else {
         console.warn('[CaseMemory] Could not extract facts from response')
@@ -232,13 +232,13 @@ export class ChatMemoryManager {
       ? output as Record<string, unknown>
       : {}
     if (toolName === 'query_order_status' && result.status) {
-      this.setConfirmedFact('orderStatus', result.status)
-      if (result.amount) this.setConfirmedFact('orderAmount', result.amount)
-      if (result.time) this.setConfirmedFact('orderTime', result.time)
+      this.setContextEntry('orderStatus', result.status)
+      if (result.amount) this.setContextEntry('orderAmount', result.amount)
+      if (result.time) this.setContextEntry('orderTime', result.time)
     }
     if (toolName === 'query_payment_channel_status') {
-      if (result.delayed_batch !== undefined) this.setConfirmedFact('channelDelayedBatch', result.delayed_batch)
-      if (result.reason) this.setConfirmedFact('delayReason', result.reason)
+      if (result.delayed_batch !== undefined) this.setContextEntry('channelDelayedBatch', result.delayed_batch)
+      if (result.reason) this.setContextEntry('delayReason', result.reason)
     }
 
     this.keyEvents.push({
@@ -250,7 +250,7 @@ export class ChatMemoryManager {
   }
 
   private updateMissingFacts(): void {
-    this.missingFacts = this.missingFacts.filter((fact) => !this.confirmedFacts[fact])
+    this.missingFacts = this.missingFacts.filter((fact) => !this.contextMap[fact])
   }
 
   // ─── Ratio-based compaction assessment ─────────────────────
@@ -306,9 +306,9 @@ export class ChatMemoryManager {
     parts.push(`Case ID: ${this.caseId}`)
 
     // Primary facts
-    const facts = Object.entries(stripInternalMemoryKeys(this.confirmedFacts))
+    const facts = Object.entries(stripInternalMemoryKeys(this.contextMap))
     if (facts.length > 0) {
-      parts.push('\n## Confirmed Facts')
+      parts.push('\n## Context Map')
       facts.forEach(([k, v]) => parts.push(`- ${k}: ${JSON.stringify(v)}`))
     }
 
@@ -361,7 +361,7 @@ export class ChatMemoryManager {
     const s = this.strategy
     let tokens = 0
     tokens += this.keyEvents.length * s.tokensPerKeyEvent
-    tokens += Object.keys(stripInternalMemoryKeys(this.confirmedFacts)).length * s.tokensPerFact
+    tokens += Object.keys(stripInternalMemoryKeys(this.contextMap)).length * s.tokensPerFact
     tokens += this.toolsCalled.length * s.tokensPerTool
     tokens += this.summary.length / s.latinCharPerToken
     for (const content of messageContents) {
@@ -440,7 +440,7 @@ export class ChatMemoryManager {
 
   // ─── Accessors ────────────────────────────────────────────
 
-  getConfirmedFacts(): Record<string, unknown> { return stripInternalMemoryKeys(this.confirmedFacts) }
+  getContextMap(): Record<string, unknown> { return stripInternalMemoryKeys(this.contextMap) }
   getMissingFacts(): string[] { return [...this.missingFacts] }
   getToolsCalled(): string[] { return [...this.toolsCalled] }
   getToolResult(toolName: string): unknown { return this.toolResults[toolName] }
@@ -452,13 +452,13 @@ export class ChatMemoryManager {
 
   // ─── Centralized fact writes ──────────────────────────────
 
-  setConfirmedFact(key: string, value: unknown): void {
+  setContextEntry(key: string, value: unknown): void {
     if (isInternalMemoryKey(key)) {
       this.setInternalState(key, value)
       return
     }
-    const oldValue = this.confirmedFacts[key]
-    this.confirmedFacts[key] = value
+    const oldValue = this.contextMap[key]
+    this.contextMap[key] = value
     this.missingFacts = this.missingFacts.filter((f) => f !== key)
     if (JSON.stringify(oldValue) !== JSON.stringify(value)) {
       this.keyEvents.push({
@@ -470,9 +470,9 @@ export class ChatMemoryManager {
   }
 
   /**
-   * Bulk-set confirmed facts.
+   * Bulk-set context entries.
    */
-  setConfirmedFactsBulk(facts: Record<string, unknown>): boolean {
+  setContextEntriesBulk(facts: Record<string, unknown>): boolean {
     const changedKeys: string[] = []
     for (const [key, value] of Object.entries(facts)) {
       if (isInternalMemoryKey(key)) {
@@ -480,8 +480,8 @@ export class ChatMemoryManager {
         continue
       }
       if (value !== null && value !== undefined && value !== '') {
-        if (JSON.stringify(this.confirmedFacts[key]) !== JSON.stringify(value)) {
-          this.confirmedFacts[key] = value
+        if (JSON.stringify(this.contextMap[key]) !== JSON.stringify(value)) {
+          this.contextMap[key] = value
           this.missingFacts = this.missingFacts.filter((f) => f !== key)
           changedKeys.push(key)
         }
@@ -592,10 +592,10 @@ export class ChatMemoryManager {
   }
 
   getSummary(): ChatMemoryData {
-    return {
-      caseId: this.caseId,
-      confirmedFacts: stripInternalMemoryKeys(this.confirmedFacts),
-      missingFacts: this.missingFacts,
+      return {
+        caseId: this.caseId,
+        contextMap: stripInternalMemoryKeys(this.contextMap),
+        missingFacts: this.missingFacts,
       toolsCalled: this.toolsCalled,
       toolResults: this.toolResults,
       keyEvents: this.keyEvents,
@@ -612,7 +612,7 @@ export class ChatMemoryManager {
    * Keeps DB write paths consistent across the codebase.
    */
   getDbFields(): {
-    confirmedFacts: string
+    contextMap: string
     missingFacts: string
     toolsCalled: string
     toolResults: string
@@ -620,7 +620,7 @@ export class ChatMemoryManager {
     todos: string | null
   } {
     return {
-      confirmedFacts: JSON.stringify(stripInternalMemoryKeys(this.confirmedFacts)),
+      contextMap: JSON.stringify(stripInternalMemoryKeys(this.contextMap)),
       missingFacts: JSON.stringify(this.missingFacts),
       toolsCalled: JSON.stringify(this.toolsCalled),
       toolResults: JSON.stringify(this.toolResults),
@@ -635,7 +635,7 @@ export class ChatMemoryManager {
 // ============================================
 
 export class ChatSessionManager {
-  private confirmedFacts: Record<string, unknown> = {}
+  private contextMap: Record<string, unknown> = {}
   private keyEvents: KeyEvent[] = []
   private summary: string | null = null
 
@@ -644,16 +644,16 @@ export class ChatSessionManager {
     private orgId: string,
   ) {}
 
-  getConfirmedFacts(): Record<string, unknown> {
-    return this.confirmedFacts
+  getContextMap(): Record<string, unknown> {
+    return this.contextMap
   }
 
-  setConfirmedFact(key: string, value: unknown): void {
-    this.confirmedFacts[key] = value
+  setContextEntry(key: string, value: unknown): void {
+    this.contextMap[key] = value
   }
 
-  setConfirmedFactsBulk(facts: Record<string, unknown>): void {
-    Object.assign(this.confirmedFacts, facts)
+  setContextEntriesBulk(facts: Record<string, unknown>): void {
+    Object.assign(this.contextMap, facts)
   }
 
   getKeyEvents(): KeyEvent[] {
@@ -678,16 +678,16 @@ export class ChatSessionManager {
 
   getSummaryData() {
     return {
-      confirmedFacts: this.confirmedFacts,
+      contextMap: this.contextMap,
       keyEvents: this.keyEvents,
       summary: this.summary,
     }
   }
 
   /** Load state from a persisted DB row. */
-  loadFromDb(row: { confirmedFacts?: string; keyEvents?: string; summary?: string | null }): void {
-    if (row.confirmedFacts) {
-      try { this.confirmedFacts = JSON.parse(row.confirmedFacts) } catch { /* keep default */ }
+  loadFromDb(row: { contextMap?: string; keyEvents?: string; summary?: string | null }): void {
+    if (row.contextMap) {
+      try { this.contextMap = JSON.parse(row.contextMap) } catch { /* keep default */ }
     }
     if (row.keyEvents) {
       try { this.keyEvents = JSON.parse(row.keyEvents) } catch { /* keep default */ }
@@ -697,12 +697,12 @@ export class ChatSessionManager {
 
   /** Return fields for prisma.chatSession.upsert. */
   getDbFields(): {
-    confirmedFacts: string
+    contextMap: string
     keyEvents: string
     summary: string | undefined
   } {
     return {
-      confirmedFacts: JSON.stringify(this.confirmedFacts),
+      contextMap: JSON.stringify(this.contextMap),
       keyEvents: JSON.stringify(this.keyEvents),
       summary: this.summary ?? undefined,
     }

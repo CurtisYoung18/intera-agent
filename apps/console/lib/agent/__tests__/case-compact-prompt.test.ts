@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { CASE_COMPACT_PROMPT } from '../case-compact-prompt'
 
 describe('CASE_COMPACT_PROMPT', () => {
-  it('contains confirmed facts as a required output section', () => {
-    expect(CASE_COMPACT_PROMPT.toLowerCase()).toMatch(/confirmed facts/)
+  it('contains context map as a required output section', () => {
+    expect(CASE_COMPACT_PROMPT.toLowerCase()).toMatch(/context map/)
   })
 
   it('contains tool as a required output section', () => {

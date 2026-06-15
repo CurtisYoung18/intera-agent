@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { buildHumanHandoffQuestion } from '../human-handoff'
 
 describe('buildHumanHandoffQuestion', () => {
-  it('appends the latest customer message and compact known facts', () => {
+  it('appends the latest customer message and compact context map', () => {
     const text = buildHumanHandoffQuestion({
       baseQuestion: 'Need manual review for this deposit issue.',
       caseType: 'deposit_not_credited',
       latestCustomerMessage: '我有笔存款没到帐啊',
-      confirmedFacts: {
+      contextMap: {
         member_id: 'JAYA11C5184',
         amount: '800',
         __intera_runtime: { hidden: true },

@@ -65,9 +65,21 @@ const h = vi.hoisted(() => {
         displayName: 'Deposit Issue',
         enabled: true,
         procedure: JSON.stringify({
+          version: 'v2',
+          whenToUse: 'Use this procedure when a deposit needs investigation.',
           steps: [
-            { id: 'collect_facts', action: 'ask', required: true },
-            { id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit' },
+            {
+              id: 'collect_facts',
+              title: 'Collect facts',
+              guidance: 'Ask for the missing deposit details.',
+              actions: [{ id: 'collect_facts_ask', kind: 'ask', label: 'Ask for missing details', fields: ['member_id'], required: true }],
+            },
+            {
+              id: 'lookup_deposit',
+              title: 'Lookup deposit',
+              guidance: 'Run the deposit lookup tool.',
+              actions: [{ id: 'lookup_deposit_tool', kind: 'call_tool', label: 'Get latest deposit', toolName: 'get_latest_deposit', required: true }],
+            },
           ],
         }),
       },
@@ -79,7 +91,18 @@ const h = vi.hoisted(() => {
         type: 'org_b_case',
         displayName: 'Org B Case',
         enabled: true,
-        procedure: JSON.stringify({ steps: [{ id: 'private_step', action: 'ask' }] }),
+        procedure: JSON.stringify({
+          version: 'v2',
+          whenToUse: 'Private org-b procedure.',
+          steps: [
+            {
+              id: 'private_step',
+              title: 'Private step',
+              guidance: 'Ask privately.',
+              actions: [{ id: 'private_step_ask', kind: 'ask', label: 'Ask privately' }],
+            },
+          ],
+        }),
       },
     ],
   }

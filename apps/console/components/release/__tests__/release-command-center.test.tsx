@@ -78,12 +78,32 @@ const configs = [
   },
 ]
 
+const depositProcedureV2 = {
+  version: 'v2' as const,
+  whenToUse: 'Use for deposit issues.',
+  steps: [
+    {
+      id: 'lookup_deposit',
+      title: 'Check latest deposit',
+      guidance: 'Use the latest deposit tool to inspect the reported deposit.',
+      actions: [
+        {
+          id: 'lookup_deposit_action',
+          kind: 'call_tool' as const,
+          label: 'Check latest deposit',
+          toolName: 'get_latest_deposit',
+        },
+      ],
+    },
+  ],
+}
+
 const historyTemplate = {
   schemaVersion: 'intera.agentTemplate.v1',
   metadata: { name: 'Gaming Support' },
   agent: { name: 'Gaming Support', model: 'deepseek-v4-flash', memoryStrategy: { mode: 'compact' } },
-  caseTypes: [{ type: 'deposit_issue', displayName: 'Deposit Issue', procedure: { steps: [{ id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit' }] } }],
-  procedures: [{ procedureId: 'deposit_issue', caseTypeType: 'deposit_issue', procedure: { steps: [{ id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit' }] } }],
+  caseTypes: [{ type: 'deposit_issue', displayName: 'Deposit Issue', procedure: depositProcedureV2 }],
+  procedures: [{ procedureId: 'deposit_issue', caseTypeType: 'deposit_issue', procedure: depositProcedureV2 }],
   tools: [{ name: 'get_latest_deposit', description: 'Read latest deposit', mode: 'http', enabled: true }],
   hooks: [{ name: 'risk_gate', checkpoint: 'PreToolUse', handlerKind: 'declarative', handler: { kind: 'declarative' }, enabled: true }],
   hookBindings: [{ hookName: 'risk_gate', scopeType: 'tool', scopeKey: 'tool:get_latest_deposit', toolName: 'get_latest_deposit', enabled: true }],

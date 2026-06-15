@@ -57,6 +57,8 @@ export const scenarioExpectedOutcomeSchema = z.object({
   hooks: z.array(scenarioExpectedHookDecisionSchema).optional(),
   humanTransfer: z.boolean().optional(),
   finalStatus: z.string().optional(),
+  procedureStatus: z.string().optional(),
+  procedureOutcome: z.string().optional(),
   forbiddenPhrases: z.array(z.string()).optional(),
   requiredPhrases: z.array(z.string()).optional(),
 }).default({})
@@ -177,8 +179,10 @@ export const scenarioProcedureRuntimeSnapshotSchema = z.object({
   procedureId: stableNameSchema,
   displayName: z.string(),
   status: z.string(),
+  outcome: z.string().optional(),
   reason: z.string().optional(),
   version: z.string().optional(),
+  updatedAt: z.string().optional(),
   currentStepId: z.string().nullable().optional(),
   blockers: z.array(z.string()).default([]),
   inputs: z.array(scenarioProcedureInputEvidenceSchema).default([]),
@@ -199,6 +203,8 @@ export const scenarioObservedEvidenceInputSchema = z.object({
   handoff: z.array(scenarioHandoffEvidenceSchema).optional(),
   finalResponse: z.string().optional(),
   finalStatus: z.string().optional(),
+  procedureStatus: z.string().optional(),
+  procedureOutcome: z.string().optional(),
   traceId: z.string().optional(),
   runtime: z.object({
     sessionId: z.string().optional(),

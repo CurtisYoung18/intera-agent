@@ -396,7 +396,21 @@ describe('AgentLoop Hook checkpoints', () => {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
       procedure: {
-        steps: [{ id: 'lookup', action: 'use' as const, target: 'get_latest_deposit' }],
+        version: 'v2',
+        whenToUse: 'Use for deposit lookups.',
+        overview: 'Verify a deposit.',
+        steps: [{
+          id: 'lookup',
+          title: 'Lookup deposit',
+          guidance: 'Check the latest deposit status.',
+          actions: [{
+            id: 'lookup_latest',
+            kind: 'call_tool',
+            label: 'Lookup latest deposit',
+            toolName: 'get_latest_deposit',
+            required: true,
+          }],
+        }],
       },
       requestId: 'req-1',
     })

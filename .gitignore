@@ -29,5 +29,6 @@ debug-logs
 .claude/worktrees/
 pnpm-lock.yaml
 coverage/
+.artifacts/
 .intera-agent-runtime/
 claude-code-source-code-ref-only/

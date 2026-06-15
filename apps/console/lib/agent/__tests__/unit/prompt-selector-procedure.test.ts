@@ -2,16 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { selectPromptAndTools, type PromptSelectorContext } from '../../prompt-selector'
 import type { CaseAgentLoop } from '../../case-agent-loop'
 import type { ConversationLoop } from '../../conversation-loop'
-import type { ChatMemoryManager } from '../../memory'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 
 // Procedure selector guard. Active cases with a case loop render the Procedure
 // prompt; if the case loop is absent, selection falls back to discovery prompt.
-
-const chatMemoryStub = {
-  getTodos: () => [],
-  getConfirmedFacts: () => ({}),
-} as unknown as ChatMemoryManager
 
 const conversationLoopStub = {
   buildPrompt: () => 'DISCOVERY_PROMPT',
@@ -20,8 +14,7 @@ const conversationLoopStub = {
 
 function makeCaseLoop(): CaseAgentLoop {
   return {
-    buildProcedurePrompt: () => 'PROCEDURE_PROMPT',
-    buildProcedureDefinitionPrompt: () => 'PROCEDURE_DEFINITION',
+    buildProcedurePrompt: () => 'PROCEDURE_DEFINITION',
     filterProcedureTools: (tools: unknown[]) => tools,
   } as unknown as CaseAgentLoop
 }
@@ -36,7 +29,6 @@ function ctx(withCaseLoop: boolean): PromptSelectorContext {
     nudgeCount: 0,
     conversationLoop: conversationLoopStub,
     caseLoop: withCaseLoop ? makeCaseLoop() : null,
-    chatMemory: chatMemoryStub,
     allTools: [],
     procedureRunTail: 'DYNAMIC_PROCEDURE_RUN_TAIL',
   }

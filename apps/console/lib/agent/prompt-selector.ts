@@ -7,7 +7,6 @@ import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 import type { ConversationLoop } from './conversation-loop'
 import type { CaseAgentLoop } from './case-agent-loop'
-import type { ChatMemoryManager } from './memory'
 
 export interface PromptSelection {
   prompt: string
@@ -23,7 +22,6 @@ export interface PromptSelectorContext {
   nudgeCount: number
   conversationLoop: ConversationLoop
   caseLoop: CaseAgentLoop | null
-  chatMemory: ChatMemoryManager
   allTools: Tool[]
   procedureRunTail?: string
 }
@@ -38,7 +36,7 @@ export interface PromptSelectorContext {
  */
 export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelection {
   const { isCaseActive, isConsultation, caseSchema, systemPrompt, currentStage,
-    conversationLoop, caseLoop, chatMemory, allTools, procedureRunTail } = ctx
+    conversationLoop, caseLoop, allTools, procedureRunTail } = ctx
 
   const appendDynamicTail = (prompt: string): string =>
     procedureRunTail?.trim() ? `${prompt.trim()}\n\n${procedureRunTail.trim()}` : prompt
@@ -74,7 +72,7 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
       '',
       '## Procedure Definition Context',
       'Use this Procedure definition as guidance. Runtime ProcedureRun state, current step, reconcile status, and evidence authority appear only in the dynamic tail below.',
-      caseLoop.buildProcedureDefinitionPrompt(chatMemory.getTodos(), chatMemory.getConfirmedFacts()),
+      caseLoop.buildProcedurePrompt(),
     ].join('\n')
     return {
       prompt: appendDynamicTail(prompt),

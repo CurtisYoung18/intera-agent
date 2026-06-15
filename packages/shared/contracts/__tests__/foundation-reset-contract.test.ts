@@ -18,6 +18,29 @@ import {
 } from '../scenarios'
 import { normalizeToolMode, templateToolSchema } from '../tools'
 
+const depositProcedureV2 = {
+  version: 'v2' as const,
+  whenToUse: 'Use for deposit issues.',
+  steps: [
+    {
+      id: 'ask_member_id',
+      title: 'Collect member id',
+      guidance: 'Ask for the member id before investigating.',
+      actions: [
+        { id: 'ask_member_id_action', kind: 'ask' as const, label: 'Ask for member id', fields: ['member_id'] },
+      ],
+    },
+    {
+      id: 'lookup_deposit',
+      title: 'Check latest deposit',
+      guidance: 'Look up the latest deposit evidence.',
+      actions: [
+        { id: 'lookup_deposit_action', kind: 'call_tool' as const, label: 'Check latest deposit', toolName: 'get_latest_deposit' },
+      ],
+    },
+  ],
+}
+
 describe('Hook contract', () => {
   it('maps legacy checkpoints into the reset lifecycle', () => {
     expect(mapLegacyHookCheckpoint('preTool')).toBe('PreToolUse')
@@ -95,12 +118,7 @@ describe('Tool and package contracts', () => {
       caseTypes: [{
         type: 'deposit_issue',
         displayName: 'Deposit not credited',
-        procedure: {
-          steps: [
-            { id: 'ask_member_id', action: 'ask', target: 'member_id', required: true },
-            { id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit' },
-          ],
-        },
+        procedure: depositProcedureV2,
       }],
       tools: [{
         name: 'get_latest_deposit',
@@ -122,12 +140,7 @@ describe('Tool and package contracts', () => {
         procedureId: 'deposit_issue',
         displayName: 'Deposit not credited',
         caseTypeType: 'deposit_issue',
-        procedure: {
-          steps: [
-            { id: 'ask_member_id', action: 'ask', target: 'member_id', required: true },
-            { id: 'lookup_deposit', action: 'use', target: 'get_latest_deposit' },
-          ],
-        },
+        procedure: depositProcedureV2,
       }],
       hookBindings: [{
         hookName: 'investigate_before_resolve',
@@ -237,6 +250,8 @@ describe('Scenario contract', () => {
         humanTransfer: true,
         forbiddenPhrases: ['guaranteed compensation'],
         finalStatus: 'waiting_human',
+        procedureStatus: 'completed',
+        procedureOutcome: 'handed_off',
       },
     })
     expect(scenario.turns).toHaveLength(2)
@@ -250,6 +265,8 @@ describe('Scenario contract', () => {
       handoff: [{ required: true, reason: 'unclear provider evidence' }],
       finalResponse: 'I will transfer this case.',
       finalStatus: 'waiting_human',
+      procedureStatus: 'completed',
+      procedureOutcome: 'handed_off',
     })
     expect(evidence.handoff[0].required).toBe(true)
 

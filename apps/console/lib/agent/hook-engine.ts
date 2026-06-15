@@ -503,14 +503,6 @@ export class HookEngine {
       }
     }
 
-    const requireFacts = getStringArray(check, 'requireFacts')
-    if (requireFacts.length > 0) {
-      const missing = requireFacts.filter((fact) => context.caseFacts[fact] == null || context.caseFacts[fact] === '')
-      if (missing.length > 0) {
-        return { violated: true, reason: configuredReason ?? `Missing required facts: ${missing.join(', ')}` }
-      }
-    }
-
     const forbiddenPhrases = [
       ...getStringArray(check, 'forbiddenPhrases'),
       ...getStringArray(check, 'replyContains'),
@@ -768,7 +760,6 @@ export class HookEngine {
       .replace(/\{\{tool_input\}\}/g, JSON.stringify(context.tool?.input ?? null))
       .replace(/\{\{skill_input\}\}/g, JSON.stringify(context.tool?.input ?? null))
       .replace(/\{\{tool_output\}\}/g, JSON.stringify(context.tool?.output ?? context.replyDraft ?? null))
-      .replace(/\{\{confirmed_facts\}\}/g, JSON.stringify(context.caseFacts ?? {}))
       .replace(/\{\{tools_called\}\}/g, JSON.stringify(context.previousToolCalls.map((call) => call.name)))
       .replace(/\{\{reply_draft\}\}/g, context.replyDraft ?? '')
   }

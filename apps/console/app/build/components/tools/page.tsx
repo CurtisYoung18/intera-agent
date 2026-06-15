@@ -113,7 +113,7 @@ function mockFixtureChips(raw?: string | null): string[] | null {
 const TOOL_DISPLAY_ALIASES: Record<string, { name?: string; description?: string }> = {
   read_chat_memory: {
     description:
-      'Read the ProcedureRun working Memory for the current investigation. Returns confirmed facts, tools called so far, key events, and any compaction summary from earlier turns.',
+      'Read the ProcedureRun working memory for the current investigation. Returns tool history, key events, compact summary, open items, and missing-info stats from earlier turns.',
   },
 }
 

@@ -26,8 +26,12 @@ interface CaseData {
   createdAt: string; updatedAt: string; chatId?: string | null
   _count?: { messages: number; traces: number }
   memory?: {
-    confirmedFacts: string; missingFacts: string; toolsCalled: string
-    toolResults: string; summary?: string; todos?: string
+    missingFacts: string
+    toolsCalled: string
+    toolResults: string
+    keyEvents?: string
+    summary?: string
+    todos?: string
   } | null
 }
 

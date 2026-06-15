@@ -4,7 +4,7 @@ function containsCjk(text: string): boolean {
   return /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/.test(text)
 }
 
-function normalizeFacts(
+function normalizeContext(
   input: Record<string, unknown> | undefined,
 ): Record<string, string | number | boolean> {
   const facts = stripInternalMemoryKeys(input ?? {})
@@ -27,11 +27,11 @@ export function buildHumanHandoffQuestion(input: {
   baseQuestion: string
   caseType?: string | null
   latestCustomerMessage?: string | null
-  confirmedFacts?: Record<string, unknown>
+  contextMap?: Record<string, unknown>
 }): string {
   const baseQuestion = input.baseQuestion.trim() || 'Human task requested.'
   const latestCustomerMessage = input.latestCustomerMessage?.trim()
-  const facts = normalizeFacts(input.confirmedFacts)
+  const contextMap = normalizeContext(input.contextMap)
   const localeIsZh = containsCjk([baseQuestion, latestCustomerMessage].filter(Boolean).join(' '))
 
   const lines = [baseQuestion]
@@ -48,11 +48,11 @@ export function buildHumanHandoffQuestion(input: {
         : `Latest customer message: ${latestCustomerMessage}`,
     )
   }
-  if (Object.keys(facts).length > 0) {
+  if (Object.keys(contextMap).length > 0) {
     lines.push(
       localeIsZh
-        ? `已知事实: ${JSON.stringify(facts)}`
-        : `Known facts: ${JSON.stringify(facts)}`,
+        ? `已知上下文: ${JSON.stringify(contextMap)}`
+        : `Known context: ${JSON.stringify(contextMap)}`,
     )
   }
   return lines.join('\n')

@@ -9,6 +9,7 @@
 
 import { prisma } from '@intera/shared/prisma'
 import type { Message, SSEEvent, AgentConfigData, CaseSchemaConfig, CaseStatus } from '@intera/shared/types'
+import type { ProcedureV2Step } from '@intera/shared/types'
 import type { HookEvaluationResult } from './hook-engine'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
@@ -16,7 +17,7 @@ import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
 import type { CaseAgentLoop } from './case-agent-loop'
-import { isProcedureV2Definition, parseProcedure, parseProcedureDefinition } from '@intera/shared/contracts/case-types'
+import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import { startProcedureRun } from './session-store'
@@ -117,7 +118,6 @@ async function handleStartProcedure(
   const procedureId = String(toolInput.procedureId || toolInput.caseType || '')
   const reason = String(toolInput.reason || 'The customer raised an issue that matches this procedure.')
   const confidence = typeof toolInput.confidence === 'number' ? toolInput.confidence : undefined
-  const collectedFacts = isRecord(toolInput.collectedFacts) ? toolInput.collectedFacts : undefined
   const requestedCurrentAction = normalizeCurrentProcedureAction(toolInput.currentProcedureAction)
 
   if (!procedureId || !isInvestigableCaseType(procedureId)) {
@@ -132,7 +132,6 @@ async function handleStartProcedure(
 
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
     const procedureJson = (ctRow as { procedure?: string | null }).procedure
-    const procedureDefinition = parseProcedureDefinition(procedureJson)
     const procedure = parseProcedure(procedureJson)
 
     const schema: CaseSchemaConfig = {
@@ -145,25 +144,14 @@ async function handleStartProcedure(
       escalateOn: safeJson<string[]>(ctRow.escalateOn, []),
       autoCloseConditions: safeJson<Record<string, unknown> | undefined>(ctRow.autoCloseConditions, undefined),
       procedure: procedure ?? undefined,
-      procedureDefinition: procedureDefinition ?? undefined,
       maxAutoTurns: ctRow.maxAutoTurns ?? undefined,
-    }
-
-    const isProcedureV2 = !!(
-      schema.procedureDefinition &&
-      isProcedureV2Definition(schema.procedureDefinition)
-    )
-
-    if (collectedFacts && !isProcedureV2) {
-      ctx.chatMemory.setConfirmedFactsBulk(collectedFacts)
     }
     const start = startProcedureRun(ctx.caseId, {
       procedureId: ctRow.type,
       displayName: ctRow.displayName,
-      procedure: schema.procedureDefinition ?? schema.procedure,
+      procedure: schema.procedure,
       reason,
       confidence,
-      collectedFacts: isProcedureV2 ? undefined : collectedFacts,
       requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
       currentProcedureAction: requestedCurrentAction,
     })
@@ -464,17 +452,39 @@ function normalizeCurrentProcedureAction(raw: unknown): 'pause' | 'complete' | '
   return raw === 'pause' || raw === 'complete' || raw === 'abandon' ? raw : undefined
 }
 
-function summarizeProcedure(schema: CaseSchemaConfig): { stepCount: number; steps: Array<{ id: string; action: string; target?: string; required?: boolean }> } {
-  const steps = schema.procedure?.steps ?? []
+function summarizeProcedure(schema: CaseSchemaConfig): {
+  stepCount: number
+  steps: Array<{
+    id: string
+    title: string
+    actionKinds: string[]
+    branchCount: number
+    requiredActionCount: number
+  }>
+} {
+  const steps = (schema.procedure?.steps ?? []) as ProcedureV2Step[]
   return {
     stepCount: steps.length,
     steps: steps.map((step) => ({
       id: step.id,
-      action: step.action,
-      target: step.target,
-      required: step.required === true ? true : undefined,
+      title: step.title,
+      actionKinds: [...new Set(collectProcedureStepActions(step).map((action) => action.kind))],
+      branchCount: step.branches?.length ?? 0,
+      requiredActionCount: collectProcedureStepActions(step).filter((action) => action.required !== false).length,
     })),
   }
+}
+
+function collectProcedureStepActions(
+  step: {
+    actions?: Array<{ kind: string; required?: boolean; toolName?: string; queue?: string; fields?: string[]; suggestedSources?: string[] }>
+    branches?: Array<{ actions: Array<{ kind: string; required?: boolean; toolName?: string; queue?: string; fields?: string[]; suggestedSources?: string[] }> }>
+  },
+) {
+  return [
+    ...(step.actions ?? []),
+    ...(step.branches?.flatMap((branch) => branch.actions) ?? []),
+  ]
 }
 
 function replaceToolResultMessage(

@@ -32,9 +32,9 @@ For general / catalog / how-to questions (what promotions, games, or payment met
 ## Memory Tools
 
 You have access to three built-in memory tools:
-- \`read_chat_memory\` — Retrieve the current case's working summary (confirmed facts, tools executed, key events)
+- \`read_chat_memory\` — Retrieve the current case's working summary (context map, tools executed, key events)
 - \`read_user_profile\` — Retrieve this user's cross-chat profile (identity, contact, preferences, activity, history)
-- \`remember\` — Save scoped memory with \`scope: "chat"\` or \`scope: "user"\`. Never use memory to store ProcedureRun runtime state.
+- \`remember\` — Save long-term profile memory with \`scope: "user"\` only. Do not use it for chat-scoped facts or ProcedureRun runtime state.
 Use these when you need context about the user/current chat or need to save business memory.
 
 {{available_tools}}
@@ -168,11 +168,11 @@ export const DEFAULT_HOOKS: DefaultHookSeed[] = [
       check: {
         kind: 'ai',
         evaluationPrompt:
-          'Check whether the customer-visible answer cites evidence gathered during the case.\n\nReply draft: {{reply_draft}}\nConfirmed facts: {{confirmed_facts}}\nTools called: {{tools_called}}\n\nBlock if the answer makes factual claims without citing tool results, confirmed facts, or knowledge evidence. Pass if the reasoning is traceable.',
+          'Check whether the customer-visible answer cites evidence gathered during the case.\n\nReply draft: {{reply_draft}}\nTools called: {{tools_called}}\n\nBlock if the answer makes factual claims without citing tool results or knowledge evidence. Pass if the reasoning is traceable.',
       },
       effect: {
         decision: 'block',
-        guidance: 'Cite specific evidence from tools, confirmed facts, or knowledge before resolving.',
+        guidance: 'Cite specific evidence from tools or knowledge before resolving.',
       },
     }),
     severity: 'high',
@@ -224,12 +224,76 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
     defaultGoal: 'Verify the order and payment-channel status; determine whether it is delayed, failed, or needs a manual top-up. Escalate to a human when system data conflicts with the customer report.',
     escalateOn: '["conflict"]',
     procedure: JSON.stringify({
+      version: 'v2',
+      whenToUse: 'Use when the customer says a deposit or transfer was charged but no credit reached their balance.',
+      overview: 'Collect deposit details, verify order evidence, then either explain the result or hand off when platform evidence conflicts with the customer report.',
+      handoffGuidance: 'Escalate to payment_ops when platform evidence conflicts with the customer report or a manual review is required.',
       steps: [
-        { id: 'collect_deposit_details', action: 'ask', target: 'deposit_details', guidance: 'Collect txnId, amount, payment method, and date using ask_user_questions.', required: true },
-        { id: 'check_deposit', action: 'use', target: 'get_latest_deposit', guidance: 'Verify the customer-provided txnId against platform records.', required: true },
-        { id: 'check_channel', action: 'use', target: 'get_withdraw_conditions', guidance: 'Check channel or turnover conditions if they affect the answer.', required: true },
-        { id: 'escalate_conflict', action: 'escalate', target: 'payment_ops', guidance: 'Escalate when platform evidence conflicts with the customer report.' },
-        { id: 'finalize', action: 'finalize', guidance: 'Explain the evidence and next step without promising compensation.', required: true },
+        {
+          id: 'collect_deposit_details',
+          title: 'Collect deposit details',
+          guidance: 'Collect txnId, amount, payment method, and date with ask_user_questions before any account lookup.',
+          actions: [
+            {
+              id: 'ask_deposit_details',
+              kind: 'ask',
+              label: 'Ask for deposit details',
+              fields: ['txnId', 'amount', 'paymentMethod', 'date'],
+            },
+          ],
+        },
+        {
+          id: 'investigate_deposit',
+          title: 'Investigate order and channel status',
+          guidance: 'Verify the reported deposit against platform records and review any channel or turnover conditions that affect the answer.',
+          actions: [
+            {
+              id: 'lookup_latest_deposit',
+              kind: 'call_tool',
+              label: 'Check latest deposit',
+              toolName: 'get_latest_deposit',
+            },
+            {
+              id: 'check_channel_or_conditions',
+              kind: 'call_tool',
+              label: 'Check withdrawal conditions',
+              toolName: 'get_withdraw_conditions',
+              required: false,
+            },
+          ],
+          branches: [
+            {
+              id: 'conflict_or_manual_review',
+              kind: 'if',
+              condition: {
+                kind: 'llm_eval',
+                prompt: 'Based on the latest tool evidence and the customer report, is there a conflict or a manual-review need that requires payment_ops handoff?',
+              },
+              actions: [
+                {
+                  id: 'handoff_payment_ops',
+                  kind: 'request_human_handoff',
+                  label: 'Request payment ops review',
+                  queue: 'payment_ops',
+                },
+              ],
+            },
+          ],
+          completionGuidance: 'Do not finalize until the evidence is reconciled or a human handoff is persisted.',
+        },
+        {
+          id: 'finalize_deposit_answer',
+          title: 'Explain the result and next step',
+          guidance: 'Explain the evidence and next step without promising compensation.',
+          actions: [
+            {
+              id: 'finish_deposit_case',
+              kind: 'end',
+              label: 'Finalize customer answer',
+              status: 'completed',
+            },
+          ],
+        },
       ],
     }),
     hookBindings: ['investigate_before_resolve', 'human_review_before_finalize'],
@@ -246,12 +310,76 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
       'Pull account-side records and knowledge-base references to determine whether the account is restricted/banned/falsely flagged. Escalate to account-ops human review on conflict or high-risk cases, and give actionable next steps.',
     escalateOn: '["high_risk","conflict"]',
     procedure: JSON.stringify({
+      version: 'v2',
+      whenToUse: 'Use when the customer cannot log in, reports an account restriction, or needs help with identity, security, or KYC status.',
+      overview: 'Collect account details, inspect live account evidence, and hand off high-risk or conflicting cases to account_ops.',
+      handoffGuidance: 'Escalate to account_ops when the evidence suggests high risk, suspected theft, or a conflict between system status and the customer report.',
       steps: [
-        { id: 'collect_account_details', action: 'ask', target: 'account_details', guidance: 'Collect userId, issue type, and symptom details.', required: true },
-        { id: 'check_account_status', action: 'use', target: 'get_account_status', guidance: 'Review account-side status.', required: true },
-        { id: 'check_kyc_status', action: 'use', target: 'get_kyc_status', guidance: 'Review KYC or verification state when relevant.' },
-        { id: 'escalate_high_risk', action: 'escalate', target: 'account_ops', guidance: 'Escalate account restrictions, suspected theft, or conflicting records.' },
-        { id: 'finalize', action: 'finalize', guidance: 'Explain the status and next safe step.', required: true },
+        {
+          id: 'collect_account_details',
+          title: 'Collect account details',
+          guidance: 'Collect userId, issue type, and symptom details before investigating the account.',
+          actions: [
+            {
+              id: 'ask_account_details',
+              kind: 'ask',
+              label: 'Ask for account details',
+              fields: ['userId', 'issueType', 'symptoms'],
+            },
+          ],
+        },
+        {
+          id: 'investigate_account_status',
+          title: 'Investigate account status',
+          guidance: 'Check the account status first, then review KYC status when it is relevant to the issue.',
+          actions: [
+            {
+              id: 'lookup_account_status',
+              kind: 'call_tool',
+              label: 'Check account status',
+              toolName: 'get_account_status',
+            },
+            {
+              id: 'lookup_kyc_status',
+              kind: 'call_tool',
+              label: 'Check KYC status',
+              toolName: 'get_kyc_status',
+              required: false,
+            },
+          ],
+          branches: [
+            {
+              id: 'high_risk_or_conflict',
+              kind: 'if',
+              condition: {
+                kind: 'llm_eval',
+                prompt: 'Based on the current tool evidence and the customer report, is this a high-risk or conflicting account case that requires account_ops handoff?',
+              },
+              actions: [
+                {
+                  id: 'handoff_account_ops',
+                  kind: 'request_human_handoff',
+                  label: 'Request account ops review',
+                  queue: 'account_ops',
+                },
+              ],
+            },
+          ],
+          completionGuidance: 'Do not finalize until the account evidence is reconciled or a human handoff is persisted.',
+        },
+        {
+          id: 'finalize_account_answer',
+          title: 'Explain the status and next safe step',
+          guidance: 'Explain the current status and the safest next step for the customer.',
+          actions: [
+            {
+              id: 'finish_account_case',
+              kind: 'end',
+              label: 'Finalize account answer',
+              status: 'completed',
+            },
+          ],
+        },
       ],
     }),
     hookBindings: ['investigate_before_resolve'],
