@@ -3,7 +3,7 @@
 **Last updated:** 2026-06-09
 **Status:** CURRENT source of truth for product architecture and domain language
 **Audience:** founder, architect, delivery lead, and AI coding teams
-**Related plan:** [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md)
+**Related plan:** [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md)
 **Related UI/UX spec:** [`Intera_UI_UX_Design_System.md`](./Intera_UI_UX_Design_System.md)
 
 This document replaces the older mixed Harness/Procedure notes as the current architecture map. Historical docs may still contain `Skill`, `Policy`, `Guardrail`, `stage`, `sub-agent`, or `preFinalize`; new code and new docs should not.
@@ -669,7 +669,7 @@ Primary changes:
 
 No long-term dual-read or dual-write compatibility should survive the reset unless the reset plan explicitly says so. Old data can be preserved under `.intera.legacy` and archived docs.
 
-Dispatch details live in [`../to-do/2026-06-08-foundation-reset-domain-model.md`](../to-do/2026-06-08-foundation-reset-domain-model.md).
+Dispatch details live in [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md).
 
 ---
 

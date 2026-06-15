@@ -2,8 +2,8 @@
 
 **Status:** Owner-approved for construction dispatch (2026-06-12)
 **Spec:** [`../spec/2026-06-12-architecture-consolidation-modules-spec.md`](../spec/2026-06-12-architecture-consolidation-modules-spec.md) — contracts, remove lists, and acceptance gates live there; this plan is the lane/task breakdown.
-**Dispatch contract:** [`../handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md`](../handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md)
-**Acceptance bar:** [`../handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](../handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) applies to every lane.
+**Dispatch contract:** [`../archive/retired-handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md`](../archive/retired-handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md)
+**Acceptance bar:** [`../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) applies to every lane.
 
 > **For the dispatching architect:** dispatch by wave. Lanes inside a wave may run in parallel only with the owned-file declarations below. A lane prompt must (a) copy its module's task list and remove list as checkboxes, (b) expand tasks into red→green test-first steps before coding, (c) end with the lane's gates. Do not start a Wave-N lane while a blocking Wave-(N-1) lane is unmerged.
 

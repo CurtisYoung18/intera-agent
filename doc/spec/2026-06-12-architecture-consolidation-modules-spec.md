@@ -9,7 +9,7 @@
 - [`Intera_Harness_架构梳理.md`](./Intera_Harness_架构梳理.md) — product/architecture source of truth
 - Fin-style procedure authoring/runtime spec (owner-approved external reference for the Procedure engine cleanup; mirror it into `doc/spec/` before dispatching a procedure-authoring lane that depends on it) — M1/M2 complete its owner-approved cleanup
 - [`../strategy/2026-06-08-long-term-architecture-review.md`](../strategy/2026-06-08-long-term-architecture-review.md) — diagnosis history
-- [`../handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](../handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) — acceptance bar; all module gates inherit it
+- [`../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) — acceptance bar; all module gates inherit it
 
 ---
 
@@ -349,6 +349,6 @@ Explicitly not built while M1-M7 are open:
 
 - One module = one lane. M1 and M2 may run in parallel; the M2 schema lane owns `packages/shared/prisma/schema.prisma` exclusively per MASTER handoff rules.
 - Each lane's implementation plan (in `doc/to-do/`) must reproduce its module's **remove list as checkboxes** and execute it in the same lane — deletion is not follow-up work.
-- Each lane inherits the two-phase verification and production acceptance bar from [`PLATFORM_DELIVERY_AUDIT_GOALS.md`](../handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md).
+- Each lane inherits the two-phase verification and production acceptance bar from [`PLATFORM_DELIVERY_AUDIT_GOALS.md`](../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md).
 - Runtime/prompt/procedure-touching lanes (M1, M2, M4) trigger the J1B scenario matrix re-run rule from the MASTER handoff.
 - When M2 lands, update `Intera_Harness_架构梳理.md` §3.3/§3.4 (R3 in-memory boundary) to reference this spec instead of the single-process assumption.
