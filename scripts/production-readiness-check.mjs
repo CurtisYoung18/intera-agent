@@ -19,6 +19,8 @@ Environment:
   PRODUCTION_AUTH_COOKIE           Optional raw Cookie header for authenticated metrics proof.
   PRODUCTION_RUNTIME_INTERNAL_URL  Optional host-local runtime URL, e.g. http://127.0.0.1:3101.
   INTERNAL_API_SECRET              Required only with PRODUCTION_RUNTIME_INTERNAL_URL.
+  PRODUCTION_READINESS_REQUIRE_FULL
+                                  Set to 1 for final acceptance; skipped evidence becomes blocking.
   PRODUCTION_READINESS_DATE        Override the date folder.
   PRODUCTION_READINESS_RUN_ID      Override the run folder.
   PRODUCTION_READINESS_SKIP_AUDIT  Set to 1 to skip npm audit --omit=dev.
@@ -37,6 +39,7 @@ const authCookie = process.env.PRODUCTION_AUTH_COOKIE || ''
 const runtimeInternalUrl = normalizeBaseUrl(process.env.PRODUCTION_RUNTIME_INTERNAL_URL || '')
 const internalSecret = process.env.INTERNAL_API_SECRET || ''
 const skipAudit = process.env.PRODUCTION_READINESS_SKIP_AUDIT === '1'
+const requireFullEvidence = process.env.PRODUCTION_READINESS_REQUIRE_FULL === '1'
 
 const checks = []
 checks.push(await checkPublicHealth(baseUrl))
@@ -65,15 +68,16 @@ if (skipAudit) {
 }
 
 const summary = {
-  status: overallStatus(checks),
-  statusMeaning: statusMeaning(overallStatus(checks)),
+  status: overallStatus(checks, requireFullEvidence),
+  statusMeaning: statusMeaning(overallStatus(checks, requireFullEvidence), requireFullEvidence),
   baseUrl,
   runtimeInternalUrl: runtimeInternalUrl || null,
+  requireFullEvidence,
   startedAt: startedAt.toISOString(),
   completedAt: new Date().toISOString(),
   outputDir: relative(ROOT, outDir),
   checks,
-  blockers: checks.filter((check) => check.status === 'fail'),
+  blockers: checks.filter((check) => check.status === 'fail' || (requireFullEvidence && check.status === 'skipped')),
   skipped: checks.filter((check) => check.status === 'skipped'),
 }
 
@@ -102,11 +106,16 @@ export function isProtectedUnauthenticatedStatus(status) {
   return [302, 303, 307, 308, 401, 403].includes(status)
 }
 
-export function overallStatus(checks) {
-  return checks.some((check) => check.status === 'fail') ? 'fail' : 'pass'
+export function overallStatus(checks, requireFullEvidence = false) {
+  if (checks.some((check) => check.status === 'fail')) return 'fail'
+  if (requireFullEvidence && checks.some((check) => check.status === 'skipped')) return 'fail'
+  return 'pass'
 }
 
-function statusMeaning(status) {
+function statusMeaning(status, requireFullEvidence) {
+  if (status === 'pass' && requireFullEvidence) {
+    return 'All production-readiness checks passed with no skipped evidence.'
+  }
   return status === 'pass'
     ? 'No blocking production-readiness failures were found. Skipped checks still require separate evidence before final acceptance.'
     : 'At least one blocking production-readiness check failed.'
@@ -320,6 +329,7 @@ function renderSummary(summary) {
     `- Status: ${summary.status}`,
     `- Base URL: ${summary.baseUrl}`,
     `- Runtime internal URL: ${summary.runtimeInternalUrl || 'not configured'}`,
+    `- Full evidence required: ${summary.requireFullEvidence ? 'yes' : 'no'}`,
     `- Started: ${summary.startedAt}`,
     `- Completed: ${summary.completedAt}`,
     '',
