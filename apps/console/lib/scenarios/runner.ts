@@ -42,7 +42,13 @@ export function buildScenarioReceipt(
 ): ScenarioReceipt {
   const startedAt = new Date().toISOString()
   const completedAt = new Date().toISOString()
-  const evidence = scenarioObservedEvidenceSchema.parse(observedInput ?? {})
+  const parsedEvidence = scenarioObservedEvidenceSchema.parse(observedInput ?? {})
+  const procedureSummary = deriveProcedureSummary(parsedEvidence)
+  const evidence = scenarioObservedEvidenceSchema.parse({
+    ...parsedEvidence,
+    procedureStatus: parsedEvidence.procedureStatus ?? procedureSummary.status,
+    procedureOutcome: parsedEvidence.procedureOutcome ?? procedureSummary.outcome,
+  })
   const checks = evaluateScenario(scenario.expected ?? {}, evidence)
   const failureReasons = [
     ...failureReasonsFromChecks(checks),

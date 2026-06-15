@@ -644,3 +644,16 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: Not yet rerun on `https://demo.anytrans.ai`. Local verification passed: focused Vitest (`3` files, `36` tests), `tsc`, `build:console`, and `git diff --check`.
 - Owner decision needed: None before the next production rerun. If the remaining live failures persist, the lane should treat this rename as settled and keep focusing on scenario closure + receipt-surface parity.
 - Follow-up owner: CONS-M1 lane owner / runtime owner
+
+### 2026-06-15 - Local Receipt Builder Now Backfills Procedure Terminal Fields From Runtime Snapshots
+
+- Area: CONS-M1 / scenario receipts / terminal-proof parity
+- Status: default-applied
+- Severity: P1
+- Uncertainty: Production handoff-shaped Scenario receipts were still showing `procedureStatus=null` and `procedureOutcome=null`. It was unclear whether that was only production drift or whether the owned local receipt builder still had a gap where it evaluated Procedure terminal checks from `runtime.procedureRuns` but failed to copy that truth back into the stored `evidence` payload.
+- Default action taken: Tightened `buildScenarioReceipt(...)` so it derives a Procedure summary from `runtime.procedureRuns` and backfills `evidence.procedureStatus` / `evidence.procedureOutcome` when the top-level fields are missing. Added a regression test proving a runtime-backed receipt with only `runtime.procedureRuns` now persists `completed` / `handed_off` in the evidence block itself.
+- Why this default: It removes a local self-contradiction where receipt checks could pass using runtime snapshots while the persisted evidence payload still rendered null terminal fields, making production parity harder to attribute honestly.
+- Evidence: `apps/console/lib/scenarios/runner.ts`; `apps/console/lib/scenarios/__tests__/scenario-runner.test.ts`; `apps/console/lib/scenarios/__tests__/runtime-runner.test.ts`; `apps/console/lib/scenarios/__tests__/procedure-v2-runtime-artifact.test.ts`; `.artifacts/delivery-audit/2026-06-12/cons-m1/progress-summary.md`
+- Production URL / screenshot / receipt: Not yet rerun on `https://demo.anytrans.ai`. Local verification passed: focused Scenario Vitest (`3` files, `11` tests), `tsc`, `build:console`, and `git diff --check`.
+- Owner decision needed: None before the next production rerun. If production still emits null terminal fields after deploy parity is restored, the next investigation should move to the live scenario route/store path or stale server code rather than the owned local receipt builder.
+- Follow-up owner: CONS-M1 lane owner / runtime owner
