@@ -35,6 +35,7 @@ vi.mock('@/components/locale-provider', () => ({
         'sidebar.pilotLab': 'Pilot Lab',
         'sidebar.components': 'Components',
         'sidebar.conversations': 'Conversations',
+        'sidebar.procedureMetrics': 'Procedure Metrics',
         'sidebar.handoff': 'Human Handoff',
         'sidebar.organization': 'Organization',
         'sidebar.expandAria': 'Expand sidebar',

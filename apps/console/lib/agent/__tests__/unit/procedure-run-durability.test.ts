@@ -552,7 +552,7 @@ describe('ProcedureRun durability', () => {
     })
     expect([...adapter.runs.values()][0]).toMatchObject({
       status: 'completed',
-      outcome: null,
+      outcome: 'resolved_by_agent',
     })
   })
 })

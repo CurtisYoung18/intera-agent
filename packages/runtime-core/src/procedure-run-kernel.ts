@@ -140,6 +140,7 @@ function applyFinalizeEvent<TState extends ProcedureRunKernelState>(
   }
 
   state.status = event.status
+  state.outcome = state.outcome ?? (event.status === 'cancelled' ? 'abandoned' : 'resolved_by_agent')
   state.updatedAt = clock.now
 
   return {

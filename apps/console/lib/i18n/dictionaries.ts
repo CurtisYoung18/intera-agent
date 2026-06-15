@@ -157,6 +157,7 @@ export const en: Record<string, string> = {
   'sidebar.memory': 'Memory',
   'sidebar.members': 'Members',
   'sidebar.conversations': 'Conversations',
+  'sidebar.procedureMetrics': 'Procedure Metrics',
   'sidebar.handoff': 'Human Handoff',
   'sidebar.settings': 'Settings',
 
@@ -2070,6 +2071,7 @@ export const zh: Record<string, string> = {
   'sidebar.guide': '指南',
   'sidebar.apiKeys': 'API 密钥',
   'sidebar.conversations': '对话',
+  'sidebar.procedureMetrics': '流程指标',
   'sidebar.handoff': '人工交接',
   'sidebar.settings': '设置',
 

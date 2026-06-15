@@ -139,6 +139,7 @@ describe('procedure-run-kernel', () => {
     })
 
     expect(result.state.status).toBe('cancelled')
+    expect(result.state.outcome).toBe('abandoned')
     expect(result.state.updatedAt).toBe(NOW)
     expect(result.effects).toContainEqual({
       type: 'timeline',
@@ -152,6 +153,27 @@ describe('procedure-run-kernel', () => {
       type: 'completed_run',
       runId: 'run-1',
       status: 'cancelled',
+      outcome: 'abandoned',
+    })
+  })
+
+  it('records resolved_by_agent for normal completed finalize events', () => {
+    const result = applyProcedureRunEvent(createRun(), {
+      type: 'finalize',
+      status: 'completed',
+      basedOnInputEpoch: 7,
+      summary: 'Procedure resolved by the agent',
+    }, {
+      now: NOW,
+    })
+
+    expect(result.state.status).toBe('completed')
+    expect(result.state.outcome).toBe('resolved_by_agent')
+    expect(result.effects).toContainEqual({
+      type: 'completed_run',
+      runId: 'run-1',
+      status: 'completed',
+      outcome: 'resolved_by_agent',
     })
   })
 

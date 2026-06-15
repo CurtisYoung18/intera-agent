@@ -122,6 +122,7 @@ export function repoForOrg(orgId: string) {
     knowledgeSource: scopedModel(prisma.knowledgeSource, orgId),
     apiKey: scopedModel(prisma.apiKey, orgId),
     case: scopedModel(prisma.case, orgId),
+    procedureRun: scopedModel(prisma.procedureRun, orgId),
     userProfile: scopedModel(prisma.userProfile, orgId),
     livechatPendingEvent: scopedModel(prisma.liveChatPendingEvent, orgId),
 
