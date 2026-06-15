@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { getLiveChatConfig } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { upsertSession } from '@/lib/livechat/session-store'
 import { sendTextMessage } from '@/lib/livechat/livechat-api'
@@ -85,7 +85,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const config = await getLiveChatConfig(orgId)
+  const resolved = await getLiveChatConfigForOrg(orgId)
+  const agentConfigId = resolved?.agentConfigId
+  const config = resolved?.config ?? null
   if (!config?.enabled) {
     console.warn('[Webhook] config missing or disabled', { orgId, action, chatId })
     return NextResponse.json({ ok: true, skipped: 'config_disabled' })
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
     if (eventType === 'message' || eventType === 'system_message') {
       const text = (event.text as string) || (event.system_message_text as string) || ''
       if (!text.trim()) return NextResponse.json({ ok: true, skipped: 'empty' })
-      handleIncomingEvent(chatId, orgId, userId, { type: 'message', text }, config)
+      handleIncomingEvent(chatId, orgId, userId, { type: 'message', text }, config, agentConfigId)
         .catch(err => console.error('[Webhook] handleIncomingEvent error:', err))
     }
 
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
           contentType: (event.content_type ?? 'application/octet-stream') as string,
           filename: (event.name ?? 'file') as string,
         },
-      }, config).catch(err => console.error('[Webhook] attachment error:', err))
+      }, config, agentConfigId).catch(err => console.error('[Webhook] attachment error:', err))
     }
 
     if (eventType === 'custom') {
@@ -129,13 +131,13 @@ export async function POST(request: NextRequest) {
 
       if (contentType === 'intera_form_submit') {
         const form = content as unknown as InteraFormSubmit
-        handleIncomingEvent(chatId, orgId, userId, { type: 'form_submit', form }, config)
+        handleIncomingEvent(chatId, orgId, userId, { type: 'form_submit', form }, config, agentConfigId)
           .catch(err => console.error('[Webhook] form_submit error:', err))
       }
 
       if (contentType === 'intera_interaction_submit') {
         const interaction = content as unknown as InteraInteractionSubmit
-        handleIncomingEvent(chatId, orgId, userId, { type: 'interaction_submit', interaction }, config)
+        handleIncomingEvent(chatId, orgId, userId, { type: 'interaction_submit', interaction }, config, agentConfigId)
           .catch(err => console.error('[Webhook] interaction_submit error:', err))
       }
     }
@@ -146,7 +148,7 @@ export async function POST(request: NextRequest) {
         handleIncomingEvent(chatId, orgId, userId, {
           type: 'postback',
           postbackId,
-        }, config).catch(err => console.error('[Webhook] postback error:', err))
+        }, config, agentConfigId).catch(err => console.error('[Webhook] postback error:', err))
       }
     }
   }
@@ -175,6 +177,7 @@ export async function POST(request: NextRequest) {
       orgId,
       userId: freshSessionUserId,
       caseId: generateCaseId(),
+      agentConfigId,
       state: 'idle',
       textBuffer: '',
     })
@@ -191,7 +194,7 @@ export async function POST(request: NextRequest) {
         const eventId = `livechat:${e.id as string}`
         const dup = await isDuplicateWebhook(eventId).catch(() => true)
         if (!dup) {
-          handleIncomingEvent(chatId, orgId, evUserId, { type: 'message', text: e.text as string }, config)
+          handleIncomingEvent(chatId, orgId, evUserId, { type: 'message', text: e.text as string }, config, agentConfigId)
             .catch(err => console.error('[Webhook] incoming_chat first-msg error:', err))
         }
       }
@@ -199,7 +202,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'chat_archived') {
-    handleIncomingEvent(chatId, orgId, userId, { type: 'chat_archived' }, config)
+    handleIncomingEvent(chatId, orgId, userId, { type: 'chat_archived' }, config, agentConfigId)
       .catch(err => console.error('[Webhook] chat_archived error:', err))
   }
 

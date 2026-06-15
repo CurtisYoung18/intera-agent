@@ -220,6 +220,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
           orgId,
           userId: freshSessionUserId,
           caseId: generateCaseId(),
+          agentConfigId: agentConfig.id,
           state: 'idle',
           textBuffer: '',
         })

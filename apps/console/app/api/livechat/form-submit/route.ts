@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { getSession } from '@/lib/livechat/session-store'
-import { getLiveChatConfig } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForFamily, getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 
 const formSchema = z.object({
@@ -28,13 +28,24 @@ export const POST = defineRoute<z.infer<typeof formSchema>>({
     const session = await getSession(input.chatId)
     if (!session) return NextResponse.json({ error: 'Session not found for chatId' }, { status: 404 })
 
-    const config = await getLiveChatConfig(session.orgId)
+    let resolvedAgentConfigId = session.agentConfigId
+    let config = session.agentConfigId
+      ? await getLiveChatConfigForFamily(session.agentConfigId)
+      : null
+
+    if (!config?.enabled) {
+      const fallback = await getLiveChatConfigForOrg(session.orgId)
+      resolvedAgentConfigId = fallback?.agentConfigId
+      config = fallback?.config ?? null
+    }
+
     if (!config?.enabled) return NextResponse.json({ error: 'LiveChat channel not configured' }, { status: 404 })
 
     handleIncomingEvent(
       input.chatId, session.orgId, session.userId,
       { type: 'form_submit', form: { caseId: input.caseId || session.caseId, answers: normalized } },
       config,
+      resolvedAgentConfigId,
     ).catch(err => console.error('[FormSubmit] bridge error:', err))
 
     return NextResponse.json({ ok: true })

@@ -239,6 +239,7 @@ describe('per-agent LiveChat webhook route', () => {
       orgId: 'default',
       userId: 'customer-2',
       caseId: 'case-fresh',
+      agentConfigId: 'active-agent',
       state: 'idle',
       textBuffer: '',
     })

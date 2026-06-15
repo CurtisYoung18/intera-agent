@@ -2,7 +2,7 @@
 // Failed bridge events are enqueued for retry with exponential backoff.
 
 import { prisma } from '@intera/shared/prisma'
-import { getLiveChatConfig } from './config-store'
+import { getLiveChatConfigForFamily, getLiveChatConfigForOrg } from './config-store'
 import { handleIncomingEvent } from './bridge'
 import type { IncomingEvent } from './types'
 
@@ -19,13 +19,14 @@ export async function enqueueRetry(
   userId: string,
   event: IncomingEvent,
   error: string,
+  agentConfigId?: string,
 ): Promise<void> {
   try {
     await prisma.liveChatPendingEvent.create({
       data: {
         chatId,
         orgId,
-        payload: { userId, event } as never,
+        payload: { userId, event, ...(agentConfigId ? { agentConfigId } : {}) } as never,
         attempt: 0,
         lastError: error,
         nextRetryAt: new Date(Date.now() + BACKOFF_MS[0]),
@@ -47,17 +48,30 @@ export async function processRetryQueue(): Promise<number> {
   let processed = 0
   for (const item of items) {
     try {
-      const config = await getLiveChatConfig(item.orgId)
+      const payload = item.payload as Record<string, unknown>
+      const userId = payload.userId as string
+      const event = payload.event as IncomingEvent
+      const payloadAgentConfigId = typeof payload.agentConfigId === 'string'
+        ? payload.agentConfigId
+        : undefined
+
+      let resolvedAgentConfigId = payloadAgentConfigId
+      let config = payloadAgentConfigId
+        ? await getLiveChatConfigForFamily(payloadAgentConfigId)
+        : null
+
+      if (!config?.enabled) {
+        const fallback = await getLiveChatConfigForOrg(item.orgId)
+        resolvedAgentConfigId = fallback?.agentConfigId ?? resolvedAgentConfigId
+        config = fallback?.config ?? null
+      }
+
       if (!config?.enabled) {
         await prisma.liveChatPendingEvent.delete({ where: { id: item.id } })
         continue
       }
 
-      const payload = item.payload as Record<string, unknown>
-      const userId = payload.userId as string
-      const event = payload.event as IncomingEvent
-
-      await handleIncomingEvent(item.chatId, item.orgId, userId, event, config)
+      await handleIncomingEvent(item.chatId, item.orgId, userId, event, config, resolvedAgentConfigId)
       await prisma.liveChatPendingEvent.delete({ where: { id: item.id } })
       processed++
     } catch (err) {

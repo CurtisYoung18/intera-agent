@@ -130,6 +130,45 @@ export async function getLiveChatConfigForFamily(
   return null
 }
 
+export async function resolveLiveChatAgentConfigIdForOrg(orgId: string): Promise<string | null> {
+  try {
+    const agent = await prisma.agentConfig.findFirst({
+      where: {
+        orgId,
+        isActive: true,
+        channelBindings: {
+          some: {
+            channel: 'livechat',
+            enabled: true,
+          },
+        },
+      },
+      orderBy: [
+        { updatedAt: 'desc' },
+        { id: 'asc' },
+      ],
+      select: { id: true },
+    })
+
+    return agent?.id ?? null
+  } catch (err) {
+    console.error('[LiveChat] Failed to resolve org-scoped binding:', err)
+    return null
+  }
+}
+
+export async function getLiveChatConfigForOrg(
+  orgId: string,
+): Promise<{ agentConfigId: string; config: LiveChatConfig } | null> {
+  const agentConfigId = await resolveLiveChatAgentConfigIdForOrg(orgId)
+  if (!agentConfigId) return null
+
+  const config = await getLiveChatConfigForFamily(agentConfigId)
+  if (!config) return null
+
+  return { agentConfigId, config }
+}
+
 export async function upsertLiveChatConfig(
   agentConfigId: string,
   data: Omit<LiveChatConfig, 'orgId'>,

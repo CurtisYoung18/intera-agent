@@ -13,7 +13,7 @@ const rowStore = new Map<string, {
   internalCaseId: string
   bridgeState: string
   textBuffer: string
-  metadata: { userId: string }
+  metadata: { userId: string; agentConfigId?: string }
 }>()
 
 vi.mock('@intera/shared/prisma', () => ({
@@ -76,7 +76,7 @@ describe('session-store', () => {
         internalCaseId: 'case-1',
         bridgeState: 'idle',
         textBuffer: '',
-        metadata: { userId: 'user-1' },
+        metadata: { userId: 'user-1', agentConfigId: 'agent-1' },
       })
       const session = await getSession('chat-1')
       expect(session).toEqual({
@@ -84,6 +84,7 @@ describe('session-store', () => {
         orgId: 'cust-1',
         userId: 'user-1',
         caseId: 'case-1',
+        agentConfigId: 'agent-1',
         state: 'idle',
         textBuffer: '',
       })
@@ -99,12 +100,16 @@ describe('session-store', () => {
   describe('upsertSession', () => {
     it('upserts with correct data', async () => {
       mockUpsert.mockResolvedValue({})
-      await upsertSession({ chatId: 'chat-1', orgId: 'cust-1', userId: 'user-1', caseId: 'case-1', state: 'idle', textBuffer: '' })
+      await upsertSession({ chatId: 'chat-1', orgId: 'cust-1', userId: 'user-1', caseId: 'case-1', agentConfigId: 'agent-1', state: 'idle', textBuffer: '' })
       expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({
         where: { platform_externalChatId: { platform: 'livechat', externalChatId: 'chat-1' } },
         update: expect.objectContaining({
           status: 'active',
           bridgeState: 'idle',
+          metadata: {
+            userId: 'user-1',
+            agentConfigId: 'agent-1',
+          },
         }),
       }))
     })

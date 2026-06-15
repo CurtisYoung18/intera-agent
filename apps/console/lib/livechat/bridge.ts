@@ -183,7 +183,7 @@ export async function handleIncomingEvent(
       console.log('[Bridge] Skipping closure system message, rotating session:', chatId)
       await closeSession(chatId, 'idle_timeout')
       // Reset session for fresh start on reopen
-      await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
+      await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), agentConfigId, state: 'idle', textBuffer: '' })
       return
     }
   }
@@ -191,15 +191,20 @@ export async function handleIncomingEvent(
   if (event.type === 'chat_archived') {
     await closeSession(chatId, 'archived_by_agent')
     // Reset session so reopen starts fresh (no old case context)
-    await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })
+    await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), agentConfigId, state: 'idle', textBuffer: '' })
     return
   }
 
   let session = await getSession(chatId)
   if (!session) {
-    session = { chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' }
+    session = { chatId, orgId, userId, caseId: generateCaseId(), agentConfigId, state: 'idle', textBuffer: '' }
+    await upsertSession(session)
+  } else if (agentConfigId && session.agentConfigId !== agentConfigId) {
+    session = { ...session, agentConfigId }
     await upsertSession(session)
   }
+
+  const resolvedAgentConfigId = session.agentConfigId ?? agentConfigId
 
   let resumedTransferredSession = false
   const shouldPinCaseToSession =
@@ -288,7 +293,7 @@ export async function handleIncomingEvent(
       [INTERNAL_SECRET_HEADER]: process.env.INTERNAL_API_SECRET || '',
       'x-intera-org': session.orgId,
     }
-    if (agentConfigId) headers['x-intera-agent-config-id'] = agentConfigId
+    if (resolvedAgentConfigId) headers['x-intera-agent-config-id'] = resolvedAgentConfigId
 
     response = await fetch(getInternalMessagesUrl(), {
       method: 'POST',
@@ -298,7 +303,7 @@ export async function handleIncomingEvent(
   } catch (err) {
     console.error('[Bridge] Failed to call /api/messages:', err)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
-    await enqueueRetry(chatId, orgId, userId, event, String(err))
+    await enqueueRetry(chatId, orgId, userId, event, String(err), resolvedAgentConfigId)
     await updateSessionState(chatId, 'idle')
     setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return
@@ -414,7 +419,7 @@ export async function handleIncomingEvent(
       streamTruncated = false
     } else {
       await sendFailureNotice(chatId, config, 'stream_truncated')
-      await enqueueRetry(chatId, orgId, userId, event, String(err))
+      await enqueueRetry(chatId, orgId, userId, event, String(err), resolvedAgentConfigId)
     }
   } finally {
     // Ensure typing indicator is off
