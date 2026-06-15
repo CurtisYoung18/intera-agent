@@ -5,7 +5,7 @@ const h = vi.hoisted(() => {
   const prisma = {
     $transaction: vi.fn(async (ops) => ops),
     humanTask: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
-    case: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), upsert: vi.fn(), update: vi.fn() },
+    case: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), upsert: vi.fn(), update: vi.fn() },
     caseType: { findUnique: vi.fn() },
     procedureRun: { findFirst: vi.fn() },
     tool: { findMany: vi.fn() },
@@ -119,6 +119,7 @@ beforeEach(() => {
   h.prisma.humanTask.findFirst.mockResolvedValue(null)
   h.prisma.humanTask.update.mockResolvedValue({})
   h.prisma.case.findUnique.mockResolvedValue(null)
+  h.prisma.case.findFirst.mockResolvedValue(null)
   h.prisma.case.findMany.mockResolvedValue([])
   h.prisma.case.create.mockResolvedValue({ id: 'case-created' })
   h.prisma.case.upsert.mockResolvedValue({})
@@ -213,6 +214,35 @@ describe('POST /api/messages runtime session guards', () => {
     expect(h.agentLoopCreate).not.toHaveBeenCalled()
     expect(active.queue.pendingCount).toBe(1)
     expect(hasSession('case-queued')).toBe(true)
+  })
+
+  it('keeps a bridge-pinned caseId instead of rerouting to another active case in the same chat', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-bridge',
+      orgId: 'org-a',
+      chatId: 'chat-1',
+      status: 'created',
+      memory: null,
+    })
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      message: '怎么注册',
+      caseId: 'case-bridge',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+      sessionCasePinned: true,
+    }))
+    await readSse(res)
+
+    expect(h.prisma.case.findMany).not.toHaveBeenCalled()
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-bridge',
+      chatId: 'chat-1',
+      userId: 'user-1',
+    }))
   })
 
   it('hydrates persisted provider transcript before a follow-up HTTP turn runs', async () => {

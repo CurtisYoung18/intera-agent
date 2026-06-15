@@ -251,10 +251,17 @@ describe('livechat bridge', () => {
 
     expect(mockUpsertSession).toHaveBeenCalledWith(expect.objectContaining({
       chatId: 'chat-1',
-      caseId: 'case-1',
+      caseId: 'case-generated',
       state: 'idle',
       textBuffer: '',
     }))
+    const [, fetchInit] = mockFetch.mock.calls[0]!
+    expect(JSON.parse(String(fetchInit.body))).toMatchObject({
+      chatId: 'chat-1',
+      caseId: 'case-generated',
+      sessionCasePinned: true,
+      message: 'hello again',
+    })
     expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'thinking')
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'chat-1',

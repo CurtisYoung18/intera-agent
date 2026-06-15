@@ -236,6 +236,7 @@ export async function POST(request: NextRequest) {
           chatId,
           caseType: bodyCaseType,
           bootstrapNewCase: rawBootstrapNewCase,
+          sessionCasePinned: rawSessionCasePinned,
         } = body
 
         // Session-based requests (web/playground) pass agentConfigId via body;
@@ -243,6 +244,7 @@ export async function POST(request: NextRequest) {
         const resolvedAgentConfigId = authAgentConfigId || (typeof bodyConfigId === 'string' ? bodyConfigId : null)
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
+        const sessionCasePinned = rawSessionCasePinned === true
 
         // orgId mismatch check: if body sends a different orgId than the credential
         if (authOrgId && orgId && orgId !== authOrgId) {
@@ -459,7 +461,8 @@ export async function POST(request: NextRequest) {
           !formResult &&
           !bootstrapNewCase &&
           !interactionResult &&
-          !clientCaseIsNew
+          !clientCaseIsNew &&
+          !sessionCasePinned
         ) {
           try {
             const activeCases = await prisma.case.findMany({

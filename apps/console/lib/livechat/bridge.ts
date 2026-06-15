@@ -72,7 +72,13 @@ function buildMessagesBody(
   event: IncomingEvent,
   session: BridgeSessionRow,
 ): Record<string, unknown> {
-  const base = { orgId: session.orgId, userId: session.userId, chatId: session.chatId, caseId: session.caseId }
+  const base = {
+    orgId: session.orgId,
+    userId: session.userId,
+    chatId: session.chatId,
+    caseId: session.caseId,
+    sessionCasePinned: true,
+  }
 
   switch (event.type) {
     case 'form_submit':
@@ -205,6 +211,9 @@ export async function handleIncomingEvent(
 
     session = {
       ...session,
+      caseId: event.type === 'message' || event.type === 'attachment'
+        ? generateCaseId()
+        : session.caseId,
       state: 'idle',
       textBuffer: '',
     }
