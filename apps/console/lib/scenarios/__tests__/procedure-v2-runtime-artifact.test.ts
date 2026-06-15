@@ -274,8 +274,8 @@ describe('Procedure v2 runtime artifact receipt', () => {
     expect(runtimeRun).toMatchObject({
       procedureId: 'deposit_issue',
       status: 'paused',
-      reason: 'Waiting for human handoff task task-artifact-1.',
-      currentStepId: null,
+      reason: 'Human handoff task task-artifact-1 persisted; awaiting channel transfer.',
+      currentStepId: 'guide_or_handoff',
       blockers: [],
     })
     expect(runtimeRun?.evaluations).toHaveLength(2)

@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const h = vi.hoisted(() => {
+  process.env.ANTHROPIC_AUTH_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || 'test-auth-token'
+  process.env.ANTHROPIC_BASE_URL = process.env.ANTHROPIC_BASE_URL || 'https://test-anthropic.local'
+
   const prisma = {
     $transaction: vi.fn(async (ops) => ops),
     humanTask: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
@@ -66,6 +69,19 @@ async function readSse(res: Response) {
     .split('\n\n')
     .filter(Boolean)
     .map((chunk) => JSON.parse(chunk.replace(/^data: /, '')))
+}
+
+function mockExistingCase(row: Record<string, unknown>) {
+  const existingCase = {
+    orgId: 'org-a',
+    chatId: 'chat-1',
+    type: 'general',
+    status: 'created',
+    memory: null,
+    ...row,
+  }
+  h.prisma.case.findUnique.mockResolvedValue(existingCase)
+  h.prisma.case.findFirst.mockResolvedValue(existingCase)
 }
 
 function mockLoop(overrides: Partial<{
@@ -388,7 +404,7 @@ describe('POST /api/messages runtime session guards', () => {
 
   it('hydrates persisted provider transcript before a follow-up HTTP turn runs', async () => {
     const priorCreatedAt = new Date('2026-06-12T00:00:00Z')
-    h.prisma.case.findUnique.mockResolvedValueOnce({ id: 'case-provider-reload', status: 'open' })
+    mockExistingCase({ id: 'case-provider-reload', status: 'open' })
     h.prisma.message.findMany.mockResolvedValueOnce([
       {
         id: 'assistant-tool-use',
@@ -583,7 +599,7 @@ describe('POST /api/messages runtime session guards', () => {
   })
 
   it('does not merge form answers into confirmedFacts or persist new chatMemory facts for active Procedure v2 cases', async () => {
-    h.prisma.case.findUnique.mockResolvedValue({
+    mockExistingCase({
       id: 'case-v2-form',
       type: 'deposit_issue',
       status: 'open',
@@ -693,7 +709,7 @@ describe('POST /api/messages runtime session guards', () => {
         userId: 'user-1',
       },
     })
-    h.prisma.case.findUnique.mockResolvedValue({
+    mockExistingCase({
       id: 'case-resume',
       type: 'general',
       status: 'created',
@@ -777,7 +793,7 @@ describe('POST /api/messages runtime session guards', () => {
   })
 
   it('prefers active ProcedureRun truth over stale general case rows when hydrating an existing case', async () => {
-    h.prisma.case.findUnique.mockResolvedValue({
+    mockExistingCase({
       id: 'case-runtime-truth',
       type: 'general',
       status: 'created',
