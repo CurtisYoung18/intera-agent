@@ -13,6 +13,10 @@ dev.db.backup-*
 auth.json
 test-assets/
 .playwright-mcp/
+.playwright-cli/
+# Delivery-proof receipts/screenshots — keep locally, don't version (7.7MB of PNGs)
+.artifacts/
+output/
 /*.png
 /*.jpg
 /*.jpeg
