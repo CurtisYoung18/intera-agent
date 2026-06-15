@@ -212,10 +212,6 @@ describe('TraceSidebar', () => {
 
     fireEvent.click(screen.getByText('Show prompt data'))
 
-    expect(screen.getByText(/Prompt accounting:/)).toBeTruthy()
-    expect(screen.getAllByText((_, node) => node?.textContent?.includes('prompt tok =') ?? false).length).toBeGreaterThan(0)
-    expect(screen.getAllByText((_, node) => node?.textContent?.includes('826 uncached + 5500 cache read') ?? false).length).toBeGreaterThan(0)
-    expect(screen.getAllByText((_, node) => node?.textContent?.includes('formatted chars, not model tokens') ?? false).length).toBeGreaterThan(0)
     expect(screen.getByText('System Prompt')).toBeTruthy()
     expect(screen.getByText('Messages (IN)')).toBeTruthy()
     expect(screen.getByText('Tools (IN)')).toBeTruthy()

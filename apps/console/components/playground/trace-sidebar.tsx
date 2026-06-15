@@ -95,21 +95,6 @@ function promptTokenTotal(usage?: PlaygroundTraceStep['usage']): number {
   return (usage.inputTokens || 0) + (usage.cacheReadTokens || 0) + (usage.cacheWriteTokens || 0)
 }
 
-function promptAccountingParts(usage?: PlaygroundTraceStep['usage']): string[] {
-  if (!usage) return []
-
-  const parts: string[] = []
-  const uncached = usage.inputTokens || 0
-  const cacheRead = usage.cacheReadTokens || 0
-  const cacheWrite = usage.cacheWriteTokens || 0
-
-  if (uncached > 0 || (cacheRead === 0 && cacheWrite === 0)) parts.push(`${uncached} uncached`)
-  if (cacheRead > 0) parts.push(`${cacheRead} cache read`)
-  if (cacheWrite > 0) parts.push(`${cacheWrite} cache write`)
-
-  return parts
-}
-
 function SessionMetricsGrid({ metrics, tb }: { metrics: TraceSidebarProps['sessionMetrics']; tb: (k: string) => string }) {
   const { totalInput, totalCacheRead, totalCacheWrite, totalOutput, totalTools, llmCalls, totalMs } = metrics
   const totalPrompt = totalInput + totalCacheRead + totalCacheWrite
@@ -420,8 +405,6 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
   )
   const [showPromptData, setShowPromptData] = useState(false)
   const promptTokens = promptTokenTotal(step.usage)
-  const accountingParts = promptAccountingParts(step.usage)
-  const hasPromptAccounting = promptTokens > 0 && (accountingParts.length > 1 || hasPromptData)
 
   const formatPromptValue = (value: unknown): string => {
     if (typeof value === 'string') return value
@@ -483,22 +466,6 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
               </button>
               {showPromptData && (
                 <div style={{ marginTop: 6 }}>
-                  {hasPromptAccounting && (
-                    <div style={{
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      background: 'rgba(255,252,249,0.55)',
-                      border: '1px solid rgba(0,0,0,0.04)',
-                      fontSize: 10.5,
-                      color: '#8a7e74',
-                      lineHeight: 1.55,
-                      marginBottom: 6,
-                    }}>
-                      <strong style={{ color: '#5a524b' }}>Prompt accounting:</strong>{' '}
-                      {promptTokens.toLocaleString()} prompt tok = {accountingParts.join(' + ')}.
-                      {' '}The drawers below show formatted chars, not model tokens.
-                    </div>
-                  )}
                   {Boolean(step.promptData!.systemPrompt) && (
                     <PromptSection label="System Prompt" data={formatPromptValue(step.promptData!.systemPrompt)} color="var(--indigo)" />
                   )}
