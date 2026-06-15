@@ -48,6 +48,88 @@ function splitFields(target, fallback) {
     .filter(Boolean)
 }
 
+function parseStringArray(value) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+  if (typeof value !== 'string' || value.trim().length === 0) return []
+  const parsed = parseJsonStrict(value)
+  if (Array.isArray(parsed)) {
+    return parsed
+      .filter((entry) => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  }
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function uniqueStrings(values) {
+  return [...new Set(values.map((value) => asNonEmptyString(value)).filter(Boolean))]
+}
+
+function isSyntheticBucketField(field) {
+  const normalized = asNonEmptyString(field)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase()
+  return normalized.endsWith('_details') || normalized.endsWith('_detail')
+}
+
+function resolveAskFields(rawFields, fallbackFields, context) {
+  const fields = uniqueStrings(rawFields.length > 0 ? rawFields : fallbackFields)
+  const caseTypeRequiredFacts = uniqueStrings(context?.caseTypeRequiredFacts ?? [])
+  const syntheticFields = fields.filter(isSyntheticBucketField)
+  if (syntheticFields.length === 0) {
+    return fields.length > 0 ? fields : caseTypeRequiredFacts
+  }
+  if (caseTypeRequiredFacts.length === 0) {
+    throw new Error(`Synthetic ask field(s) ${syntheticFields.join(', ')} require caseType.requiredFacts for expansion.`)
+  }
+  return caseTypeRequiredFacts
+}
+
+export function collectSyntheticBucketReferences(definition) {
+  if (!isProcedureV2Shape(definition)) return []
+  const refs = []
+  const inspectActions = (actions, stepId, location) => {
+    for (const action of Array.isArray(actions) ? actions : []) {
+      if (!isRecord(action) || action.kind !== 'ask' || !Array.isArray(action.fields)) continue
+      for (const field of action.fields) {
+        if (typeof field === 'string' && isSyntheticBucketField(field)) {
+          refs.push({ stepId, location, field })
+        }
+      }
+    }
+  }
+
+  for (const step of definition.steps) {
+    inspectActions(step.actions, step.id, 'step.actions')
+    for (const branch of Array.isArray(step.branches) ? step.branches : []) {
+      inspectActions(branch.actions, step.id, `branch:${branch.id}.actions`)
+      if (branch?.condition?.kind === 'form_field' && isSyntheticBucketField(branch.condition.field)) {
+        refs.push({
+          stepId: step.id,
+          location: `branch:${branch.id}.condition`,
+          field: branch.condition.field,
+        })
+      }
+    }
+  }
+
+  return refs
+}
+
+function repairableLegacySource(definition) {
+  const legacySource = definition?.legacy?.procedureV1
+  return looksLikeLegacyProcedure(legacySource) ? legacySource : null
+}
+
 function legacyStepTitle(step, index) {
   const target = asNonEmptyString(step.target)
   switch (step.action) {
@@ -78,7 +160,7 @@ function looksLikeSkipOnly(text) {
   return value.includes('skip') || value.includes('unless') || value.includes('otherwise')
 }
 
-function buildActionFromLegacyStep(step, index) {
+function buildActionFromLegacyStep(step, index, context) {
   const target = asNonEmptyString(step.target)
   switch (step.action) {
     case 'ask':
@@ -88,7 +170,7 @@ function buildActionFromLegacyStep(step, index) {
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
         required: !!step.required,
-        fields: splitFields(target, `field_${index + 1}`),
+        fields: resolveAskFields(splitFields(target, `field_${index + 1}`), [`field_${index + 1}`], context),
       }
     case 'use':
       return {
@@ -141,8 +223,8 @@ function buildActionFromLegacyStep(step, index) {
   }
 }
 
-function buildStepFromLegacy(step, index) {
-  const action = buildActionFromLegacyStep(step, index)
+function buildStepFromLegacy(step, index, context) {
+  const action = buildActionFromLegacyStep(step, index, context)
   const completionGuidance =
     step.required && (step.action === 'use' || step.action === 'read')
       ? `Only continue after ${asNonEmptyString(step.target, 'the required tool')} succeeds.`
@@ -174,13 +256,13 @@ function buildStepFromLegacy(step, index) {
   }
 }
 
-export function migrateLegacyProcedureToV2(legacyProcedure) {
+export function migrateLegacyProcedureToV2(legacyProcedure, context = {}) {
   if (!looksLikeLegacyProcedure(legacyProcedure)) {
     throw new Error('Input is not a legacy Procedure v1 definition.')
   }
   const steps = legacyProcedure.version === 1
-    ? legacyProcedure.steps.map((step, index) => buildStepFromRuntimeV1(step, index))
-    : legacyProcedure.steps.map((step, index) => buildStepFromLegacy(step, index))
+    ? legacyProcedure.steps.map((step, index) => buildStepFromRuntimeV1(step, index, context))
+    : legacyProcedure.steps.map((step, index) => buildStepFromLegacy(step, index, context))
   return {
     version: 'v2',
     whenToUse: DEFAULT_WHEN_TO_USE,
@@ -194,7 +276,7 @@ export function migrateLegacyProcedureToV2(legacyProcedure) {
   }
 }
 
-function buildActionFromRuntimeV1Tool(toolName, step, index) {
+function buildActionFromRuntimeV1Tool(toolName, step, index, context) {
   switch (toolName) {
     case 'ask_user_questions':
       return {
@@ -203,7 +285,11 @@ function buildActionFromRuntimeV1Tool(toolName, step, index) {
         label: step.title || `Ask customer (${index + 1})`,
         guidance: asNonEmptyString(step.instructions),
         required: true,
-        fields: Array.isArray(step.requiredFacts) && step.requiredFacts.length > 0 ? step.requiredFacts : [`field_${index + 1}`],
+        fields: resolveAskFields(
+          Array.isArray(step.requiredFacts) ? step.requiredFacts : [],
+          [`field_${index + 1}`],
+          context,
+        ),
       }
     case 'finalize_procedure':
       return {
@@ -253,11 +339,11 @@ function buildRuntimeV1HandoffBranch(step) {
   }
 }
 
-function buildStepFromRuntimeV1(step, index) {
+function buildStepFromRuntimeV1(step, index, context) {
   const allowedTools = Array.isArray(step.allowedTools) ? step.allowedTools : []
   const hasHandoffTool = allowedTools.includes('create_human_task')
   const actions = allowedTools
-    .map((toolName) => buildActionFromRuntimeV1Tool(toolName, step, index))
+    .map((toolName) => buildActionFromRuntimeV1Tool(toolName, step, index, context))
     .filter(Boolean)
   const guidanceBits = []
   if (Array.isArray(step.requiredToolsAny) && step.requiredToolsAny.length > 0) {
@@ -282,16 +368,27 @@ function buildStepFromRuntimeV1(step, index) {
   }
 }
 
-export function normalizeStoredProcedure(rawProcedure) {
+export function normalizeStoredProcedure(rawProcedure, context = {}) {
   const parsed = typeof rawProcedure === 'string' ? parseJsonStrict(rawProcedure) : rawProcedure
   if (!parsed) {
     return { status: 'invalid', reason: 'procedure is not valid JSON' }
   }
   if (isProcedureV2Shape(parsed)) {
-    return { status: 'v2', definition: parsed }
+    const syntheticRefs = collectSyntheticBucketReferences(parsed)
+    if (syntheticRefs.length === 0) {
+      return { status: 'v2', definition: parsed }
+    }
+    const legacySource = repairableLegacySource(parsed)
+    if (legacySource) {
+      return { status: 'v2_repaired', definition: migrateLegacyProcedureToV2(legacySource, context) }
+    }
+    return {
+      status: 'invalid',
+      reason: `v2 definition still contains synthetic bucket fields: ${syntheticRefs.map((ref) => ref.field).join(', ')}`,
+    }
   }
   if (looksLikeLegacyProcedure(parsed)) {
-    return { status: 'legacy', definition: migrateLegacyProcedureToV2(parsed) }
+    return { status: 'legacy', definition: migrateLegacyProcedureToV2(parsed, context) }
   }
   return { status: 'invalid', reason: 'procedure is neither a v2 definition nor a recognizable legacy Procedure v1 shape' }
 }
@@ -325,16 +422,36 @@ export function migrateCaseTypeRows(rows) {
     scanned: rows.length,
     migrated: 0,
     alreadyV2: 0,
+    repairedV2: 0,
     invalid: 0,
     failures: [],
     results: [],
   }
 
   const normalizedRows = rows.map((row, index) => {
-    const normalized = normalizeStoredProcedure(row?.procedure)
     const rowId = row?.id ?? `row_${index + 1}`
     const rowType = row?.type ?? `row_${index + 1}`
+    let normalized
+    try {
+      normalized = normalizeStoredProcedure(row?.procedure, {
+        caseTypeRequiredFacts: parseStringArray(row?.requiredFacts),
+      })
+    } catch (error) {
+      summary.invalid += 1
+      const reason = error instanceof Error ? error.message : 'unknown migration failure'
+      summary.failures.push({ id: rowId, type: rowType, reason })
+      summary.results.push({ id: rowId, type: rowType, status: 'invalid', reason })
+      return row
+    }
     if (normalized.status === 'v2') {
+      const syntheticRefs = collectSyntheticBucketReferences(normalized.definition)
+      if (syntheticRefs.length > 0) {
+        summary.invalid += 1
+        const reason = `v2 definition still contains synthetic bucket fields: ${syntheticRefs.map((ref) => ref.field).join(', ')}`
+        summary.failures.push({ id: rowId, type: rowType, reason })
+        summary.results.push({ id: rowId, type: rowType, status: 'invalid', reason })
+        return row
+      }
       summary.alreadyV2 += 1
       summary.results.push({ id: rowId, type: rowType, status: 'v2' })
       return row
@@ -346,8 +463,13 @@ export function migrateCaseTypeRows(rows) {
       return row
     }
 
-    summary.migrated += 1
-    summary.results.push({ id: rowId, type: rowType, status: 'legacy_migrated' })
+    if (normalized.status === 'v2_repaired') {
+      summary.repairedV2 += 1
+      summary.results.push({ id: rowId, type: rowType, status: 'v2_repaired' })
+    } else {
+      summary.migrated += 1
+      summary.results.push({ id: rowId, type: rowType, status: 'legacy_migrated' })
+    }
     return {
       ...row,
       procedure: serializeProcedure(normalized.definition, row?.procedure),

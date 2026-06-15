@@ -729,7 +729,6 @@ export function startProcedureRun(caseId: string, input: {
   reason?: string
   confidence?: number
   requestId?: string
-  procedureInputs?: Record<string, unknown>
   currentProcedureAction?: 'pause' | 'complete' | 'abandon'
 }): { run: ProcedureRunState; idempotent: boolean; pausedRun?: ProcedureRunState } {
   const session = getOrCreateSession(caseId)
@@ -830,7 +829,6 @@ export function startProcedureRun(caseId: string, input: {
     }
   }
   seedRunInputsFromRuntime(session, run)
-  applyProcedureInputsAtProcedureStart(session, run, input.procedureInputs, now)
   state.activeProcedureRun = run
   appendProcedureTimeline(session, run, {
     origin: 'system',
@@ -1675,18 +1673,17 @@ function ingestInputIntoRun(
   },
 ): void {
   if (!isInputSource(event.source)) return
-  const normalizedEvent = enrichCustomerMessageWithStructuredAnswers(run, event)
-  captureRunInput(run, normalizedEvent)
-  if (normalizedEvent.formAnswers && Object.keys(normalizedEvent.formAnswers).length > 0) {
-    applyFormEvidenceToRun(run, normalizedEvent)
+  captureRunInput(run, event)
+  if (event.formAnswers && Object.keys(event.formAnswers).length > 0) {
+    applyFormEvidenceToRun(run, event)
   }
-  if (normalizedEvent.content) {
-    updateSignalsFromInput(run, normalizedEvent.content)
+  if (event.content) {
+    updateSignalsFromInput(run, event.content)
   }
   if (options?.refreshNoProgress !== false) {
     refreshNoProgressSignal(run)
   }
-  syncCurrentStepAfterProgress(run, normalizedEvent.createdAt)
+  syncCurrentStepAfterProgress(run, event.createdAt)
 }
 
 function seedRunInputsFromRuntime(session: CaseSession, run: ProcedureRunState): void {
@@ -1694,74 +1691,6 @@ function seedRunInputsFromRuntime(session: CaseSession, run: ProcedureRunState):
     if (!isInputSource(event.source)) continue
     ingestInputIntoRun(run, event, { refreshNoProgress: false })
   }
-}
-
-function applyProcedureInputsAtProcedureStart(
-  session: CaseSession,
-  run: ProcedureRunState,
-  procedureInputs: Record<string, unknown> | undefined,
-  now: string,
-): void {
-  if (!procedureInputs || !isRecord(procedureInputs)) return
-  const formAnswers = normalizeProcedureStartAnswers(procedureInputs)
-  const requestedHuman = hasExplicitHumanRequestInput(procedureInputs)
-  if (Object.keys(formAnswers).length === 0 && !requestedHuman) return
-
-  const event = createRuntimeEvent({
-    caseId: session.caseId,
-    sessionId: session.sessionId,
-    runId: run.runId,
-    inputEpoch: session.latestInputEpoch,
-    origin: 'customer',
-    source: 'customer_form_result',
-    formAnswers: Object.keys(formAnswers).length > 0 ? formAnswers : undefined,
-    priority: defaultPriority('customer_form_result'),
-    enqueuePolicy: 'fifo',
-    createdAt: now,
-    summary: 'Structured inputs captured on the start_procedure turn.',
-    metadata: {
-      synthetic: 'start_procedure_inputs',
-      fields: Object.keys(formAnswers),
-      explicitHumanRequest: requestedHuman,
-    },
-  })
-  run.timeline.push(event)
-  ingestInputIntoRun(run, event, { refreshNoProgress: false })
-  if (requestedHuman) {
-    setProcedureSignal(run, 'explicit_human_request', 'Structured inputs captured at procedure start indicated that the customer requested a human.')
-    syncCurrentStepAfterProgress(run, now)
-  }
-}
-
-function normalizeProcedureStartAnswers(procedureInputs: Record<string, unknown>): Record<string, string> {
-  const answers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(procedureInputs)) {
-    if (value == null) continue
-    if (typeof value === 'string') {
-      const next = value.trim()
-      if (next) answers[key] = next
-      continue
-    }
-    if (typeof value === 'number' || typeof value === 'bigint') {
-      answers[key] = String(value)
-      continue
-    }
-    if (typeof value === 'boolean') {
-      answers[key] = value ? 'true' : 'false'
-    }
-  }
-  return answers
-}
-
-function hasExplicitHumanRequestInput(procedureInputs: Record<string, unknown>): boolean {
-  return Object.entries(procedureInputs).some(([key, value]) => {
-    if (value !== true) return false
-    const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
-    return normalized === 'request_human_support'
-      || normalized === 'human_request'
-      || normalized === 'needs_human_support'
-      || normalized === 'human_transfer_requested'
-  })
 }
 
 function defaultPriority(source: RuntimeEventSource): number {
@@ -1872,15 +1801,13 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
     const fields = action.target?.split(',').map((field) => field.trim()).filter(Boolean) ?? []
     const hasAnswer = fields.length === 0
       ? Object.keys(formAnswers).length > 0
-      : isAggregateDetailCollection(fields)
-        ? Object.keys(formAnswers).length > 0
-      : fields.some((field) => hasMatchingFormField(formAnswers, field))
+      : fields.some((field) => field in formAnswers)
     if (!hasAnswer) continue
     action.status = 'completed'
     clearRunBlocker(run, `action:${action.id}`)
     action.evidenceIds.push(
       ...Object.keys(formAnswers)
-        .filter((field) => fields.length === 0 || fields.some((target) => formFieldMatches(field, target)))
+        .filter((field) => fields.length === 0 || fields.includes(field))
         .map((field) => `form:${event.eventId}:${field}`),
     )
     progressed = true
@@ -1890,24 +1817,6 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
     clearProcedureSignal(run, 'no_progress_loop')
     if (current.status === 'blocked') current.status = 'active'
     refreshStepBranchStates(run, current)
-  }
-}
-
-function enrichCustomerMessageWithStructuredAnswers(
-  run: ProcedureRunState,
-  event: RuntimeEvent,
-): RuntimeEvent {
-  if (event.source !== 'customer_message' || event.formAnswers || !event.content?.trim()) return event
-  const inferred = inferStructuredAnswersFromPlainText(run, event.content)
-  if (!inferred) return event
-  return {
-    ...event,
-    formAnswers: inferred,
-    metadata: {
-      ...(event.metadata ?? {}),
-      inferredFormAnswers: true,
-      inferredFormFields: Object.keys(inferred),
-    },
   }
 }
 
@@ -1921,182 +1830,6 @@ function updateSignalsFromInput(run: ProcedureRunState, content: string): void {
   if (isKnowledgeGapRequest(text)) {
     setProcedureSignal(run, 'knowledge_gap', 'Customer asked where to find something or lacked context.')
   }
-}
-
-function hasMatchingFormField(formAnswers: Record<string, string>, expectedField: string): boolean {
-  return Object.keys(formAnswers).some((field) => formFieldMatches(field, expectedField))
-}
-
-function inferStructuredAnswersFromPlainText(
-  run: ProcedureRunState,
-  content: string,
-): Record<string, string> | undefined {
-  const current = currentStep(run)
-  const waitingForAsk = (current?.actions ?? []).some((action) =>
-    action.kind === 'ask' && (action.status === 'active' || action.status === 'blocked' || action.status === 'pending'),
-  )
-  if (!waitingForAsk) return undefined
-
-  const text = content.trim()
-  if (!text) return undefined
-
-  const answers: Record<string, string> = {}
-  const memberId = extractMemberId(text)
-  if (memberId) answers.member_id = memberId
-
-  const referenceNumber = extractLabeledValue(text, [
-    'reference_number',
-    'reference number',
-    'reference no',
-    'reference',
-    '参考号',
-    '參考號',
-    'ref no',
-    'ref',
-  ])
-  if (referenceNumber) answers.reference_number = referenceNumber
-
-  const paymentChannel = extractPaymentChannel(text)
-  if (paymentChannel) answers.payment_channel = paymentChannel
-
-  const loginName = extractLoginName(text)
-  if (loginName) answers.login_name = loginName
-
-  const amount = extractAmount(text)
-  if (amount) answers.amount = amount
-
-  if (isExplicitHumanRequest(text)) {
-    answers.request_human_support = 'true'
-  }
-
-  return Object.keys(answers).length > 0 ? answers : undefined
-}
-
-function isAggregateDetailCollection(fields: string[]): boolean {
-  return fields.length === 1 && isAggregateDetailField(fields[0])
-}
-
-function isAggregateDetailField(field: string): boolean {
-  const normalized = field.trim().replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[\s-]+/g, '_').toLowerCase()
-  return normalized.endsWith('_details') || normalized.endsWith('_detail')
-}
-
-function extractMemberId(text: string): string | undefined {
-  const labeled = extractLabeledValue(text, [
-    'member_id',
-    'member id',
-    'memberid',
-    '会员id',
-    '會員id',
-    '會員編號',
-    '会员编号',
-    'member no',
-    'member number',
-  ], /^[A-Z][A-Z0-9_-]{5,}$/i)
-  if (labeled) return labeled.toUpperCase()
-  const direct = text.match(/\b([A-Z][A-Z0-9_-]{5,})\b/)
-  return direct?.[1]?.toUpperCase()
-}
-
-function extractLoginName(text: string): string | undefined {
-  const email = text.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i)
-  if (email?.[0]) return email[0]
-  return extractLabeledValue(text, [
-    'login_name',
-    'login name',
-    'login account',
-    '登录账号',
-    '登入账号',
-    '帳號',
-    '账号',
-    '用戶名',
-    '用户名',
-  ])
-}
-
-function extractPaymentChannel(text: string): string | undefined {
-  const labeled = extractLabeledValue(text, [
-    'payment_channel',
-    'payment channel',
-    'payment method',
-    '支付方式',
-    '付款方式',
-    '渠道',
-    '通道',
-  ])
-  if (labeled) return labeled
-
-  const knownChannels = [
-    '银行转账',
-    '銀行轉帳',
-    'bank transfer',
-    'usdt',
-    'esewa',
-    'khalti',
-    'wechat',
-    'alipay',
-    'wallet',
-    'gcash',
-  ]
-  const lower = text.toLowerCase()
-  const matched = knownChannels.find((channel) => lower.includes(channel.toLowerCase()))
-  return matched
-}
-
-function extractAmount(text: string): string | undefined {
-  const labeled = extractLabeledValue(text, [
-    'amount',
-    '金额',
-    '金額',
-    '存款金额',
-    '提现金额',
-    'withdrawal amount',
-    'deposit amount',
-  ], /^[0-9]+(?:[.,][0-9]+)?(?:\s*[A-Z]{2,5})?$/i)
-  if (labeled) return labeled
-
-  const explicit = text.match(/(?:金额|amount)[^0-9]{0,6}([0-9]+(?:[.,][0-9]+)?(?:\s*[A-Z]{2,5})?)/i)
-  return explicit?.[1]
-}
-
-function extractLabeledValue(
-  text: string,
-  labels: string[],
-  validator?: RegExp,
-): string | undefined {
-  for (const label of labels) {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const patterns = [
-      new RegExp(`${escaped}\\s*(?:is|是|为|為|:|：)?\\s*([A-Z0-9._%+\\-@]+(?:\\s+[A-Z0-9._%+\\-@]+){0,5})`, 'i'),
-      new RegExp(`${escaped}[^A-Z0-9\\u4e00-\\u9fa5]{0,6}([A-Z0-9._%+\\-@]+(?:\\s+[A-Z0-9._%+\\-@]+){0,5})`, 'i'),
-    ]
-    for (const pattern of patterns) {
-      const match = text.match(pattern)
-      const raw = match?.[1]?.trim()
-      if (!raw) continue
-      const value = raw.replace(/[，。,.!！；;]+$/u, '').trim()
-      if (!value) continue
-      if (validator && !validator.test(value)) continue
-      return value
-    }
-  }
-  return undefined
-}
-
-function formFieldMatches(actualField: string, expectedField: string): boolean {
-  const actualAliases = new Set(fieldNameAliases(actualField))
-  return fieldNameAliases(expectedField).some((alias) => actualAliases.has(alias))
-}
-
-function fieldNameAliases(field: string): string[] {
-  const trimmed = field.trim()
-  if (!trimmed) return []
-  const snake = trimmed
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/[\s-]+/g, '_')
-    .toLowerCase()
-  const camel = snake.replace(/_([a-z0-9])/g, (_, letter: string) => letter.toUpperCase())
-  return [...new Set([trimmed, trimmed.toLowerCase(), snake, camel])]
 }
 
 function isExplicitHumanRequest(text: string): boolean {
@@ -2314,9 +2047,7 @@ function evaluateBranchCondition(
       if (formEvidence.length === 0) {
         return { status: 'pending', reason: 'Waiting for form evidence.' }
       }
-      const matchingField = formEvidence.find((entry) =>
-        typeof entry.metadata?.field === 'string' && formFieldMatches(entry.metadata.field, condition.field),
-      )
+      const matchingField = formEvidence.find((entry) => entry.metadata?.field === condition.field)
       if (!matchingField) {
         return { status: 'skipped', reason: `No form evidence captured for ${condition.field}.` }
       }

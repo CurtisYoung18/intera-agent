@@ -153,7 +153,6 @@ async function handleStartProcedure(
       reason,
       confidence,
       requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
-      procedureInputs: extractProcedureInputs(toolInput),
       currentProcedureAction: requestedCurrentAction,
     })
     ctx.chatMemory.setCaseStatus('investigating')
@@ -430,41 +429,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeCurrentProcedureAction(raw: unknown): 'pause' | 'complete' | 'abandon' | undefined {
   return raw === 'pause' || raw === 'complete' || raw === 'abandon' ? raw : undefined
-}
-
-function extractProcedureInputs(toolInput: Record<string, unknown>): Record<string, unknown> | undefined {
-  for (const [key, value] of Object.entries(toolInput)) {
-    if (!isRecord(value)) continue
-    const normalized = normalizeStructuredInputKey(key)
-    if (normalized === 'procedureinputs' || normalized === 'formanswers') {
-      return value
-    }
-  }
-
-  const fallbackCandidates = Object.entries(toolInput)
-    .filter(([key, value]) => isStructuredInputCandidate(key, value))
-    .map(([, value]) => value as Record<string, unknown>)
-
-  return fallbackCandidates.length === 1 ? fallbackCandidates[0] : undefined
-}
-
-function isStructuredInputCandidate(key: string, value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value)) return false
-  const normalized = normalizeStructuredInputKey(key)
-  if (normalized === 'procedureid' || normalized === 'casetype' || normalized === 'reason' || normalized === 'confidence' || normalized === 'currentprocedureaction' || normalized === 'requestid') {
-    return false
-  }
-  return Object.values(value).every((entry) => (
-    entry == null
-    || typeof entry === 'string'
-    || typeof entry === 'number'
-    || typeof entry === 'boolean'
-    || typeof entry === 'bigint'
-  ))
-}
-
-function normalizeStructuredInputKey(key: string): string {
-  return key.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
 }
 
 function summarizeProcedure(schema: CaseSchemaConfig): {

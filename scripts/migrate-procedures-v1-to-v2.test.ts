@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  collectSyntheticBucketReferences,
   extractSnapshotRows,
   looksLikeLegacyProcedure,
   migrateCaseTypeRows,
@@ -190,6 +191,126 @@ describe('migrate-procedures-v1-to-v2', () => {
       ]),
     )
     expect(normalized.definition.legacy?.procedureV1?.version).toBe(1)
+  })
+
+  it('expands aggregate ask buckets from case-type requiredFacts during legacy migration', () => {
+    const { summary, normalizedRows } = migrateCaseTypeRows([
+      {
+        id: 'legacy_agg',
+        type: 'withdrawal_not_credited',
+        requiredFacts: '["member_id","amount","payment_channel","approximate_time"]',
+        procedure: JSON.stringify({
+          steps: [
+            {
+              id: 'collect_withdrawal_details',
+              action: 'ask',
+              target: 'withdrawal_missing_details',
+              guidance: 'Collect member id, amount, withdrawal channel, and approximate withdrawal time.',
+              required: true,
+            },
+          ],
+        }),
+      },
+    ])
+
+    const migrated = JSON.parse(normalizedRows[0].procedure)
+    expect(summary.results[0]).toEqual({
+      id: 'legacy_agg',
+      type: 'withdrawal_not_credited',
+      status: 'legacy_migrated',
+    })
+    expect(migrated.steps[0].actions[0].fields).toEqual([
+      'member_id',
+      'amount',
+      'payment_channel',
+      'approximate_time',
+    ])
+    expect(collectSyntheticBucketReferences(migrated)).toEqual([])
+  })
+
+  it('repairs already-migrated v2 rows when legacy.procedureV1 is still available', () => {
+    const legacyProcedure = {
+      steps: [
+        {
+          id: 'collect_login_reset_details',
+          action: 'ask',
+          target: 'login_reset_details',
+          guidance: 'Collect member id and login name.',
+          required: true,
+        },
+      ],
+    }
+    const { summary, normalizedRows } = migrateCaseTypeRows([
+      {
+        id: 'repair_1',
+        type: 'login_password_reset',
+        requiredFacts: '["member_id","login_name"]',
+        procedure: JSON.stringify({
+          version: 'v2',
+          whenToUse: 'Migrated from a legacy Procedure v1 definition. Review and refine before production use.',
+          overview: 'Auto-migrated from the legacy Procedure v1 shape.',
+          knowledgeGuidance: '',
+          handoffGuidance: '',
+          steps: [
+            {
+              id: 'collect_login_reset_details',
+              title: 'Ask for login_reset_details',
+              guidance: 'Collect member id and login name.',
+              actions: [
+                {
+                  id: 'collect_login_reset_details_ask',
+                  kind: 'ask',
+                  label: 'Ask for login_reset_details',
+                  fields: ['login_reset_details'],
+                },
+              ],
+              branches: [],
+            },
+          ],
+          legacy: { procedureV1: legacyProcedure },
+        }),
+      },
+    ])
+
+    const repaired = JSON.parse(normalizedRows[0].procedure)
+    expect(summary.repairedV2).toBe(1)
+    expect(summary.results[0]).toEqual({
+      id: 'repair_1',
+      type: 'login_password_reset',
+      status: 'v2_repaired',
+    })
+    expect(repaired.steps[0].actions[0].fields).toEqual(['member_id', 'login_name'])
+    expect(collectSyntheticBucketReferences(repaired)).toEqual([])
+  })
+
+  it('fails migration when a synthetic ask bucket has no case-type requiredFacts to expand from', () => {
+    const { summary, normalizedRows } = migrateCaseTypeRows([
+      {
+        id: 'bad_agg',
+        type: 'withdrawal_not_credited',
+        requiredFacts: '[]',
+        procedure: JSON.stringify({
+          steps: [
+            {
+              id: 'collect_withdrawal_details',
+              action: 'ask',
+              target: 'withdrawal_missing_details',
+              guidance: 'Collect member id, amount, withdrawal channel, and approximate withdrawal time.',
+              required: true,
+            },
+          ],
+        }),
+      },
+    ])
+
+    expect(summary.invalid).toBe(1)
+    expect(summary.failures[0]?.reason).toContain('Synthetic ask field(s) withdrawal_missing_details require caseType.requiredFacts')
+    expect(summary.results[0]).toMatchObject({
+      id: 'bad_agg',
+      type: 'withdrawal_not_credited',
+      status: 'invalid',
+    })
+    expect(normalizedRows[0].procedure).toContain('withdrawal_missing_details')
   })
 
   it('extracts case types from a production-style api envelope', () => {

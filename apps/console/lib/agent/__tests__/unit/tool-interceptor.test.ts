@@ -96,10 +96,6 @@ describe('tool-interceptor start_procedure truth alignment', () => {
           input: {
             procedureId: 'deposit_not_credited',
             reason: 'Customer said the deposit is missing.',
-            procedureInputs: {
-              member_id: 'JAYA113C88F',
-              request_human_support: true,
-            },
           },
         },
       } as any],
@@ -130,11 +126,8 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     }))
     expect(h.startProcedureRun).toHaveBeenCalledWith('case-123', expect.objectContaining({
       procedureId: 'deposit_not_credited',
-      procedureInputs: {
-        member_id: 'JAYA113C88F',
-        request_human_support: true,
-      },
     }))
+    expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
     expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
       type: 'case_status',
       data: expect.objectContaining({
@@ -165,7 +158,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     })
   })
 
-  it('absorbs a legacy nested record payload into procedureInputs for compatibility', async () => {
+  it('ignores nested structured payloads on start_procedure so runtime only trusts customer form events', async () => {
     const sendEvent = vi.fn()
     const legacyKey = `collected${'Facts'}`
 
@@ -213,10 +206,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
 
     expect(h.startProcedureRun).toHaveBeenCalledWith('case-compat', expect.objectContaining({
       procedureId: 'deposit_not_credited',
-      procedureInputs: {
-        member_id: 'JAYA113C88F',
-        request_human_support: true,
-      },
     }))
+    expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
   })
 })
