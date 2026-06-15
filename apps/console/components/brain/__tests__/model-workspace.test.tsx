@@ -2,6 +2,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { LocaleProvider } from '@/components/locale-provider'
 
 const mockApiClient = vi.fn()
 const mockBustConfigCache = vi.fn(async (_orgId: string, _agentConfigId?: string) => {})
