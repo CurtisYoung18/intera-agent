@@ -755,15 +755,17 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(getActiveProcedureRun(caseId)).toBeUndefined()
-    const paused = getProcedureRuntime(caseId).pausedProcedureRuns[0]
-    expect(paused).toMatchObject({
+    expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(0)
+    const completed = getProcedureRuntime(caseId).completedProcedureRuns[0]
+    expect(completed).toMatchObject({
       runId: started.run.runId,
-      status: 'paused',
+      status: 'completed',
       currentStepId: null,
-      reason: 'Waiting for human handoff task task-1.',
+      outcome: 'human_handoff',
+      reason: 'Transferred to human via handoff task task-1.',
       blockers: [],
     })
-    const step = paused.steps.find((entry) => entry.id === 'guide_or_handoff')
+    const step = completed.steps.find((entry) => entry.id === 'guide_or_handoff')
     expect(step).toMatchObject({
       status: 'completed',
       completionReason: 'Persisted human handoff task task-1 created.',
@@ -777,11 +779,11 @@ describe('R3 runtime event protocol', () => {
       status: 'skipped',
       reason: 'Another branch already matched.',
     })
-    expect(paused.evidence.find((entry) => entry.id === 'handoff-1')?.metadata).toMatchObject({
+    expect(completed.evidence.find((entry) => entry.id === 'handoff-1')?.metadata).toMatchObject({
       outcome: 'succeeded',
       output: expect.objectContaining({ persisted: true }),
     })
-    expect(persistedHandoff.run?.status).toBe('paused')
+    expect(persistedHandoff.run?.status).toBe('completed')
     expect(persistedHandoff.run?.blockers).toEqual([])
     closeSession(caseId)
   })

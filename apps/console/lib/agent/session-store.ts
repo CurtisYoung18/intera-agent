@@ -510,6 +510,7 @@ export async function hydrateProcedureRuntime(
 
   const activeRuns = runs.filter((run) => run.status === 'active')
   const pausedRuns = runs.filter((run) => run.status === 'paused')
+  const completedRuns = runs.filter((run) => run.status === 'completed' || run.status === 'cancelled')
   const active = activeRuns[0]
   session.procedureRuntime = {
     activeProcedureRun: active,
@@ -517,7 +518,7 @@ export async function hydrateProcedureRuntime(
       ...activeRuns.slice(1).map((run) => ({ ...run, status: 'paused' as const })),
       ...pausedRuns,
     ],
-    completedProcedureRuns: [],
+    completedProcedureRuns: completedRuns,
   }
   session.procedureRuntimeHydrated = true
   return session
@@ -2406,11 +2407,11 @@ function applyToolEvidenceToRun(
     clearProcedureSignal(run, 'explicit_human_request')
     clearProcedureSignal(run, 'no_progress_loop')
     clearProcedureSignal(run, 'knowledge_gap')
-    transitionRunToWaitingHuman(session, run, match, createdAt, input.toolOutput)
+    finalizeRunForHumanHandoff(session, run, match, createdAt, input.toolOutput)
   }
 }
 
-function transitionRunToWaitingHuman(
+function finalizeRunForHumanHandoff(
   session: CaseSession,
   run: ProcedureRunState,
   match: { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null,
@@ -2459,18 +2460,21 @@ function transitionRunToWaitingHuman(
   }
 
   run.blockers = []
-  run.status = 'paused'
+  run.status = 'completed'
+  run.outcome = 'human_handoff'
   run.currentStepId = null
   run.reason = taskId
-    ? `Waiting for human handoff task ${taskId}.`
-    : 'Waiting for human handoff.'
+    ? `Transferred to human via handoff task ${taskId}.`
+    : 'Transferred to human.'
   run.updatedAt = createdAt
 
   if (session.procedureRuntime.activeProcedureRun?.runId === run.runId) {
     session.procedureRuntime.activeProcedureRun = undefined
-    if (!session.procedureRuntime.pausedProcedureRuns.some((candidate) => candidate.runId === run.runId)) {
-      session.procedureRuntime.pausedProcedureRuns.push(run)
-    }
+  }
+  session.procedureRuntime.pausedProcedureRuns = session.procedureRuntime.pausedProcedureRuns
+    .filter((candidate) => candidate.runId !== run.runId)
+  if (!session.procedureRuntime.completedProcedureRuns.some((candidate) => candidate.runId === run.runId)) {
+    session.procedureRuntime.completedProcedureRuns.push(run)
   }
 
   appendProcedureTimeline(session, run, {
@@ -2478,11 +2482,12 @@ function transitionRunToWaitingHuman(
     source: 'control',
     basedOnInputEpoch: run.inputEpoch,
     summary: taskId
-      ? `ProcedureRun paused for human handoff task ${taskId}`
-      : 'ProcedureRun paused for human handoff',
+      ? `ProcedureRun finalized after human handoff task ${taskId}`
+      : 'ProcedureRun finalized after human handoff',
     metadata: {
       terminal: true,
       waitingHuman: true,
+      outcome: 'human_handoff',
       taskId,
       queue,
       persisted: true,

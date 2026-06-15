@@ -46,7 +46,7 @@ class MemoryProcedureRunPersistence {
     return {
       latestInputEpoch: this.epochs.get(caseId) ?? 0,
       runs: [...this.runs.values()]
-        .filter((run) => run.caseId === caseId && (run.status === 'active' || run.status === 'paused'))
+        .filter((run) => run.caseId === caseId)
         .map(clone),
     }
   }
@@ -235,7 +235,7 @@ describe('ProcedureRun durability', () => {
     expect(adapter.epochs.get(caseId)).toBe(2)
   })
 
-  it('rehydrates a paused handoff run and resumes on human_task_result input with state intact', async () => {
+  it('rehydrates a finalized handoff run without resuming it on human_task_result', async () => {
     const adapter = new MemoryProcedureRunPersistence()
     setProcedureRunPersistenceForTest(adapter)
     const caseId = 'durable-handoff-resume'
@@ -301,17 +301,20 @@ describe('ProcedureRun durability', () => {
     })
     await flushProcedureRunPersistence(caseId)
 
-    const pausedBeforeRestart = getProcedureRuntime(caseId).pausedProcedureRuns[0]
-    expect(pausedBeforeRestart).toMatchObject({
+    const completedBeforeRestart = getProcedureRuntime(caseId).completedProcedureRuns[0]
+    expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(0)
+    expect(completedBeforeRestart).toMatchObject({
       runId: started.run.runId,
-      status: 'paused',
+      status: 'completed',
+      outcome: 'human_handoff',
       inputEpoch: 1,
       currentStepId: null,
     })
 
     clearSessionsForTest(caseId)
     await hydrateProcedureRuntime(caseId, { agentConfigId: 'agent-1' })
-    expect(clone(getProcedureRuntime(caseId).pausedProcedureRuns[0])).toEqual(clone(pausedBeforeRestart))
+    expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(0)
+    expect(clone(getProcedureRuntime(caseId).completedProcedureRuns[0])).toEqual(clone(completedBeforeRestart))
 
     recordInitialInputEvent(caseId, {
       content: '[Human task resolved] Operator says the customer can continue.',
@@ -321,23 +324,19 @@ describe('ProcedureRun durability', () => {
     await flushProcedureRunPersistence(caseId)
 
     const resumed = getActiveProcedureRun(caseId)
-    expect(resumed).toMatchObject({
-      runId: started.run.runId,
-      status: 'active',
-      inputEpoch: 2,
-      reason: 'Resumed after human task result.',
-    })
-    expect(resumed?.inputs.map((input) => input.source)).toEqual(['customer_message', 'human_task_result'])
-    expect(resumed?.evidence.find((entry) => entry.id === 'handoff-1')).toMatchObject({
+    expect(resumed).toBeUndefined()
+    const completedAfterHumanResult = getProcedureRuntime(caseId).completedProcedureRuns[0]
+    expect(completedAfterHumanResult?.inputs.map((input) => input.source)).toEqual(['customer_message'])
+    expect(completedAfterHumanResult?.evidence.find((entry) => entry.id === 'handoff-1')).toMatchObject({
       kind: 'handoff',
       state: 'canonical',
     })
-    expect(resumed?.evaluations[0]).toMatchObject({
+    expect(completedAfterHumanResult?.evaluations[0]).toMatchObject({
       branchId: 'needs_person',
       decision: 'matched',
     })
-    expect(resumed?.timeline.map((event) => event.source)).toEqual(
-      expect.arrayContaining(['tool_call', 'tool_result', 'control', 'human_task_result']),
+    expect(completedAfterHumanResult?.timeline.map((event) => event.source)).toEqual(
+      expect.arrayContaining(['tool_call', 'tool_result', 'control']),
     )
     expect(adapter.epochs.get(caseId)).toBe(2)
   })
