@@ -393,12 +393,14 @@ export function normalizeStoredProcedure(rawProcedure, context = {}) {
   return { status: 'invalid', reason: 'procedure is neither a v2 definition nor a recognizable legacy Procedure v1 shape' }
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const dryRun = argv.includes('--dry-run')
+  const inputFlagIndex = argv.indexOf('--input')
+  const outputFlagIndex = argv.indexOf('--output')
   const inputPath = argv.find((arg) => arg.startsWith('--input='))?.slice('--input='.length)
-    ?? argv[argv.indexOf('--input') + 1]
+    ?? (inputFlagIndex >= 0 ? argv[inputFlagIndex + 1] : undefined)
   const outputPath = argv.find((arg) => arg.startsWith('--output='))?.slice('--output='.length)
-    ?? argv[argv.indexOf('--output') + 1]
+    ?? (outputFlagIndex >= 0 ? argv[outputFlagIndex + 1] : undefined)
   return {
     dryRun,
     inputPath: inputPath || null,

@@ -7,9 +7,18 @@ import {
   migrateCaseTypeRows,
   migrateLegacyProcedureToV2,
   normalizeStoredProcedure,
+  parseArgs,
 } from './migrate-procedures-v1-to-v2.mjs'
 
 describe('migrate-procedures-v1-to-v2', () => {
+  it('does not treat --dry-run as a snapshot input path', () => {
+    expect(parseArgs(['--dry-run'])).toEqual({
+      dryRun: true,
+      inputPath: null,
+      outputPath: null,
+    })
+  })
+
   it('detects a recognizable legacy procedure payload', () => {
     expect(looksLikeLegacyProcedure({
       steps: [{ id: 'finish', action: 'finalize' }],
