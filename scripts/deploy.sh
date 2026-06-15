@@ -70,8 +70,6 @@ if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
     exit 1
   fi
   sudo systemctl restart intera-runtime
-  sleep 1
-  curl -fsS "${INTERA_RUNTIME_URL%/}/internal/health" && echo ""
 else
   echo "=== Runtime ==="
   echo "INTERA_RUNTIME_URL not set; skipping intera-runtime.service"
@@ -80,7 +78,11 @@ fi
 echo "=== Restart ==="
 sudo systemctl restart intera-console
 
-echo "=== Health check ==="
+echo "=== Console health check ==="
 sleep 2
-curl -s localhost:3000/api/health && echo ""
+curl -fsS localhost:3000/api/health && echo ""
+if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
+  echo "=== Runtime health check ==="
+  curl -fsS "${INTERA_RUNTIME_URL%/}/internal/health" && echo ""
+fi
 echo "Done."

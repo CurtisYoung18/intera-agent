@@ -21,6 +21,10 @@ export function resolveConsoleMessagesUrl(env = process.env) {
     ?? `${resolveConsoleBaseUrl(env)}/api/messages`
 }
 
+export function resolveConsoleRuntimeHealthUrl(env = process.env) {
+  return `${resolveConsoleBaseUrl(env)}/api/internal/runtime/health`
+}
+
 export function authorizeInternalRequest(headers, env = process.env) {
   const secret = env.INTERNAL_API_SECRET
   if (!secret) return false
@@ -94,6 +98,23 @@ async function pipeFetchResponse(fetchResponse, res) {
   res.end()
 }
 
+function pickNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? value : fallback
+}
+
+async function loadConsoleRuntimeHealth(fetchImpl, env) {
+  const response = await fetchImpl(resolveConsoleRuntimeHealthUrl(env), {
+    method: 'GET',
+    headers: {
+      [INTERNAL_SECRET_HEADER]: env.INTERNAL_API_SECRET || '',
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`Console runtime health returned ${response.status}`)
+  }
+  return await response.json()
+}
+
 export function createRuntimeServer(options = {}) {
   const env = options.env ?? process.env
   const fetchImpl = options.fetch ?? globalThis.fetch
@@ -106,14 +127,38 @@ export function createRuntimeServer(options = {}) {
     const { parts } = routeInfo(req)
 
     if (req.method === 'GET' && parts.join('/') === 'internal/health') {
-      json(res, 200, {
-        status: 'ok',
-        mode: 'legacy-forward',
-        sessions: state.inFlightCases.size,
-        activeRuns: state.inFlightCases.size,
-        queueDepth: 0,
-        startedAt: state.startedAt,
-      })
+      try {
+        const upstream = await loadConsoleRuntimeHealth(fetchImpl, env)
+        const upstreamStats = upstream?.stats ?? {}
+        json(res, 200, {
+          status: 'ok',
+          mode: 'legacy-forward',
+          sessions: pickNumber(upstream.sessions, pickNumber(upstreamStats.liveSessions)),
+          activeRuns: pickNumber(upstream.activeRuns, pickNumber(upstreamStats.activeRuns)),
+          queueDepth: pickNumber(upstream.queueDepth, pickNumber(upstreamStats.queueDepth)),
+          startedAt: state.startedAt,
+          local: {
+            inFlightCases: state.inFlightCases.size,
+          },
+          upstream: {
+            status: upstream.status ?? 'ok',
+            stats: upstreamStats,
+          },
+        })
+      } catch (err) {
+        json(res, 503, {
+          status: 'degraded',
+          mode: 'legacy-forward',
+          sessions: state.inFlightCases.size,
+          activeRuns: state.inFlightCases.size,
+          queueDepth: 0,
+          startedAt: state.startedAt,
+          local: {
+            inFlightCases: state.inFlightCases.size,
+          },
+          upstreamError: err instanceof Error ? err.message : String(err),
+        })
+      }
       return
     }
 

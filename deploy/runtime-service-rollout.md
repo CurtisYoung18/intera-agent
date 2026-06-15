@@ -25,7 +25,7 @@ RUNTIME_PORT=3101
 
 `INTERA_RUNTIME_URL` enables Console and LiveChat internal calls to use the runtime service. If it is unset, Console falls back to the in-process `/api/messages` handler and LiveChat keeps calling Console directly.
 
-The deploy script is fail-closed: when `INTERA_RUNTIME_URL` is set, `intera-runtime.service` must be installed and `GET ${INTERA_RUNTIME_URL}/internal/health` must pass before the Console restart completes. When `INTERA_RUNTIME_URL` is unset, runtime service restart is skipped for backward compatibility.
+The deploy script is fail-closed: when `INTERA_RUNTIME_URL` is set, `intera-runtime.service` must be installed, the runtime service restarts first, Console restarts second, Console `/api/health` must pass, and then `GET ${INTERA_RUNTIME_URL}/internal/health` must pass. Runtime health intentionally checks Console-backed live session stats, so it is probed after Console is on the matching build. When `INTERA_RUNTIME_URL` is unset, runtime service restart is skipped for backward compatibility.
 
 ## Install
 
@@ -38,6 +38,8 @@ sudo systemctl restart intera-console.service
 ```
 
 Caddy must not expose `/internal/*` publicly. The repo Caddyfiles return `404` for public `/internal/*`; runtime calls should stay on loopback/private networking.
+
+`/internal/health` remains in `legacy-forward` mode in this step, but its `sessions`, `activeRuns`, and `queueDepth` values are aggregated from Console's internal `GET /api/internal/runtime/health` endpoint instead of runtime-only in-flight proxy counters.
 
 ## Rollback
 

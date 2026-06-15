@@ -47,17 +47,19 @@ if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
     exit 1
   fi
   sudo systemctl restart intera-runtime
-  sleep 1
-  curl -fsS "${INTERA_RUNTIME_URL%/}/internal/health"
-  echo ""
 else
   echo "[deploy] runtime disabled; INTERA_RUNTIME_URL not set"
 fi
 echo "[deploy] restarting console..."
 sudo systemctl restart intera-console
 sleep 3
-curl -s localhost:3000/api/health
+curl -fsS localhost:3000/api/health
 echo ""
+if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
+  echo "[deploy] runtime health..."
+  curl -fsS "${INTERA_RUNTIME_URL%/}/internal/health"
+  echo ""
+fi
 echo "[deploy] complete"
 DEPLOY
 

@@ -6,6 +6,7 @@ import {
   RUNTIME_BYPASS_HEADER,
   authorizeInternalRequest,
   createRuntimeServer,
+  resolveConsoleRuntimeHealthUrl,
   resolveConsoleMessagesUrl,
 } from './server.mjs'
 
@@ -34,6 +35,12 @@ describe('runtime service', () => {
     })).toBe('http://console.local/api/messages')
   })
 
+  it('resolves Console runtime health from the Console base URL', () => {
+    expect(resolveConsoleRuntimeHealthUrl({
+      CONSOLE_INTERNAL_URL: 'http://console.local/',
+    })).toBe('http://console.local/api/internal/runtime/health')
+  })
+
   it('uses timing-safe internal token auth', () => {
     expect(authorizeInternalRequest(
       { [INTERNAL_SECRET_HEADER]: 'secret-1' },
@@ -46,7 +53,25 @@ describe('runtime service', () => {
   })
 
   it('returns health with the required runtime counters', async () => {
-    const server = createRuntimeServer({ env: { INTERNAL_API_SECRET: 'secret-1' } })
+    const fetchMock = vi.fn(async () => Response.json({
+      status: 'ok',
+      sessions: 5,
+      activeRuns: 2,
+      queueDepth: 3,
+      stats: {
+        sessions: 6,
+        liveSessions: 5,
+        activeRuns: 2,
+        queueDepth: 3,
+      },
+    }))
+    const server = createRuntimeServer({
+      env: {
+        INTERNAL_API_SECRET: 'secret-1',
+        CONSOLE_INTERNAL_URL: 'http://console.local',
+      },
+      fetch: fetchMock as typeof fetch,
+    })
     const baseUrl = await listen(server)
     try {
       const response = await fetch(`${baseUrl}/internal/health`)
@@ -54,9 +79,49 @@ describe('runtime service', () => {
       expect(response.status).toBe(200)
       expect(body).toMatchObject({
         status: 'ok',
-        sessions: 0,
-        activeRuns: 0,
-        queueDepth: 0,
+        sessions: 5,
+        activeRuns: 2,
+        queueDepth: 3,
+        mode: 'legacy-forward',
+        upstream: {
+          status: 'ok',
+          stats: {
+            liveSessions: 5,
+          },
+        },
+      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://console.local/api/internal/runtime/health',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            [INTERNAL_SECRET_HEADER]: 'secret-1',
+          }),
+        }),
+      )
+    } finally {
+      await close(server)
+    }
+  })
+
+  it('marks runtime health degraded when Console stats are unavailable', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ error: 'not found' }, { status: 404 }))
+    const server = createRuntimeServer({
+      env: {
+        INTERNAL_API_SECRET: 'secret-1',
+        CONSOLE_INTERNAL_URL: 'http://console.local',
+      },
+      fetch: fetchMock as typeof fetch,
+    })
+    const baseUrl = await listen(server)
+    try {
+      const response = await fetch(`${baseUrl}/internal/health`)
+      const body = await response.json()
+      expect(response.status).toBe(503)
+      expect(body).toMatchObject({
+        status: 'degraded',
+        mode: 'legacy-forward',
+        upstreamError: 'Console runtime health returned 404',
       })
     } finally {
       await close(server)

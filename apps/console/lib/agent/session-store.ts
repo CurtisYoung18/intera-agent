@@ -152,6 +152,17 @@ export type { ProcedureRunPersistenceAdapter }
 
 const sessions = new Map<string, CaseSession>()
 
+export interface RuntimeSessionStats {
+  sessions: number
+  liveSessions: number
+  activeRuns: number
+  pausedRuns: number
+  completedRuns: number
+  queueDepth: number
+  initializedSessions: number
+  hydratedSessions: number
+}
+
 /** TTL for idle sessions (30 minutes). */
 const SESSION_TTL_MS = 30 * 60 * 1000
 
@@ -287,6 +298,32 @@ export function latestInputEpoch(caseId: string): number {
 
 export function getRuntimeEvents(caseId: string): RuntimeEvent[] {
   return [...(sessions.get(caseId)?.runtimeEvents ?? [])]
+}
+
+export function getRuntimeSessionStats(): RuntimeSessionStats {
+  const stats: RuntimeSessionStats = {
+    sessions: 0,
+    liveSessions: 0,
+    activeRuns: 0,
+    pausedRuns: 0,
+    completedRuns: 0,
+    queueDepth: 0,
+    initializedSessions: 0,
+    hydratedSessions: 0,
+  }
+
+  for (const session of sessions.values()) {
+    stats.sessions += 1
+    if (!session.aborted && !session.resolved) stats.liveSessions += 1
+    if (session.initialized) stats.initializedSessions += 1
+    if (session.procedureRuntimeHydrated) stats.hydratedSessions += 1
+    if (session.procedureRuntime.activeProcedureRun) stats.activeRuns += 1
+    stats.pausedRuns += session.procedureRuntime.pausedProcedureRuns.length
+    stats.completedRuns += session.procedureRuntime.completedProcedureRuns.length
+    stats.queueDepth += session.queue.pendingCount
+  }
+
+  return stats
 }
 
 export function getProcedureRuntime(caseId: string): ProcedureRuntimeState {

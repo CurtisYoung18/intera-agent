@@ -8,6 +8,7 @@ import {
   getProcedureRuntime,
   recordInitialInputEvent,
   getRuntimeEvents,
+  getRuntimeSessionStats,
   startProcedureRun,
   getPendingProcedureLlmEvaluations,
   recordProcedureConditionEvaluation,
@@ -99,6 +100,33 @@ describe('hasSession', () => {
 })
 
 describe('R3 runtime event protocol', () => {
+  it('reports live runtime session stats for internal runtime health', () => {
+    const caseId = 'r3-runtime-stats'
+    closeSession(caseId)
+    const before = getRuntimeSessionStats()
+    const session = getOrCreateSession(caseId)
+    session.initialized = true
+    session.procedureRuntimeHydrated = true
+
+    enqueueMessageOrCreate(caseId, { content: 'queued', source: 'customer_message', origin: 'customer' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: simpleToolProcedure('get_latest_deposit'),
+      requestId: 'stats-1',
+    })
+
+    const after = getRuntimeSessionStats()
+    expect(after.sessions).toBeGreaterThanOrEqual(before.sessions + 1)
+    expect(after.liveSessions).toBeGreaterThanOrEqual(before.liveSessions + 1)
+    expect(after.initializedSessions).toBeGreaterThanOrEqual(before.initializedSessions + 1)
+    expect(after.hydratedSessions).toBeGreaterThanOrEqual(before.hydratedSessions + 1)
+    expect(after.activeRuns).toBeGreaterThanOrEqual(before.activeRuns + 1)
+    expect(after.queueDepth).toBeGreaterThanOrEqual(before.queueDepth + 1)
+
+    closeSession(caseId)
+  })
+
   it('stamps queued inputs with event metadata and enqueue-time epochs', () => {
     const caseId = 'r3-events-case'
     recordInitialInputEvent(caseId, { content: 'first', source: 'customer_message', origin: 'customer' })
