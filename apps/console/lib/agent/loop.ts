@@ -40,15 +40,12 @@ import type { TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import {
   getActiveProcedureRun,
-  getPendingProcedureLlmEvaluations,
   latestInputEpoch,
   procedureRunPromptTail,
-  recordProcedureConditionEvaluation,
   recordProcedureTextReply,
   recordProcedureToolCall,
   recordProcedureToolResult,
 } from './session-store'
-import { evaluateProcedureLlmCondition } from './procedure-llm-evaluator'
 import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
 import {
   RuntimeManagedToolResolver,
@@ -64,6 +61,7 @@ import {
 import { StopHookHandler } from './stop-hook-handler'
 import { HumanTaskHandoffHandler, type PendingHumanTaskEscalation } from './human-task-handoff-handler'
 import { buildHookHitCounts, TurnPreflight } from './turn-preflight'
+import { ProcedureConditionCheckpoint } from './procedure-condition-checkpoint'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -154,6 +152,7 @@ export class AgentLoop {
   private stopHookHandler: StopHookHandler
   private humanTaskHandoffHandler: HumanTaskHandoffHandler
   private turnPreflight: TurnPreflight
+  private procedureConditionCheckpoint: ProcedureConditionCheckpoint
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -216,6 +215,11 @@ export class AgentLoop {
       addMessage: (message) => this.messages.push(message),
       getCurrentStage: () => this.currentStage,
       getIterationCount: () => this.iterationCount,
+    })
+    this.procedureConditionCheckpoint = new ProcedureConditionCheckpoint({
+      caseId: deps.caseId,
+      config: deps.config,
+      traceWriter: this.traceWriter,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -334,7 +338,7 @@ export class AgentLoop {
       // Restrict the agent to pure conversation + finalize_consultation only.
       const isConsultation = this.chatMemory.getSummary().caseStatus === 'waiting_human'
 
-      await this.evaluatePendingProcedureConditions()
+      await this.procedureConditionCheckpoint.run()
 
       // Emit case progress for active Procedure cases.
       if (isCaseActive) {
@@ -1174,37 +1178,6 @@ export class AgentLoop {
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
-
-  private async evaluatePendingProcedureConditions(): Promise<void> {
-    const pending = getPendingProcedureLlmEvaluations(this.deps.caseId)
-    for (const evaluation of pending) {
-      const result = await evaluateProcedureLlmCondition(evaluation, this.deps.config)
-      recordProcedureConditionEvaluation(this.deps.caseId, {
-        runId: evaluation.runId,
-        branchId: evaluation.branchId,
-        conditionId: evaluation.conditionId,
-        label: evaluation.branchLabel || evaluation.branchId,
-        decision: result.decision,
-        reason: result.reason,
-        basedOnInputEpoch: evaluation.basedOnInputEpoch,
-        model: result.model,
-        metadata: result.metadata,
-      })
-      await this.traceWriter.write(
-        'loop_decision',
-        `Procedure llm_eval receipt: ${evaluation.branchId}`,
-        {
-          runId: evaluation.runId,
-          branchId: evaluation.branchId,
-          conditionId: evaluation.conditionId,
-          basedOnInputEpoch: evaluation.basedOnInputEpoch,
-          decision: result.decision,
-          reason: result.reason,
-          model: result.model,
-        },
-      )
-    }
-  }
 
   private buildHookContext(
     checkpoint: HookCheckpoint,
