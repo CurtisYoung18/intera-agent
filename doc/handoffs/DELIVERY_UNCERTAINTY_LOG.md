@@ -471,3 +471,16 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: Not yet available. Required before CONS-M3B acceptance: deploy both `intera-console.service` and `intera-runtime.service`, prove host-local `/internal/health`, prove Console deploy during a mid-turn does not kill the turn, prove runtime restart during a run preserves ProcedureRun continuity, prove LiveChat webhook to runtime to reply round-trip on `https://demo.anytrans.ai`, then run bundled J1B matrix PASS.
 - Owner decision needed: None for the local seam. The remaining implementation decision is whether the next M3B step should move the current `/api/messages` handler wholesale into a shared runtime handler first, or continue decomposing it phase-by-phase into runtime-core adapters.
 - Follow-up owner: architect / runtime lane owner
+
+### 2026-06-16 - CONS Full Integration Production Audit Still Reports Next-Bundled PostCSS Moderate
+
+- Area: Security / dependency audit / customer-ready production baseline
+- Status: open
+- Severity: P1
+- Uncertainty: While stacking M3B onto the M1/M3A/M6/M7C integration branch, `npm audit --omit=dev --json` showed production dependency advisories against `next@15.5.15`, including high-severity Next advisories and a moderate PostCSS advisory through Next's bundled `postcss@8.4.31`.
+- Default action taken: Upgraded Console's direct Next dependency to `next@15.5.18`, which removed the production high-severity Next advisories. Attempted npm `overrides` for the nested Next -> PostCSS dependency, but npm 11 kept `node_modules/next/node_modules/postcss@8.4.31` because the current published Next 15/16 packages still declare `postcss: 8.4.31`. Removed the ineffective override rather than leaving fake security posture in `package.json`.
+- Why this default: Shipping with known high-severity framework advisories is not acceptable for real customers; a patch-level Next upgrade is low-risk and verifiable. Forcing a nested framework dependency beyond what Next publishes is higher risk and did not produce a truthful lockfile change in this repo.
+- Evidence: On branch `codex/cons-integration-m1-m7-full`, `npm audit --omit=dev --json` after the Next patch reports `high: 0`, `critical: 0`, `moderate: 2`, with the remaining issue isolated to Next's bundled PostCSS. `npm view next@15.5.19 dependencies.postcss` and `npm view next@16.2.9 dependencies.postcss` both return `8.4.31`.
+- Production URL / screenshot / receipt: Not yet available. Required before customer-ready acceptance: rerun production dependency audit after final cherry-pick/deploy and either prove npm/Next has a safe patch path that clears the PostCSS moderate or record an owner-approved risk acceptance with compensating controls.
+- Owner decision needed: Decide whether moderate Next-bundled PostCSS advisory is acceptable for the pilot launch if high/critical advisories remain zero, or whether to pause launch until Next publishes a patched PostCSS dependency.
+- Follow-up owner: architect / delivery lead
