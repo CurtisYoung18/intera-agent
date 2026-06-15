@@ -96,6 +96,10 @@ describe('tool-interceptor start_procedure truth alignment', () => {
           input: {
             procedureId: 'deposit_not_credited',
             reason: 'Customer said the deposit is missing.',
+            collectedFacts: {
+              member_id: 'JAYA113C88F',
+              request_human_support: true,
+            },
           },
         },
       } as any],
@@ -123,6 +127,13 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     expect(activateProcedureContext).toHaveBeenCalledWith(expect.objectContaining({
       type: 'deposit_not_credited',
       displayName: 'Deposit not credited',
+    }))
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-123', expect.objectContaining({
+      procedureId: 'deposit_not_credited',
+      collectedFacts: {
+        member_id: 'JAYA113C88F',
+        request_human_support: true,
+      },
     }))
     expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
       type: 'case_status',

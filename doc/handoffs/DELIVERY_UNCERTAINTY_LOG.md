@@ -618,3 +618,16 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: In `account_wallet_frozen_login_locked`, the `start_procedure` input carried `collectedFacts.member_id=JAYA113C88F` and `request_human_support=true`, but the run stayed on `collect_frozen_details` and never called `create_human_task`. In `withdrawal_not_credited_reference_first`, the trigger turn already carried `member_id` and reference text, but the run never advanced into `get_latest_withdrawal`.
 - Owner decision needed: None before local implementation. Default next move is to add focused runtime tests for same-turn `collectedFacts` carry-forward and then patch the Procedure start path locally before another production rerun.
 - Follow-up owner: CONS-M1 lane owner / runtime owner
+
+### 2026-06-15 - Local Fix Landed For Same-Turn `collectedFacts` Carry-Forward, But Production Rerun Is Still Outstanding
+
+- Area: CONS-M1 / runtime continuity / Procedure start semantics
+- Status: default-applied
+- Severity: P1
+- Uncertainty: The lane's strongest remaining runtime hypothesis was that `start_procedure` did not ingest same-turn `collectedFacts`, and that pre-start runtime inputs were only copied into `run.inputs` instead of being replayed through the normal form-evidence / runtime-signal progression path.
+- Default action taken: Landed a local fix that forwards `toolInput.collectedFacts` into `startProcedureRun(...)`, replays seeded input events through the same progression pipeline used by live input events, injects same-turn `collectedFacts` as structured runtime input on procedure start, raises `explicit_human_request` from `request_human_support=true`, and matches `snake_case` / `camelCase` form-field aliases such as `member_id` and `memberId`.
+- Why this default: It directly addresses the concrete failure pattern seen in the remaining `4` production scenarios without reintroducing legacy `confirmedFacts` authority or a separate facts subsystem.
+- Evidence: `apps/console/lib/agent/tool-interceptor.ts`; `apps/console/lib/agent/session-store.ts`; `apps/console/lib/agent/__tests__/unit/tool-interceptor.test.ts`; `apps/console/lib/agent/__tests__/unit/session-store.test.ts`; `.artifacts/delivery-audit/2026-06-15/cons-m1-collected-facts-local/summary.md`
+- Production URL / screenshot / receipt: Not yet rerun on `https://demo.anytrans.ai`. Local verification passed: focused Vitest (`25` tests), `r3-runtime-protocol` (`7` tests), `tsc`, and `build:console`.
+- Owner decision needed: None before the next rerun. Default next step is an authenticated production rerun of the remaining `4` scenarios to confirm whether this local fix closes them or exposes the next narrower blocker.
+- Follow-up owner: CONS-M1 lane owner / runtime owner

@@ -729,6 +729,7 @@ export function startProcedureRun(caseId: string, input: {
   reason?: string
   confidence?: number
   requestId?: string
+  collectedFacts?: Record<string, unknown>
   currentProcedureAction?: 'pause' | 'complete' | 'abandon'
 }): { run: ProcedureRunState; idempotent: boolean; pausedRun?: ProcedureRunState } {
   const session = getOrCreateSession(caseId)
@@ -820,7 +821,6 @@ export function startProcedureRun(caseId: string, input: {
         updatedAt: now,
         lastStartRequestId: input.requestId,
       }
-  seedRunInputsFromRuntime(session, run)
   if (!run.currentStepId) {
     const first = run.steps.find((step) => step.status === 'pending') ?? run.steps[0]
     if (first) {
@@ -829,6 +829,8 @@ export function startProcedureRun(caseId: string, input: {
       run.currentStepId = first.id
     }
   }
+  seedRunInputsFromRuntime(session, run)
+  applyCollectedFactsAtProcedureStart(session, run, input.collectedFacts, now)
   state.activeProcedureRun = run
   appendProcedureTimeline(session, run, {
     origin: 'system',
@@ -1280,15 +1282,7 @@ function appendInputEventToActiveRun(session: CaseSession, event: RuntimeEvent):
   if (!active || !isInputSource(event.source)) return
   active.timeline.push({ ...event, runId: active.runId })
   active.updatedAt = event.createdAt
-  captureRunInput(active, event)
-  if (event.formAnswers && Object.keys(event.formAnswers).length > 0) {
-    applyFormEvidenceToRun(active, event)
-  }
-  if (event.content) {
-    updateSignalsFromInput(active, event.content)
-  }
-  refreshNoProgressSignal(active)
-  syncCurrentStepAfterProgress(active, event.createdAt)
+  ingestInputIntoRun(active, event)
   scheduleRunPersist(session, active)
 }
 
@@ -1658,11 +1652,100 @@ function captureRunInput(run: ProcedureRunState, event: RuntimeEvent): void {
   }
 }
 
+function ingestInputIntoRun(
+  run: ProcedureRunState,
+  event: RuntimeEvent,
+  options?: {
+    refreshNoProgress?: boolean
+  },
+): void {
+  if (!isInputSource(event.source)) return
+  captureRunInput(run, event)
+  if (event.formAnswers && Object.keys(event.formAnswers).length > 0) {
+    applyFormEvidenceToRun(run, event)
+  }
+  if (event.content) {
+    updateSignalsFromInput(run, event.content)
+  }
+  if (options?.refreshNoProgress !== false) {
+    refreshNoProgressSignal(run)
+  }
+  syncCurrentStepAfterProgress(run, event.createdAt)
+}
+
 function seedRunInputsFromRuntime(session: CaseSession, run: ProcedureRunState): void {
   for (const event of session.runtimeEvents) {
     if (!isInputSource(event.source)) continue
-    captureRunInput(run, event)
+    ingestInputIntoRun(run, event, { refreshNoProgress: false })
   }
+}
+
+function applyCollectedFactsAtProcedureStart(
+  session: CaseSession,
+  run: ProcedureRunState,
+  collectedFacts: Record<string, unknown> | undefined,
+  now: string,
+): void {
+  if (!collectedFacts || !isRecord(collectedFacts)) return
+  const formAnswers = normalizeCollectedFactAnswers(collectedFacts)
+  const requestedHuman = hasExplicitHumanRequestFact(collectedFacts)
+  if (Object.keys(formAnswers).length === 0 && !requestedHuman) return
+
+  const event = createRuntimeEvent({
+    caseId: session.caseId,
+    sessionId: session.sessionId,
+    runId: run.runId,
+    inputEpoch: session.latestInputEpoch,
+    origin: 'customer',
+    source: 'customer_form_result',
+    formAnswers: Object.keys(formAnswers).length > 0 ? formAnswers : undefined,
+    priority: defaultPriority('customer_form_result'),
+    enqueuePolicy: 'fifo',
+    createdAt: now,
+    summary: 'Structured facts extracted on the start_procedure turn.',
+    metadata: {
+      synthetic: 'start_procedure_collected_facts',
+      fields: Object.keys(formAnswers),
+      explicitHumanRequest: requestedHuman,
+    },
+  })
+  run.timeline.push(event)
+  ingestInputIntoRun(run, event, { refreshNoProgress: false })
+  if (requestedHuman) {
+    setProcedureSignal(run, 'explicit_human_request', 'Structured facts extracted at procedure start indicated that the customer requested a human.')
+    syncCurrentStepAfterProgress(run, now)
+  }
+}
+
+function normalizeCollectedFactAnswers(collectedFacts: Record<string, unknown>): Record<string, string> {
+  const answers: Record<string, string> = {}
+  for (const [key, value] of Object.entries(collectedFacts)) {
+    if (value == null) continue
+    if (typeof value === 'string') {
+      const next = value.trim()
+      if (next) answers[key] = next
+      continue
+    }
+    if (typeof value === 'number' || typeof value === 'bigint') {
+      answers[key] = String(value)
+      continue
+    }
+    if (typeof value === 'boolean') {
+      answers[key] = value ? 'true' : 'false'
+    }
+  }
+  return answers
+}
+
+function hasExplicitHumanRequestFact(collectedFacts: Record<string, unknown>): boolean {
+  return Object.entries(collectedFacts).some(([key, value]) => {
+    if (value !== true) return false
+    const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+    return normalized === 'request_human_support'
+      || normalized === 'human_request'
+      || normalized === 'needs_human_support'
+      || normalized === 'human_transfer_requested'
+  })
 }
 
 function defaultPriority(source: RuntimeEventSource): number {
@@ -1773,13 +1856,13 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
     const fields = action.target?.split(',').map((field) => field.trim()).filter(Boolean) ?? []
     const hasAnswer = fields.length === 0
       ? Object.keys(formAnswers).length > 0
-      : fields.some((field) => field in formAnswers)
+      : fields.some((field) => hasMatchingFormField(formAnswers, field))
     if (!hasAnswer) continue
     action.status = 'completed'
     clearRunBlocker(run, `action:${action.id}`)
     action.evidenceIds.push(
       ...Object.keys(formAnswers)
-        .filter((field) => fields.length === 0 || fields.includes(field))
+        .filter((field) => fields.length === 0 || fields.some((target) => formFieldMatches(field, target)))
         .map((field) => `form:${event.eventId}:${field}`),
     )
     progressed = true
@@ -1802,6 +1885,26 @@ function updateSignalsFromInput(run: ProcedureRunState, content: string): void {
   if (isKnowledgeGapRequest(text)) {
     setProcedureSignal(run, 'knowledge_gap', 'Customer asked where to find something or lacked context.')
   }
+}
+
+function hasMatchingFormField(formAnswers: Record<string, string>, expectedField: string): boolean {
+  return Object.keys(formAnswers).some((field) => formFieldMatches(field, expectedField))
+}
+
+function formFieldMatches(actualField: string, expectedField: string): boolean {
+  const actualAliases = new Set(fieldNameAliases(actualField))
+  return fieldNameAliases(expectedField).some((alias) => actualAliases.has(alias))
+}
+
+function fieldNameAliases(field: string): string[] {
+  const trimmed = field.trim()
+  if (!trimmed) return []
+  const snake = trimmed
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase()
+  const camel = snake.replace(/_([a-z0-9])/g, (_, letter: string) => letter.toUpperCase())
+  return [...new Set([trimmed, trimmed.toLowerCase(), snake, camel])]
 }
 
 function isExplicitHumanRequest(text: string): boolean {
@@ -2019,7 +2122,9 @@ function evaluateBranchCondition(
       if (formEvidence.length === 0) {
         return { status: 'pending', reason: 'Waiting for form evidence.' }
       }
-      const matchingField = formEvidence.find((entry) => entry.metadata?.field === condition.field)
+      const matchingField = formEvidence.find((entry) =>
+        typeof entry.metadata?.field === 'string' && formFieldMatches(entry.metadata.field, condition.field),
+      )
       if (!matchingField) {
         return { status: 'skipped', reason: `No form evidence captured for ${condition.field}.` }
       }

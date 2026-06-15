@@ -153,6 +153,7 @@ async function handleStartProcedure(
       reason,
       confidence,
       requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
+      collectedFacts: isRecord(toolInput.collectedFacts) ? toolInput.collectedFacts : undefined,
       currentProcedureAction: requestedCurrentAction,
     })
     ctx.chatMemory.setCaseStatus('investigating')

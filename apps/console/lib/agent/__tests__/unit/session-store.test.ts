@@ -294,6 +294,52 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('hydrates explicit human request from pre-start customer input when the procedure starts later', () => {
+    const caseId = 'r3-seeded-human-request-signal'
+    recordInitialInputEvent(caseId, { content: 'Please connect me to a human agent right now.' })
+
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'triage',
+            title: 'Triage the request',
+            guidance: 'Work out whether the customer needs a person right away.',
+            actions: [],
+            branches: [
+              {
+                id: 'customer_wants_human',
+                kind: 'if',
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                actions: [
+                  {
+                    id: 'handoff_now',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signal: 'explicit_human_request', active: true }),
+      ]),
+    )
+    expect(active?.steps[0]?.branches?.[0]).toMatchObject({ status: 'matched' })
+    closeSession(caseId)
+  })
+
   it('resolves an inactive runtime_signal branch as skipped so the else path can match', () => {
     const caseId = 'r3-runtime-signal-else'
     recordInitialInputEvent(caseId, { content: 'My deposit has not arrived yet.' })
@@ -690,6 +736,88 @@ describe('R3 runtime event protocol', () => {
     )
     expect(active?.steps.find((step) => step.id === 'collect_member_id')).toMatchObject({
       status: 'completed',
+    })
+    closeSession(caseId)
+  })
+
+  it('consumes collectedFacts from the start_procedure turn as structured runtime input', () => {
+    const caseId = 'r3-start-procedure-collected-facts'
+    recordInitialInputEvent(caseId, { content: '我的 member_id 是 JAYA113C88F，请人工帮我处理。' })
+
+    startProcedureRun(caseId, {
+      procedureId: 'account_wallet_frozen',
+      displayName: 'Account frozen',
+      collectedFacts: {
+        member_id: 'JAYA113C88F',
+        request_human_support: true,
+      },
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for account frozen issues',
+        steps: [
+          {
+            id: 'collect_member_id',
+            title: 'Collect member id',
+            guidance: 'Ask for the member id before proceeding.',
+            actions: [
+              {
+                id: 'ask_member_id',
+                kind: 'ask',
+                label: 'Ask for member id',
+                fields: ['memberId'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'triage_handoff',
+            title: 'Triage for handoff',
+            guidance: 'Hand off immediately if the customer already asked for a person.',
+            actions: [],
+            branches: [
+              {
+                id: 'wants_human',
+                kind: 'if',
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                actions: [
+                  {
+                    id: 'handoff_now',
+                    kind: 'request_human_handoff',
+                    label: 'Request human help',
+                    queue: 'general',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_form_result',
+          formAnswers: expect.objectContaining({
+            member_id: 'JAYA113C88F',
+            request_human_support: 'true',
+          }),
+          summary: 'Structured facts extracted on the start_procedure turn.',
+        }),
+      ]),
+    )
+    expect(active?.steps.find((step) => step.id === 'collect_member_id')).toMatchObject({
+      status: 'completed',
+    })
+    expect(active?.currentStepId).toBe('triage_handoff')
+    expect(active?.signals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ signal: 'explicit_human_request', active: true }),
+      ]),
+    )
+    expect(active?.steps.find((step) => step.id === 'triage_handoff')?.branches?.[0]).toMatchObject({
+      status: 'matched',
     })
     closeSession(caseId)
   })
