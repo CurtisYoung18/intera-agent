@@ -8,6 +8,8 @@ const mockUpdateSessionState = vi.fn()
 const mockAppendTextBuffer = vi.fn()
 const mockFlushTextBuffer = vi.fn()
 const mockCloseSession = vi.fn()
+const mockRotateSessionCase = vi.fn()
+const mockConfirmProcedureHumanHandoff = vi.fn()
 
 const mockSendTextMessage = vi.fn()
 const mockSendWidgetPayload = vi.fn()
@@ -31,6 +33,11 @@ vi.mock('../../session-store', () => ({
   appendTextBuffer: (...args: unknown[]) => mockAppendTextBuffer(...args),
   flushTextBuffer: (...args: unknown[]) => mockFlushTextBuffer(...args),
   closeSession: (...args: unknown[]) => mockCloseSession(...args),
+  rotateSessionCase: (...args: unknown[]) => mockRotateSessionCase(...args),
+}))
+
+vi.mock('@/lib/agent/session-store', () => ({
+  confirmProcedureHumanHandoff: (...args: unknown[]) => mockConfirmProcedureHumanHandoff(...args),
 }))
 
 vi.mock('../../livechat-api', () => ({
@@ -101,6 +108,8 @@ describe('livechat bridge', () => {
     mockFlushTextBuffer.mockResolvedValue('')
     mockUpdateSessionState.mockResolvedValue(undefined)
     mockAppendTextBuffer.mockResolvedValue(undefined)
+    mockRotateSessionCase.mockResolvedValue(undefined)
+    mockConfirmProcedureHumanHandoff.mockResolvedValue({ ok: true })
     mockSendTextMessage.mockResolvedValue(undefined)
     mockSendImage.mockResolvedValue(undefined)
     mockSetTypingIndicator.mockResolvedValue(undefined)
@@ -113,6 +122,7 @@ describe('livechat bridge', () => {
 
   it('keeps the bridge state transferred after a successful handoff', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'human_task_created', data: { taskId: 'task-1', queue: 'general' }, timestamp: '2026-06-11T09:34:43.500Z' },
       { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
     ]))
 
@@ -133,6 +143,11 @@ describe('livechat bridge', () => {
       undefined,
       undefined,
     )
+    expect(mockConfirmProcedureHumanHandoff).toHaveBeenCalledWith('case-1', {
+      agentConfigId: undefined,
+      taskId: 'task-1',
+      queue: 'general',
+    })
     expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'thinking')
     expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'transferred')
     expect(mockUpdateSessionState).not.toHaveBeenCalledWith('chat-1', 'idle')
@@ -229,10 +244,35 @@ describe('livechat bridge', () => {
       undefined,
     )
     const [, fetchInit] = mockFetch.mock.calls[0]!
-    expect(JSON.parse(String(fetchInit.body))).toMatchObject({
-      disableCaseRouting: true,
-    })
+    expect(JSON.parse(String(fetchInit.body))).not.toHaveProperty('disableCaseRouting')
     expect(JSON.parse(String(fetchInit.body))).not.toHaveProperty('sessionCasePinned')
+  })
+
+  it('pins a new customer message to the current case while the bridge is still thinking', async () => {
+    mockGetSession.mockResolvedValue({
+      ...makeSession(),
+      state: 'thinking',
+    })
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'message_stop', data: { reason: 'queued' }, timestamp: '2026-06-15T03:30:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: '补充一句' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    const [, fetchInit] = mockFetch.mock.calls[0]!
+    expect(JSON.parse(String(fetchInit.body))).toMatchObject({
+      chatId: 'chat-1',
+      caseId: 'case-1',
+      sessionCasePinned: true,
+      disableCaseRouting: true,
+      message: '补充一句',
+    })
   })
 
   it('resumes a transferred session when a new customer message returns to Intera', async () => {
@@ -264,14 +304,88 @@ describe('livechat bridge', () => {
     expect(JSON.parse(String(fetchInit.body))).toMatchObject({
       chatId: 'chat-1',
       caseId: 'case-generated',
-      disableCaseRouting: true,
       sessionCasePinned: true,
       message: 'hello again',
     })
+    expect(JSON.parse(String(fetchInit.body))).not.toHaveProperty('disableCaseRouting')
     expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'thinking')
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'chat-1',
       'Welcome back.',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
+  it('falls back to queue transfer when the configured group cannot accept the chat', async () => {
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+    mockTransferChat
+      .mockRejectedValueOnce(new Error('LiveChat API transfer_chat failed (422): {"error":{"type":"validation","message":"Cannot assign any agent from requested groups"}}'))
+      .mockResolvedValueOnce(undefined)
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'need a human' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockTransferChat).toHaveBeenNthCalledWith(
+      1,
+      'chat-1',
+      { type: 'group', ids: [12] },
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockTransferChat).toHaveBeenNthCalledWith(
+      2,
+      'chat-1',
+      { type: 'queue' },
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockRotateSessionCase).not.toHaveBeenCalled()
+    expect(mockSendTextMessage).not.toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringContaining('technical issue'),
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
+  it('notifies the customer and rotates the session when transfer ultimately fails', async () => {
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+    mockTransferChat.mockRejectedValue(new Error('LiveChat API transfer_chat failed (500): boom'))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'need a human' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockRotateSessionCase).toHaveBeenCalledWith('chat-1', 'case-generated')
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'A technical issue occurred and has been logged. If you do not receive a response soon, please contact support.',
       'bot-token',
       'lic-1',
       undefined,

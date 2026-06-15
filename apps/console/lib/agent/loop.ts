@@ -47,6 +47,7 @@ import { buildToolResultMessageFromSynthesis, buildHookFeedbackMessage } from '.
 import { assistantProviderContent, makeProviderMeta, selectProviderMessageWindow, type TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import { escalationMessageFor, latestUserText } from './customer-messages'
+import { buildHumanHandoffQuestion } from './human-handoff'
 import {
   appendRuntimeEvent,
   filterRuntimeAuthorityKeys,
@@ -141,7 +142,7 @@ export class AgentLoop {
   private iterationCount = 0
   private nudgeCount = 0
   private pendingEscalation = false
-  private pendingHumanTaskEscalation: { taskId: string; queue: string } | null = null
+  private pendingHumanTaskEscalation: { taskId: string; queue: string; question: string } | null = null
   /** Counter for cadence-driven compaction (compactEveryNMessages). Reset after each compaction. */
   private userMessagesSinceLastCompact = 0
   private abortController: AbortController
@@ -1116,7 +1117,7 @@ export class AgentLoop {
       }
 
       if (this.pendingHumanTaskEscalation) {
-        const { taskId, queue } = this.pendingHumanTaskEscalation
+        const { taskId, queue, question } = this.pendingHumanTaskEscalation
         this.pendingHumanTaskEscalation = null
 
         if (!fullText.trim()) {
@@ -1138,7 +1139,7 @@ export class AgentLoop {
 
         sendEvent({
           type: 'human_task_created',
-          data: { taskId, queue, status: 'pending' },
+          data: { taskId, queue, question, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
         await this.traceWriter.writeEscalated('human_task_created', { taskId, queue })
@@ -1343,7 +1344,12 @@ export class AgentLoop {
 
       if (result.name === 'create_human_task' && !this.caseLoop) {
         const queue = String(input.queue || 'general')
-        const question = String(input.question || 'Human task requested')
+        const question = buildHumanHandoffQuestion({
+          baseQuestion: String(input.question || 'Human task requested'),
+          caseType: this.deps.caseSchema?.type,
+          latestCustomerMessage: latestUserText(this.messages),
+          confirmedFacts: this.chatMemory.getConfirmedFacts(),
+        })
         const taskFields = Array.isArray(input.fields) ? input.fields : undefined
         const resolvedCaseType = this.deps.caseSchema?.type || 'general'
 
@@ -1371,7 +1377,7 @@ export class AgentLoop {
             status: 'pending',
           })
           await this.traceWriter.writeHumanTaskCreated(task.id, queue)
-          this.pendingHumanTaskEscalation = { taskId: task.id, queue }
+          this.pendingHumanTaskEscalation = { taskId: task.id, queue, question }
           this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending', persisted: true })
         } catch (error) {
           console.error('[AgentLoop] Failed to persist create_human_task in general mode:', error)
@@ -1732,16 +1738,27 @@ export class AgentLoop {
         ...this.chatMemory.getDbFields(),
         humanTaskStatus: 'pending',
       })
+      const question = buildHumanHandoffQuestion({
+        baseQuestion: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
+        caseType: this.deps.caseSchema?.type,
+        latestCustomerMessage: latestUserText(this.messages),
+        confirmedFacts: this.chatMemory.getConfirmedFacts(),
+      })
       const task = await this.persistence.createHumanTask({
         caseId: this.deps.caseId,
         queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
-        question: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
+        question,
         status: 'pending',
       })
       await this.traceWriter.writeHumanTaskCreated(task.id, this.deps.caseSchema?.escalateOn?.[0] || 'general')
       sendEvent({
         type: 'human_task_created',
-        data: { taskId: task.id, queue: this.deps.caseSchema?.escalateOn?.[0] || 'general', status: 'pending' },
+        data: {
+          taskId: task.id,
+          queue: this.deps.caseSchema?.escalateOn?.[0] || 'general',
+          question,
+          status: 'pending',
+        },
         timestamp: new Date().toISOString(),
       })
     } catch (err) {

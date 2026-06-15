@@ -72,6 +72,11 @@ function messageText(msg: MessageLike): string {
   return ''
 }
 
+function isSyntheticUserText(text: string): boolean {
+  return /^\[(?:PROCEDURE RUNTIME|SYSTEM)\]/i.test(text) ||
+    /^Tool\s+[A-Za-z0-9_]+\s+result:/i.test(text)
+}
+
 /**
  * Scan a conversation backwards and return the text of the most recent
  * `role === 'user'` message. Returns `''` if none found — `escalationMessageFor`
@@ -83,7 +88,7 @@ export function latestUserText(messages: ReadonlyArray<MessageLike> | undefined 
     const msg = messages[i]
     if (msg && msg.role === 'user') {
       const text = messageText(msg)
-      if (text) return text
+      if (text && !isSyntheticUserText(text)) return text
     }
   }
   return ''

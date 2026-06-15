@@ -10,6 +10,47 @@ import type { SSEEvent } from '@intera/shared/types'
 import type { BridgeAction, FormField } from '@/lib/livechat/types'
 import { detectWidgetLocale, getWidgetCopy } from '@/lib/livechat/form-widget'
 
+function summarizeHandoffFocus(question: string | undefined, locale: 'zh' | 'en'): string | undefined {
+  const trimmed = question?.trim()
+  if (!trimmed) return undefined
+
+  const patterns = locale === 'zh'
+    ? [/客户最新消息:\s*(.+)/i, /已知事实:\s*(.+)/i]
+    : [/Latest customer message:\s*(.+)/i, /Known facts:\s*(.+)/i]
+
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern)
+    const snippet = match?.[1]?.trim()
+    if (snippet) return snippet.slice(0, 90)
+  }
+
+  const firstLine = trimmed
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+  return firstLine ? firstLine.slice(0, 90) : undefined
+}
+
+function getHandoffCopy(locale: 'zh' | 'en', focus?: string) {
+  if (locale === 'zh') {
+    return {
+      title: '已转交人工客服',
+      subtitle: focus
+        ? `已记录问题: ${focus}\n人工专员会继续跟进。若需补充订单号、金额、时间或截图，请直接继续发送到当前对话。`
+        : '人工专员会继续跟进。若需补充订单号、金额、时间或截图，请直接继续发送到当前对话。',
+      followupLabel: '补充订单号或截图',
+    }
+  }
+
+  return {
+    title: 'Human support is taking over',
+    subtitle: focus
+      ? `We noted: ${focus}\nA specialist will continue from here. If you want to add the amount, time, order ID, or screenshots, send them directly in this chat.`
+      : 'A specialist will continue from here. If you want to add the amount, time, order ID, or screenshots, send them directly in this chat.',
+    followupLabel: 'Add order ID or screenshots',
+  }
+}
+
 export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
   readonly channel: Channel = 'livechat'
   readonly capabilities = CHANNEL_CAPS.livechat
@@ -112,12 +153,22 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       // ── human_task_created: { taskId, caseId, question? } ──
       // Show a compact handoff confirmation card before the actual transfer.
       case 'human_task_created': {
+        const d = event.data as { question?: string; queue?: string } | undefined
+        const locale = detectWidgetLocale({
+          title: d?.question,
+          description: d?.queue,
+        })
+        const copy = getHandoffCopy(locale, summarizeHandoffFocus(d?.question, locale))
         return {
           type: 'send_card',
           card: {
-            title: 'Human support requested',
-            subtitle: 'A specialist will continue this conversation shortly.',
-            buttons: [],
+            title: copy.title,
+            subtitle: copy.subtitle,
+            buttons: [{
+              id: 'handoff_followup',
+              label: copy.followupLabel,
+              type: 'message',
+            }],
           },
         }
       }
