@@ -71,13 +71,14 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator
 function buildMessagesBody(
   event: IncomingEvent,
   session: BridgeSessionRow,
+  options?: { pinCaseToSession?: boolean },
 ): Record<string, unknown> {
   const base = {
     orgId: session.orgId,
     userId: session.userId,
     chatId: session.chatId,
     caseId: session.caseId,
-    sessionCasePinned: true,
+    ...(options?.pinCaseToSession ? { sessionCasePinned: true } : {}),
   }
 
   switch (event.type) {
@@ -198,6 +199,13 @@ export async function handleIncomingEvent(
     await upsertSession(session)
   }
 
+  let resumedTransferredSession = false
+  const shouldPinCaseToSession =
+    event.type === 'form_submit' ||
+    event.type === 'interaction_submit' ||
+    event.type === 'postback' ||
+    event.type === 'attachment'
+
   if (event.type === 'form_submit' && event.form?.caseId) {
     session = { ...session, caseId: event.form.caseId }
     await upsertSession(session)
@@ -212,6 +220,7 @@ export async function handleIncomingEvent(
       console.log('[Bridge] Session transferred, skipping agent loop for chat:', chatId)
       return
     }
+    resumedTransferredSession = true
 
     session = {
       ...session,
@@ -232,7 +241,9 @@ export async function handleIncomingEvent(
   // Typing indicator on
   setTypingIndicator(chatId, true, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(e => console.error('[Bridge] setTyping on failed:', e))
 
-  const body = buildMessagesBody(event, session)
+  const body = buildMessagesBody(event, session, {
+    pinCaseToSession: shouldPinCaseToSession || resumedTransferredSession,
+  })
 
   // Empty message from non-action events (e.g. incoming_chat) → skip agent loop
   if (body.skip) {

@@ -140,11 +140,15 @@ async function writeProviderTranscriptPersistedTrace(
 
 /** Lightweight LLM-based intent routing: classify a user message to the best
  *  matching active case. Falls back to the most recent case on error. */
+type CaseRoutingDecision =
+  | { kind: 'existing'; caseId: string }
+  | { kind: 'new' }
+
 async function resolveCaseByIntent(
   userMessage: string,
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
-): Promise<string> {
+): Promise<CaseRoutingDecision> {
   const model = process.env.HUB_ROUTING_MODEL || DEFAULT_MEMORY_MODEL
 
   const caseList = activeCases
@@ -175,12 +179,13 @@ async function resolveCaseByIntent(
     const text = (resp.content[0] as any)?.text?.trim() || ''
     // Extract caseId from response (handle quotes, whitespace)
     const clean = text.replace(/^["']|["']$/g, '').trim()
-    if (clean === 'new' || !clean) return fallbackCaseId
+    if (clean === 'new') return { kind: 'new' }
+    if (!clean) return { kind: 'existing', caseId: fallbackCaseId }
     // Verify the returned ID is in the active cases list
-    if (activeCases.some((c) => c.id === clean)) return clean
-    return fallbackCaseId
+    if (activeCases.some((c) => c.id === clean)) return { kind: 'existing', caseId: clean }
+    return { kind: 'existing', caseId: fallbackCaseId }
   } catch {
-    return fallbackCaseId
+    return { kind: 'existing', caseId: fallbackCaseId }
   }
 }
 
@@ -476,7 +481,25 @@ export async function POST(request: NextRequest) {
             })
 
             if (activeCases.length === 1) {
-              resolvedCaseId = activeCases[0].id
+              const routed = await resolveCaseByIntent(
+                userMessage,
+                activeCases,
+                activeCases[0].id,
+              )
+              if (routed.kind === 'new') {
+                const newCase = await prisma.case.create({
+                  data: {
+                    orgId: resolvedOrgId,
+                    userId: resolvedUserId,
+                    type: 'general',
+                    status: 'created',
+                    chatId: resolvedChatId,
+                  },
+                })
+                resolvedCaseId = newCase.id
+              } else {
+                resolvedCaseId = routed.caseId
+              }
             } else if (activeCases.length > 1) {
               // Check for pending interactions first
               const pendingTask = await prisma.humanTask.findFirst({
@@ -492,11 +515,25 @@ export async function POST(request: NextRequest) {
                 resolvedCaseId = pendingTask.caseId
               } else {
                 // LLM-based intent routing: classify the message to the right case
-                resolvedCaseId = await resolveCaseByIntent(
+                const routed = await resolveCaseByIntent(
                   userMessage,
                   activeCases,
                   resolvedCaseId,
                 )
+                if (routed.kind === 'new') {
+                  const newCase = await prisma.case.create({
+                    data: {
+                      orgId: resolvedOrgId,
+                      userId: resolvedUserId,
+                      type: 'general',
+                      status: 'created',
+                      chatId: resolvedChatId,
+                    },
+                  })
+                  resolvedCaseId = newCase.id
+                } else {
+                  resolvedCaseId = routed.caseId
+                }
               }
             }
           } catch (err) { console.error('[Intera] Hub routing failed:', err) }

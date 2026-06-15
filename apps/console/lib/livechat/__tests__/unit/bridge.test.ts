@@ -228,6 +228,8 @@ describe('livechat bridge', () => {
       undefined,
       undefined,
     )
+    const [, fetchInit] = mockFetch.mock.calls[0]!
+    expect(JSON.parse(String(fetchInit.body))).not.toHaveProperty('sessionCasePinned')
   })
 
   it('resumes a transferred session when a new customer message returns to Intera', async () => {

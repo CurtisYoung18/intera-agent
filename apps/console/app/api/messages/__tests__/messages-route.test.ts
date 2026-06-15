@@ -19,6 +19,7 @@ const h = vi.hoisted(() => {
     repoForOrg: vi.fn(() => ({ orgId: 'org-a' })),
     resolveOrgFromApiKey: vi.fn(),
     isTrustedInternalCall: vi.fn(),
+    createAgentClient: vi.fn(),
     loadAgentConfig: vi.fn(),
     buildModePrompt: vi.fn(),
     agentLoopCreate: vi.fn(),
@@ -37,6 +38,9 @@ vi.mock('@/lib/rate-limit', () => ({
 }))
 vi.mock('@/lib/agent/config-loader', () => ({
   loadAgentConfig: h.loadAgentConfig,
+}))
+vi.mock('@/lib/agent/api/provider-config', () => ({
+  createAgentClient: h.createAgentClient,
 }))
 vi.mock('@/lib/agent/buildModePrompt', () => ({
   buildModePrompt: h.buildModePrompt,
@@ -105,6 +109,13 @@ beforeEach(() => {
 
   h.resolveOrgFromApiKey.mockResolvedValue({ orgId: 'org-a', agentConfigId: 'agent-a' })
   h.isTrustedInternalCall.mockReturnValue(false)
+  h.createAgentClient.mockReturnValue({
+    messages: {
+      create: vi.fn(async () => ({
+        content: [{ text: 'case-1' }],
+      })),
+    },
+  })
   h.loadAgentConfig.mockResolvedValue({
     model: 'test-model',
     temperature: 0,
@@ -240,6 +251,53 @@ describe('POST /api/messages runtime session guards', () => {
     expect(h.prisma.case.findMany).not.toHaveBeenCalled()
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
       caseId: 'case-bridge',
+      chatId: 'chat-1',
+      userId: 'user-1',
+    }))
+  })
+
+  it('creates a fresh case when the router says a single active case does not match the new topic', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-stale',
+      orgId: 'org-a',
+      chatId: 'chat-1',
+      status: 'investigating',
+      memory: null,
+    })
+    h.prisma.case.findMany.mockResolvedValue([
+      { id: 'case-stale', type: 'deposit_not_credited', status: 'investigating' },
+    ])
+    h.createAgentClient.mockReturnValue({
+      messages: {
+        create: vi.fn(async () => ({
+          content: [{ text: 'new' }],
+        })),
+      },
+    })
+
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      message: '你还能干啥',
+      caseId: 'case-stale',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.prisma.case.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orgId: 'org-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        type: 'general',
+        status: 'created',
+      }),
+    })
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-created',
       chatId: 'chat-1',
       userId: 'user-1',
     }))
