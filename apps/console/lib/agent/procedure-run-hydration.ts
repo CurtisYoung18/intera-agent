@@ -1,6 +1,6 @@
 import type { ProcedureV2 } from '@intera/shared/types'
 import type { PersistedProcedureRunRecord } from './procedure-run-persistence'
-import type { RuntimeEvent } from './session-queue'
+import type { RuntimeEvent } from '@intera/runtime-core/runtime-events'
 import type {
   ProcedureRunActionState,
   ProcedureRunBranchState,
@@ -12,7 +12,7 @@ import type {
   ProcedureRunStatus,
   ProcedureRunStepState,
   ProcedureStepStatus,
-} from './procedure-run-state'
+} from '@intera/runtime-core/procedure-run-state'
 
 export function hydratePersistedRun(record: PersistedProcedureRunRecord): ProcedureRunState | null {
   const raw = isRecord(record.state) ? record.state : {}

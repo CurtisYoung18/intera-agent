@@ -56,28 +56,28 @@ import {
   markBranchMatched,
   refreshStepBranchStates,
   syncCurrentStepAfterProgress,
-} from './procedure-run-progress'
+} from '@intera/runtime-core/procedure-run-progress'
 import {
   clearProcedureSignal,
   refreshNoProgressSignal,
   updateSignalsFromInput,
-} from './procedure-run-signals'
+} from '@intera/runtime-core/procedure-run-signals'
 import {
   finalizationBlockers,
   findHandoffMatch,
   findLatestPersistedHandoffEvidence,
   hasPersistedHandoffEvidence,
   promisesHumanHandoff,
-} from './procedure-run-finalization'
+} from '@intera/runtime-core/procedure-run-finalization'
 import {
   assessProcedureToolOutcome,
   blockerForToolAssessment,
   type ProcedureToolAssessment,
-} from './procedure-run-tool-assessment'
+} from '@intera/runtime-core/procedure-run-tool-assessment'
 import {
   buildToolEvidenceLabel,
   findMatchingToolStep,
-} from './procedure-run-tool-matching'
+} from '@intera/runtime-core/procedure-run-tool-matching'
 import { MessageQueue } from './session-queue'
 import type {
   QueuedMessage,
@@ -108,7 +108,7 @@ import type {
   ProcedureRunState,
   ProcedureRunStepState,
   ProcedureRuntimeState,
-} from './procedure-run-state'
+} from '@intera/runtime-core/procedure-run-state'
 export type {
   PendingProcedureLlmEvaluation,
   ProcedureConditionEvaluationDecision,
@@ -123,7 +123,7 @@ export type {
   ProcedureRunStepState,
   ProcedureRuntimeState,
   ProcedureStepStatus,
-} from './procedure-run-state'
+} from '@intera/runtime-core/procedure-run-state'
 
 // ─── CaseSession ─────────────────────────────────────────────────────────────
 

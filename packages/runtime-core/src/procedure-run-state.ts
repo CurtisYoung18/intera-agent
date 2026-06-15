@@ -6,7 +6,7 @@ import type {
   RuntimeEvent,
   RuntimeEventOrigin,
   RuntimeEventSource,
-} from './session-queue'
+} from './runtime-events'
 
 export type ProcedureRunStatus = 'active' | 'paused' | 'completed' | 'cancelled'
 export type ProcedureStepStatus = 'pending' | 'active' | 'completed' | 'skipped' | 'blocked'
