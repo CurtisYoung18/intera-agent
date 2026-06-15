@@ -87,7 +87,7 @@ describe('ModelWorkspace', () => {
       render(<ModelWorkspace />)
     })
 
-    await screen.findByText('Model and prompts')
+    await screen.findByText('Model configuration')
 
     fireEvent.change(screen.getByLabelText('Model'), {
       target: { value: 'openai/gpt-4o' },

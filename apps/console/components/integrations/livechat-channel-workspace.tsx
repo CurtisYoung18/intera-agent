@@ -1,19 +1,19 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import {
   AlertCircle,
   CheckCircle2,
   Copy,
-  ExternalLink,
   Eye,
   EyeOff,
   Globe,
   Loader2,
   MessageCircle,
   Monitor,
+  Route,
   RotateCcw,
+  Save,
   UserCheck,
 } from 'lucide-react'
 import { apiClient } from '@/lib/api/client'
@@ -129,7 +129,7 @@ export default function LiveChatChannelWorkspace({
   const [loading, setLoading] = useState(true)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
   const [showToken, setShowToken] = useState(false)
-  const [activeTab, setActiveTab] = useState<'connection' | 'rendering' | 'escalation'>('connection')
+  const [activeTab, setActiveTab] = useState<'connection' | 'rendering' | 'routing' | 'handoff'>('connection')
   const [selectedMomentLabel, setSelectedMomentLabel] = useState('')
   const [momentPreviewUrl, setMomentPreviewUrl] = useState('')
   const [groups, setGroups] = useState<LiveChatGroup[]>([])
@@ -137,6 +137,7 @@ export default function LiveChatChannelWorkspace({
   const [connectionTested, setConnectionTested] = useState<boolean | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionErrorCode, setConnectionErrorCode] = useState<string | null>(null)
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const loadedRef = useRef(false)
   const skipNextAutosaveRef = useRef(false)
@@ -156,6 +157,7 @@ export default function LiveChatChannelWorkspace({
   const connectionState = getConnectionState(config, connectionTested)
   const inputCls = 'w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-[13px] outline-none focus:border-indigo/30'
   const labelCls = 'mb-1 block text-[12px] font-semibold text-[var(--mist)]'
+  const cardCls = 'rounded-[26px] border border-black/[0.06] bg-white/72 p-5 shadow-[0_16px_36px_rgba(21,23,25,0.05)]'
 
   const webhookUrl =
     typeof window !== 'undefined' && orgId && (config.webhookAgentConfigId || agentConfigId)
@@ -163,6 +165,22 @@ export default function LiveChatChannelWorkspace({
       : orgId && (config.webhookAgentConfigId || agentConfigId)
         ? `/api/livechat/webhook/${orgId}/${config.webhookAgentConfigId || agentConfigId}`
         : ''
+
+  const persistConfig = useCallback(async (nextConfig: LiveChatConfig) => {
+    if (!agentConfigId) return false
+    try {
+      await apiClient(`/api/admin/livechat/config?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
+        method: 'PUT',
+        body: nextConfig,
+      })
+      setSyncStatus('synced')
+      setOrigConfig({ ...nextConfig })
+      return true
+    } catch {
+      setSyncStatus('error')
+      return false
+    }
+  }, [agentConfigId])
 
   const fetchConfig = useCallback(async () => {
     if (!agentConfigId) {
@@ -179,6 +197,13 @@ export default function LiveChatChannelWorkspace({
       setConfig(configResult.data.config)
       setOrigConfig(configResult.data.config)
       setGroups(groupsResult.data.groups || [])
+      setConnectionTested(
+        Boolean(
+          configResult.data.config.enabled &&
+          configResult.data.config.licenseId &&
+          configResult.data.config.botAccessToken,
+        ),
+      )
       loadedRef.current = true
       setConnectionErrorCode(null)
     } catch {
@@ -195,25 +220,21 @@ export default function LiveChatChannelWorkspace({
   useEffect(() => {
     configRef.current = config
     if (!agentConfigId || !loadedRef.current || !origConfig) return
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
     if (skipNextAutosaveRef.current) {
       skipNextAutosaveRef.current = false
       return
     }
-    if (saveTimer.current) clearTimeout(saveTimer.current)
+    if (JSON.stringify(config) === JSON.stringify(origConfig)) return
     setSyncStatus('syncing')
     saveTimer.current = setTimeout(async () => {
-      try {
-        await apiClient(`/api/admin/livechat/config?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
-          method: 'PUT',
-          body: configRef.current,
-        })
-        setSyncStatus('synced')
-        setOrigConfig({ ...configRef.current })
-      } catch {
-        setSyncStatus('error')
-      }
+      await persistConfig(configRef.current)
+      saveTimer.current = null
     }, 800)
-  }, [agentConfigId, config, origConfig])
+  }, [agentConfigId, config, origConfig, persistConfig])
 
   useEffect(() => {
     return () => {
@@ -240,8 +261,17 @@ export default function LiveChatChannelWorkspace({
       setConnectionErrorCode('network')
     } finally {
       setTestingConnection(false)
+      setLastCheckedAt(new Date().toISOString())
     }
   }
+
+  const saveNow = useCallback(async (nextConfig?: LiveChatConfig) => {
+    if (!agentConfigId) return false
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    const payload = nextConfig ?? configRef.current
+    setSyncStatus('syncing')
+    return persistConfig(payload)
+  }, [agentConfigId, persistConfig])
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -252,6 +282,7 @@ export default function LiveChatChannelWorkspace({
   const handleReset = () => {
     if (!origConfig) return
     setConfig({ ...origConfig })
+    setSyncStatus('idle')
   }
 
   const loadMomentPreset = (preset: MomentPreset) => {
@@ -267,6 +298,26 @@ export default function LiveChatChannelWorkspace({
     setMomentPreviewUrl(`/livechat-widget?${params.toString()}`)
   }
 
+  const openPreview = () => {
+    setActiveTab('rendering')
+    if (!momentPreviewUrl) loadMomentPreset(MOMENT_PRESETS[0])
+  }
+
+  const toggleEnabled = async () => {
+    const nextConfig = { ...config, enabled: !config.enabled }
+    setConfig(nextConfig)
+    await saveNow(nextConfig)
+  }
+
+  function formatLastChecked(value: string | null) {
+    if (!value) return isZh ? '尚未检查' : 'Not checked yet'
+    try {
+      return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    } catch {
+      return value
+    }
+  }
+
   if (!agentConfigId) {
     return (
       <div className="rounded-2xl border border-dashed border-black/15 bg-white/65 px-6 py-10 text-[13px] text-[var(--fog)]">
@@ -278,50 +329,79 @@ export default function LiveChatChannelWorkspace({
   if (loading) return <div className="p-8 text-[13px] text-[var(--fog)]">{t('livechat.loading')}</div>
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className="mx-auto max-w-[1180px] space-y-6">
       <div className="flex items-center gap-2">
         <button type="button" onClick={onBack} className="text-[11px] text-indigo hover:text-indigo/80">
           {t('livechat.back')}
         </button>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100">
-          <MessageCircle className="h-4 w-4 text-purple-600" />
-        </div>
-        <div>
-          <h2 className="text-[18px] font-bold text-[var(--mist)]">LiveChat</h2>
-          <p className="text-[12px] text-[var(--fog)]">{t('livechat.subtitle')}</p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div
-            className="flex items-center gap-2 rounded-full border px-3 py-1.5"
-            style={{
-              borderColor:
-                connectionState === 'connected'
-                  ? 'rgba(46,160,74,0.25)'
-                  : connectionState === 'unconfigured'
-                    ? 'rgba(0,0,0,0.08)'
-                    : 'rgba(212,145,46,0.25)',
-              background:
-                connectionState === 'connected'
-                  ? 'rgba(46,160,74,0.06)'
-                  : connectionState === 'unconfigured'
-                    ? 'rgba(0,0,0,0.02)'
-                    : 'rgba(212,145,46,0.06)',
-            }}
-          >
-            <span className={`h-2 w-2 rounded-full ${stateColor(connectionState)}`} />
-            <span className={`text-[11px] font-medium ${connectionState === 'connected' ? 'text-malachite' : connectionState === 'unconfigured' ? 'text-[var(--fog)]' : 'text-amber'}`}>
-              {connectionStateLabels[connectionState]}
-            </span>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-100">
+            <MessageCircle className="h-4 w-4 text-purple-600" />
           </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[34px] font-semibold tracking-tight text-[var(--mist)]">LiveChat</h2>
+              <div
+                className="flex items-center gap-2 rounded-full border px-3 py-1.5"
+                style={{
+                  borderColor:
+                    connectionState === 'connected'
+                      ? 'rgba(46,160,74,0.25)'
+                      : connectionState === 'unconfigured'
+                        ? 'rgba(0,0,0,0.08)'
+                        : 'rgba(212,145,46,0.25)',
+                  background:
+                    connectionState === 'connected'
+                      ? 'rgba(46,160,74,0.06)'
+                      : connectionState === 'unconfigured'
+                        ? 'rgba(0,0,0,0.02)'
+                        : 'rgba(212,145,46,0.06)',
+                }}
+              >
+                <span className={`h-2 w-2 rounded-full ${stateColor(connectionState)}`} />
+                <span className={`text-[11px] font-medium ${connectionState === 'connected' ? 'text-malachite' : connectionState === 'unconfigured' ? 'text-[var(--fog)]' : 'text-amber'}`}>
+                  {connectionStateLabels[connectionState]}
+                </span>
+              </div>
+            </div>
+            <p className="mt-1 text-[13px] text-[var(--fog)]">{t('livechat.subtitle')}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
+            onClick={openPreview}
+            className="rounded-xl border border-[var(--color-border-subtle)] bg-white px-4 py-2 text-[12px] font-semibold text-[var(--mist)] transition-colors hover:bg-black/[0.02]"
+          >
+            {isZh ? '预览' : 'Preview'}
+          </button>
+          <button
+            type="button"
+            onClick={toggleEnabled}
+            className="rounded-xl border border-[var(--color-border-subtle)] bg-white px-4 py-2 text-[12px] font-semibold text-[var(--mist)] transition-colors hover:bg-black/[0.02]"
+          >
+            {config.enabled ? (isZh ? '停用' : 'Stop') : (isZh ? '启用' : 'Enable')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void saveNow()}
+            disabled={syncStatus === 'syncing'}
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--indigo)] px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {syncStatus === 'syncing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            {t('livechat.save')}
+          </button>
+          <button
+            type="button"
             onClick={testConnection}
             disabled={testingConnection || connectionState === 'unconfigured'}
-            className="rounded-md border border-[var(--border-subtle)] px-2 py-1 text-[10px] font-medium text-[var(--fog)] transition-colors hover:bg-black/[0.03] hover:text-[var(--mist)] disabled:cursor-not-allowed disabled:opacity-30"
+            className="rounded-xl border border-[var(--color-border-subtle)] bg-white px-4 py-2 text-[12px] font-semibold text-[var(--mist)] transition-colors hover:bg-black/[0.02] disabled:cursor-not-allowed disabled:opacity-30"
           >
-            {testingConnection ? t('livechat.testing') : t('livechat.test')}
+            {testingConnection ? t('livechat.testing') : (isZh ? '刷新状态' : 'Refresh status')}
           </button>
         </div>
       </div>
@@ -335,29 +415,16 @@ export default function LiveChatChannelWorkspace({
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-black/[0.06] bg-white/50 px-4 py-3">
-        <div className="mb-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.perAgentWebhooks')}</p>
-          <p className="mt-1 text-[12px] text-[var(--fog)]">{t('livechat.perAgentWebhooksHint')}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <code className="flex-1 truncate rounded-lg border border-black/[0.04] bg-black/[0.02] px-3 py-1.5 text-[11px] text-[var(--fog)]">{webhookUrl}</code>
-          <button onClick={() => handleCopy(webhookUrl)} className="rounded-lg p-1.5 text-[var(--fog)] transition-colors hover:bg-indigo/[0.06] hover:text-indigo" title="Copy">
-            {copied ? <CheckCircle2 className="h-3.5 w-3.5 text-malachite" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-        <p className="mt-2 text-[11px] text-[var(--fog)]/75">{t('livechat.webhookRouteNotePerAgent')}</p>
-      </div>
-
       <div className="mb-2 flex gap-1 border-b border-black/[0.06]">
         {[
           { id: 'connection', label: t('livechat.tab.connection'), icon: Globe },
           { id: 'rendering', label: t('livechat.tab.rendering'), icon: Monitor },
-          { id: 'escalation', label: t('livechat.tab.escalation'), icon: UserCheck },
+          { id: 'routing', label: isZh ? '路由' : 'Routing', icon: Route },
+          { id: 'handoff', label: isZh ? '交接' : 'Handoff', icon: UserCheck },
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as 'connection' | 'rendering' | 'escalation')}
+            onClick={() => setActiveTab(tab.id as 'connection' | 'rendering' | 'routing' | 'handoff')}
             className={`-mb-[1px] flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-[12px] font-medium transition-colors ${
               activeTab === tab.id ? 'border-indigo text-indigo' : 'border-transparent text-[var(--fog)] hover:text-[var(--mist)]'
             }`}
@@ -369,100 +436,137 @@ export default function LiveChatChannelWorkspace({
       </div>
 
       {activeTab === 'connection' ? (
-        <div className="grid gap-6 md:grid-cols-[3fr_2fr]">
-          <div className="space-y-4 rounded-2xl border border-black/[0.06] bg-white/60 p-5 backdrop-blur-xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.credentials')}</p>
-            <div className="flex items-center justify-between rounded-xl border border-black/[0.06] bg-white p-4">
-              <p className="text-[13px] font-semibold text-[var(--mist)]">{t('livechat.enabled')}</p>
-              <button onClick={() => setConfig((current) => ({ ...current, enabled: !current.enabled }))} className={`relative h-6 w-10 rounded-full transition-colors ${config.enabled ? 'bg-indigo' : 'bg-black/[0.08]'}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${config.enabled ? 'left-[18px]' : 'left-0.5'}`} />
-              </button>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.licenseId')} <span className="text-vermillion">*</span></label>
-              <input type="text" value={config.licenseId} onChange={(event) => setConfig((current) => ({ ...current, licenseId: event.target.value }))} className={inputCls} placeholder="e.g. 12345678" />
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.licenseIdHint')}</p>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.botToken')} <span className="text-vermillion">*</span></label>
-              <div className="relative">
-                <input type={showToken ? 'text' : 'password'} value={config.botAccessToken} onChange={(event) => setConfig((current) => ({ ...current, botAccessToken: event.target.value }))} className={`${inputCls} pr-10`} />
-                <button onClick={() => setShowToken((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--fog)] hover:text-[var(--mist)]">
-                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        <div className="grid gap-6">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_320px]">
+            <section className={cardCls}>
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{isZh ? 'Webhook 订阅' : 'Webhook subscription'}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-xl border border-black/[0.05] bg-black/[0.02] px-3 py-3 text-[12px] text-[var(--fog)]">{webhookUrl}</code>
+                <button onClick={() => handleCopy(webhookUrl)} className="rounded-xl border border-black/[0.05] bg-white p-3 text-[var(--fog)] transition-colors hover:bg-indigo/[0.06] hover:text-indigo" title="Copy">
+                  {copied ? <CheckCircle2 className="h-4 w-4 text-malachite" /> : <Copy className="h-4 w-4" />}
                 </button>
               </div>
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.botTokenHint')}</p>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.webhookSecret')} <span className="text-vermillion">*</span></label>
-              <input type="password" value={config.webhookSecret ?? ''} onChange={(event) => setConfig((current) => ({ ...current, webhookSecret: event.target.value }))} className={inputCls} />
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.webhookSecretHint')}</p>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.region')}</label>
-              <select value={config.region ?? 'dal'} onChange={(event) => setConfig((current) => ({ ...current, region: event.target.value }))} className={inputCls}>
-                <option value="dal">dal (US — default)</option>
-                <option value="fra">fra (Europe)</option>
-              </select>
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.regionHint')}</p>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.authType')}</label>
-              <select value={config.authType ?? 'auto'} onChange={(event) => setConfig((current) => ({ ...current, authType: event.target.value }))} className={inputCls}>
-                <option value="auto">auto</option>
-                <option value="basic">basic (PAT)</option>
-                <option value="bearer">bearer (Bot)</option>
-              </select>
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.authTypeHint')}</p>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.accountId')}</label>
-              <input type="text" value={config.accountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, accountId: event.target.value }))} className={inputCls} placeholder="28e53566-..." />
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.accountIdHint')}</p>
-            </div>
-            <div>
-              <label className={labelCls}>{t('livechat.agentAccountId')}</label>
-              <input type="text" value={config.agentAccountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, agentAccountId: event.target.value }))} className={inputCls} placeholder="agent@email.com" />
-              <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.agentAccountIdHint')}</p>
-            </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[12px]">
+                <div className="inline-flex items-center gap-2 text-malachite">
+                  <span className={`h-2 w-2 rounded-full ${stateColor(connectionState)}`} />
+                  <span className="font-medium">{connectionStateLabels[connectionState]}</span>
+                </div>
+                <span className="text-[var(--fog)]">{isZh ? '按当前 Agent 版本生效' : 'Bound to the current Agent version'}</span>
+              </div>
+            </section>
+
+            <section className={cardCls}>
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{isZh ? '运行状态' : 'Run state'}</p>
+              </div>
+              <div className="grid gap-3 text-[12px]">
+                <div className="flex items-center justify-between gap-3 border-b border-black/[0.05] pb-3">
+                  <span className="text-[var(--fog)]">{isZh ? '连接状态' : 'Delivery status'}</span>
+                  <span className="font-semibold text-[var(--mist)]">{connectionStateLabels[connectionState]}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-b border-black/[0.05] pb-3">
+                  <span className="text-[var(--fog)]">{isZh ? '保存状态' : 'Save status'}</span>
+                  <span className={`font-semibold ${syncStatus === 'error' ? 'text-vermillion' : syncStatus === 'syncing' ? 'text-amber' : 'text-malachite'}`}>
+                    {syncStatus === 'error' ? t('livechat.saveFailed') : syncStatus === 'syncing' ? t('livechat.saveSaving') : t('livechat.saved')}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[var(--fog)]">{isZh ? '最近检查' : 'Last check'}</span>
+                  <span className="font-semibold text-[var(--mist)]">{formatLastChecked(lastCheckedAt)}</span>
+                </div>
+              </div>
+            </section>
           </div>
 
-          <div className="space-y-4 rounded-2xl border border-black/[0.06] bg-white/60 p-5 backdrop-blur-xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.settings')}</p>
-            <div className="flex items-center justify-between rounded-xl border border-black/[0.06] bg-white p-4">
-              <div>
-                <p className="text-[13px] font-semibold text-[var(--mist)]">{t('livechat.showSkillStatus')}</p>
-                <p className="mt-0.5 text-[10px] text-[var(--fog)]">{t('livechat.showSkillStatusHint')}</p>
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <section className={cardCls}>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.credentials')}</p>
+                <div className="flex items-center gap-2 rounded-full border border-black/[0.06] bg-black/[0.02] px-3 py-1.5">
+                  <span className="text-[11px] font-medium text-[var(--fog)]">{t('livechat.enabled')}</span>
+                  <button onClick={() => setConfig((current) => ({ ...current, enabled: !current.enabled }))} className={`relative h-5 w-9 rounded-full transition-colors ${config.enabled ? 'bg-indigo' : 'bg-black/[0.08]'}`}>
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all ${config.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+                  </button>
+                </div>
               </div>
-              <button onClick={() => setConfig((current) => ({ ...current, showSkillStatus: !current.showSkillStatus }))} className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${config.showSkillStatus ? 'bg-indigo' : 'bg-black/[0.08]'}`}>
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${config.showSkillStatus ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-              </button>
-            </div>
-            <div className="border-t border-black/[0.04] pt-2 text-[10px] text-[var(--fog)]/60">
-              <span className="text-vermillion">*</span> {t('livechat.required')}
-            </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className={labelCls}>{t('livechat.licenseId')} <span className="text-vermillion">*</span></label>
+                  <input type="text" value={config.licenseId} onChange={(event) => setConfig((current) => ({ ...current, licenseId: event.target.value }))} className={inputCls} placeholder="e.g. 12345678" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className={labelCls}>{t('livechat.botToken')} <span className="text-vermillion">*</span></label>
+                  <div className="relative">
+                    <input type={showToken ? 'text' : 'password'} value={config.botAccessToken} onChange={(event) => setConfig((current) => ({ ...current, botAccessToken: event.target.value }))} className={`${inputCls} pr-10`} />
+                    <button onClick={() => setShowToken((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--fog)] hover:text-[var(--mist)]">
+                      {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className={labelCls}>{t('livechat.webhookSecret')} <span className="text-vermillion">*</span></label>
+                  <input type="password" value={config.webhookSecret ?? ''} onChange={(event) => setConfig((current) => ({ ...current, webhookSecret: event.target.value }))} className={inputCls} />
+                </div>
+              </div>
+            </section>
+
+            <section className={cardCls}>
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{isZh ? '账户与身份' : 'Account and identity'}</p>
+              </div>
+              <div className="grid gap-4">
+                <div>
+                  <label className={labelCls}>{t('livechat.accountId')}</label>
+                  <input type="text" value={config.accountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, accountId: event.target.value }))} className={inputCls} placeholder="28e53566-..." />
+                </div>
+                <div>
+                  <label className={labelCls}>{t('livechat.agentAccountId')}</label>
+                  <input type="text" value={config.agentAccountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, agentAccountId: event.target.value }))} className={inputCls} placeholder="agent@email.com" />
+                </div>
+                <div>
+                  <label className={labelCls}>{t('livechat.region')}</label>
+                  <select value={config.region ?? 'dal'} onChange={(event) => setConfig((current) => ({ ...current, region: event.target.value }))} className={inputCls}>
+                    <option value="dal">dal (US — default)</option>
+                    <option value="fra">fra (Europe)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>{t('livechat.authType')}</label>
+                  <select value={config.authType ?? 'auto'} onChange={(event) => setConfig((current) => ({ ...current, authType: event.target.value }))} className={inputCls}>
+                    <option value="auto">auto</option>
+                    <option value="basic">basic (PAT)</option>
+                    <option value="bearer">bearer (Bot)</option>
+                  </select>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       ) : null}
 
       {activeTab === 'rendering' ? (
         <div className="space-y-6">
-          <div className="rounded-2xl border border-black/[0.06] bg-white/60 p-5 backdrop-blur-xl">
+          <div className={cardCls}>
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.skillOverrides')}</p>
-            <p className="mt-1 text-[12px] text-[var(--fog)]">{t('livechat.skillOverridesDesc')}</p>
-            <Link href="/build/components/tools" className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-indigo hover:text-indigo/80">
-              <ExternalLink className="h-3.5 w-3.5" />
-              {t('livechat.openTools')}
-            </Link>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-[12px] text-[var(--fog)]">{t('livechat.showSkillStatus')}</p>
+              <div className="flex items-center gap-2 rounded-full border border-black/[0.06] bg-black/[0.02] px-3 py-1.5">
+                <span className="text-[11px] font-medium text-[var(--fog)]">{t('livechat.showSkillStatus')}</span>
+                <button onClick={() => setConfig((current) => ({ ...current, showSkillStatus: !current.showSkillStatus }))} className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${config.showSkillStatus ? 'bg-indigo' : 'bg-black/[0.08]'}`}>
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${config.showSkillStatus ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white/60 backdrop-blur-xl">
+          <div className="overflow-hidden rounded-[26px] border border-black/[0.06] bg-white/72 shadow-[0_16px_36px_rgba(21,23,25,0.05)]">
             <div className="flex items-center justify-between border-b border-black/[0.05] px-5 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.momentPreview')}</p>
-              <span className="text-[10px] text-[var(--fog)]/60">{t('livechat.momentPreviewHint')}</span>
+              <span className="text-[10px] text-[var(--fog)]/60">{selectedMomentLabel || (isZh ? '选择预设' : 'Select a preset')}</span>
             </div>
             <div className="p-4">
-              <p className="mb-3 text-[11px] text-[var(--fog)]">{t('livechat.momentPreviewDesc')}</p>
               <div className="mb-3 flex flex-wrap gap-2">
                 {MOMENT_PRESETS.map((preset) => (
                   <button
@@ -486,10 +590,9 @@ export default function LiveChatChannelWorkspace({
         </div>
       ) : null}
 
-      {activeTab === 'escalation' ? (
-        <div className="max-w-2xl space-y-4 rounded-2xl border border-black/[0.06] bg-white/60 p-5 backdrop-blur-xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.escalationStrategy')}</p>
-          <p className="text-[12px] text-[var(--fog)]">{t('livechat.escalationDesc')}</p>
+      {activeTab === 'routing' ? (
+        <div className={`max-w-2xl space-y-4 ${cardCls}`}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{isZh ? '路由' : 'Routing'}</p>
           <div>
             <label className={labelCls}>{t('livechat.transferGroup')}</label>
             <select
@@ -504,8 +607,13 @@ export default function LiveChatChannelWorkspace({
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.transferGroupHint')}</p>
           </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'handoff' ? (
+        <div className={`max-w-2xl space-y-4 ${cardCls}`}>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.escalationStrategy')}</p>
           <div>
             <label className={labelCls}>{t('livechat.transferMessage')}</label>
             <textarea
@@ -515,7 +623,6 @@ export default function LiveChatChannelWorkspace({
               onChange={(event) => setConfig((current) => ({ ...current, transferMessage: event.target.value || undefined }))}
               placeholder={isZh ? '正在为您转接人工客服，请稍候...' : 'Transferring you to a human agent, please wait...'}
             />
-            <p className="mt-1 text-[10px] text-[var(--fog)]">{t('livechat.transferMessageHint')}</p>
           </div>
         </div>
       ) : null}
