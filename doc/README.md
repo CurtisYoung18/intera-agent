@@ -9,7 +9,7 @@
 2. [`handoffs/HARD_BUGS.md`](./handoffs/HARD_BUGS.md) — open landmines live in the tree.
 3. [`handoffs/DELIVERY_UNCERTAINTY_LOG.md`](./handoffs/DELIVERY_UNCERTAINTY_LOG.md) — open decisions, temporary defaults, and owner-review items.
 4. [`strategy/2026-06-08-long-term-architecture-review.md`](./strategy/2026-06-08-long-term-architecture-review.md) — diagnosis of why the project plateaued and the sequence out.
-5. Active specs: [`spec/2026-06-12-architecture-consolidation-modules-spec.md`](./spec/2026-06-12-architecture-consolidation-modules-spec.md), [`spec/2026-06-12-ui-refactor-spec.md`](./spec/2026-06-12-ui-refactor-spec.md).
+5. Active plans/specs: [`to-do/2026-06-12-consolidation-m1-m7-execution-plan.md`](./to-do/2026-06-12-consolidation-m1-m7-execution-plan.md), [`spec/2026-06-12-architecture-consolidation-modules-spec.md`](./spec/2026-06-12-architecture-consolidation-modules-spec.md), [`spec/2026-06-12-ui-refactor-spec.md`](./spec/2026-06-12-ui-refactor-spec.md).
 
 ## Current vocabulary
 

@@ -2,8 +2,8 @@
 
 **Status:** Owner-approved for construction dispatch (2026-06-12)
 **Spec:** [`../spec/2026-06-12-architecture-consolidation-modules-spec.md`](../spec/2026-06-12-architecture-consolidation-modules-spec.md) — contracts, remove lists, and acceptance gates live there; this plan is the lane/task breakdown.
-**Dispatch contract:** [`../archive/retired-handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md`](../archive/retired-handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md)
-**Acceptance bar:** [`../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md`](../archive/retired-handoffs/PLATFORM_DELIVERY_AUDIT_GOALS.md) applies to every lane.
+**Current execution contract:** this live plan is self-contained after docs compression. The older dispatch/audit docs in [`../archive/retired-handoffs/`](../archive/retired-handoffs/) are source history only; do not dispatch new work from archive files.
+**Acceptance bar:** every lane requires local gates plus production proof on `https://demo.anytrans.ai`; screenshots/receipts are mandatory for UI-facing CRUD/test actions, J1B matrix runs, LiveChat round trips, runtime health, and Operate metrics proof.
 
 > **For the dispatching architect:** dispatch by wave. Lanes inside a wave may run in parallel only with the owned-file declarations below. A lane prompt must (a) copy its module's task list and remove list as checkboxes, (b) expand tasks into red→green test-first steps before coding, (c) end with the lane's gates. Do not start a Wave-N lane while a blocking Wave-(N-1) lane is unmerged.
 
@@ -50,12 +50,21 @@ graph LR
 **Hard blocking rules (never violate):**
 
 1. `packages/shared/prisma/schema.prisma` is sequential: M2 (Wave 1) → M1 (Wave 2). Never two schema lanes at once.
-2. `apps/console/lib/agent/session-store.ts` and `loop.ts` chain: M2 → M1 → M3A/M4. No parallel edits to these files, including hotfixes — pause overlapping runtime hotfix work per MASTER handoff dual-worktree rules.
+2. `apps/console/lib/agent/session-store.ts` and `loop.ts` chain: M2 → M1 → M3A/M4. No parallel edits to these files, including hotfixes — pause overlapping runtime hotfix work until the active integration branch has absorbed it.
 3. M3B and M6 may run in parallel only with the exact owned-file split declared in their sections.
 4. `package.json` is M5-owned in Wave 1. If M7A needs manifest/script wiring, land it through the coordinator after M5 merges or in a dedicated follow-up, not as a second parallel owner.
 5. **Working-tree WIP gate:** `app/build/components/procedures/[name]/page.tsx` (and several docs) carry uncommitted changes as of 2026-06-12. Before Wave 2 starts, the coordinator must land or explicitly discard that WIP; CONS-M1 owns that file afterward.
 
 **J1B regression economics (owner-approved default):** the full J1B scenario matrix re-run is bundled at two points — end of Wave 2 (after M1+M2, the runtime/prompt/procedure changes) and end of Wave 4 (after the process split). Individual lanes still run the targeted scenario suites listed in their gates. If any bundled re-run fails, the failing lane reopens.
+
+---
+
+## Current Integration Status (2026-06-16)
+
+- `codex/cons-integration-m1-m7-full` stacks M1, M3A/M4, M6, M7C, and M3B on the current main baseline.
+- Local proof on that branch: focused runtime/Console seam tests, `npm run test:runtime`, `npm test`, `npm run build:console`, `npx tsc --noEmit -p apps/console/tsconfig.json`, deploy script syntax checks, and `git diff --check` pass.
+- Security proof: `next` is patched to `15.5.18`, clearing production high/critical Next audit findings; `npm audit --omit=dev` still reports a moderate advisory from Next's bundled `postcss@8.4.31`. Track the owner decision in [`../handoffs/DELIVERY_UNCERTAINTY_LOG.md`](../handoffs/DELIVERY_UNCERTAINTY_LOG.md).
+- Not accepted yet: production deploy, authenticated production screenshots/receipts, runtime dual-process proof, LiveChat runtime round trip, Operate metrics proof, and the bundled J1B matrix PASS remain required before this consolidation can be called complete.
 
 ---
 
@@ -245,6 +254,6 @@ typecheck · keyless tests · clean build · migration verified on snapshot · p
 
 - Two-phase verification: local gate first, production proof on `https://demo.anytrans.ai` second. Receipts under `.artifacts/delivery-audit/<date>/<lane>/`.
 - Uncertain points and default decisions go to [`DELIVERY_UNCERTAINTY_LOG.md`](../handoffs/DELIVERY_UNCERTAINTY_LOG.md) as discovered.
-- Update the MASTER handoff active-lanes table on lane start and lane completion; one file = one lane.
+- Record lane/integration status in this live plan or [`DELIVERY_UNCERTAINTY_LOG.md`](../handoffs/DELIVERY_UNCERTAINTY_LOG.md); archived handoff tables are historical evidence only.
 - The freeze list (spec §9) is binding: no marketplace, no new Hook checkpoints, no workflow canvas, no new Pilot persistence models, no ConfigPilot expansion, no multi-instance work.
 - Every lane executes its module's remove list **in the same lane** — deletion is not follow-up work.
