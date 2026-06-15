@@ -69,4 +69,26 @@ describe('MessageContent', () => {
     expect(img).toBeTruthy()
     expect(img?.getAttribute('src')).toBe('data:image/png;base64,abc123')
   })
+
+  it('does not render image preview page URLs as markdown images', () => {
+    const { container } = render(createElement(MessageContent, {
+      content: '![receipt](https://postimg.cc/f3F850f9)',
+    }))
+
+    expect(container.querySelector('img')).toBeNull()
+    const link = container.querySelector('a')
+    expect(link).toBeTruthy()
+    expect(link?.getAttribute('href')).toBe('https://postimg.cc/f3F850f9')
+    expect(link?.textContent).toBe('receipt')
+  })
+
+  it('still renders direct image URLs as markdown images', () => {
+    const { container } = render(createElement(MessageContent, {
+      content: '![receipt](https://i.postimg.cc/example/receipt.jpg)',
+    }))
+
+    const img = container.querySelector('img')
+    expect(img).toBeTruthy()
+    expect(img?.getAttribute('src')).toBe('https://i.postimg.cc/example/receipt.jpg')
+  })
 })
