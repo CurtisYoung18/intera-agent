@@ -224,10 +224,11 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     description:
       'Create a human task for manual confirmation or processing. ' +
       'Call this when a human must take over — do not only say you will transfer. ' +
-      'This will pause the agent loop until a human responds. ' +
+      'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
+      'even if the outer case or chat remains waiting_human for operator work. ' +
       'It creates the durable handoff record and triggers channel-specific handoff UI/transfer behavior. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
-      'their answers come back as structured runtime input for the next Procedure step.',
+      'their answers come back as structured runtime input for follow-up operator handling or later customer work, not to resume the finalized handoff Procedure.',
     inputSchema: {
       type: 'object',
       properties: {

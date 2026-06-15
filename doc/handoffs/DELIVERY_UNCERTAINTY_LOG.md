@@ -39,18 +39,57 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-12 - Wave 2 Procedure Editor WIP Gate Rechecked Before CONS-M1
+
+- Area: Consolidation coordinator / Wave 2 gating / procedure editor
+- Status: fixed
+- Severity: P1
+- Uncertainty: The consolidation contract required the coordinator to land or explicitly discard the historical uncommitted WIP on `apps/console/app/build/components/procedures/[name]/page.tsx` before starting `CONS-M1`, because that file becomes M1-owned in Wave 2.
+- Default action taken: Re-checked the current integration checkout before Wave 2 dispatch. `apps/console/app/build/components/procedures/[name]/page.tsx` is clean in the coordinator worktree, with no remaining uncommitted product-code WIP on that file. The only residual dirty state in this checkout is unrelated receipt drift under `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/`.
+- Why this default: Wave 2 must not start on top of ambiguous local edits to the Procedure editor. A clean file is sufficient proof that the earlier WIP gate is no longer blocking this checkout.
+- Evidence: `git status --short 'apps/console/app/build/components/procedures/[name]/page.tsx' doc`; current file readback from `apps/console/app/build/components/procedures/[name]/page.tsx`; `doc/handoffs/CODEX_GOAL_CONSOLIDATION_M1_M7.md`
+- Production URL / screenshot / receipt: Not applicable; coordinator gating decision only.
+- Owner decision needed: None for this checkout. `CONS-M1` may claim this file under the Wave 2 owned-file list.
+- Follow-up owner: none
+
+### 2026-06-12 - CONS-M2 Production Resume Preserved ProcedureRun But Case Truth Drifted
+
+- Area: Consolidation M2 / production resume / case truth
+- Status: fixed
+- Severity: P1
+- Uncertainty: Historical only. The first production durability proof preserved the same `ProcedureRun` across restart, but the top-level `Case` row still drifted to `created` / `general` after `resumeTrigger`.
+- Default action taken: Landed hotfix deploys `305c5731` and `850228c8` to align durable `Case` truth both when `start_procedure` begins and when a paused human handoff resumes through `human_task_result`. Re-ran the full production chain on a fresh case after deploy.
+- Why this default: Resume truth is part of the customer-visible case state and operator metrics. Leaving `ProcedureRun` correct while the top-level `Case` lies would keep Operate, exports, and follow-up routing misleading.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/case-after-step2.json`; `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/case-after-resume.json`; `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/db-after-resume.json`; `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/step3-resume.sse`; `.artifacts/delivery-audit/2026-06-12/cons-m2/receipt.md`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/operate/conversations/cases/m2truth2_20260612T175502`; proof directory `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/`
+- Owner decision needed: None for the drift itself. This specific P1 is closed.
+- Follow-up owner: none
+
 ### 2026-06-12 - CONS-M2 Production Restart Receipt Still Pending After Local Migration Proof
 
 - Area: Consolidation M2 / ProcedureRun durability / migration verification
-- Status: open
+- Status: fixed
 - Severity: P0
-- Uncertainty: CONS-M2's local durability and migration proof is now complete, but the required production restart/resume receipt on `https://demo.anytrans.ai` still has not been executed from this lane.
-- Default action taken: Started the existing local Homebrew Postgres 16 cluster on port `5434`, created the expected `intera` role/database, reran `prisma migrate deploy` against `postgresql://intera:intera@localhost:5434/intera`, and confirmed the new `202606120001_add_procedure_run` migration applied cleanly. The lane's remaining blocker is now only the production `intera-console.service` restart/resume proof.
-- Why this default: The local proof can and should be completed automatically once safe local Postgres exists, but the lane still must not claim production durability proof without the actual mid-run restart/resume evidence on `demo.anytrans.ai`.
-- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m2/receipt.md`; local command output from `pg_ctl ... -o "-p 5434" start`, role/database creation on `localhost:5434`, and successful `npx prisma migrate deploy --schema=packages/shared/prisma/schema.prisma`; rework tests in `apps/console/lib/agent/__tests__/unit/procedure-run-durability.test.ts`.
-- Production URL / screenshot / receipt: Pending. Required target remains `https://demo.anytrans.ai` with `intera-console.service` restarted mid-run and ProcedureRun timeline continuity captured.
-- Owner decision needed: Provide the production restart/testing path for the second-phase receipt, or surface the SSH credential in the active secure session so the architect can execute the restart proof directly.
-- Follow-up owner: delivery lead / infrastructure owner
+- Uncertainty: Historical only. The lane previously lacked the required production restart/resume receipt.
+- Default action taken: Deployed `91196386` to `deploy/main`, verified migration `202606120001_add_procedure_run` on the host, created a fresh post-deploy production case, drove it to a real `waiting_human` pause, verified the paused `ProcedureRun` row existed in production DB, restarted `intera-console` again mid-run, resolved the same human task, and resumed via `/api/messages` `resumeTrigger`. This receipt remains valuable as historical M2 durability proof, but the owner later replaced the terminal contract: as of 2026-06-15, successful human handoff finalizes the Procedure instead of leaving it paused/resumable.
+- Why this default: The commercial acceptance contract requires the proof on `https://demo.anytrans.ai`, not only local tests or synthetic memory seams.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m2/receipt.md`; `.artifacts/delivery-audit/2026-06-12/cons-m2/production-proof/production-health-after-restart.json`; `.artifacts/delivery-audit/2026-06-12/cons-m2/production-proof/production-case-after-resume.json`; `.artifacts/delivery-audit/2026-06-12/cons-m2/production-proof/production-procedure-run-after-resume.txt`; `.artifacts/delivery-audit/2026-06-12/cons-m2/production-proof/m2proof2-step1-20260612T091036.sse`; `.artifacts/delivery-audit/2026-06-12/cons-m2/production-proof/m2proof2-step2-20260612T091036.sse`; `.artifacts/delivery-audit/2026-06-12/cons-m2/production-proof/m2proof2-step3-resume-20260612T091036.sse`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai`; case detail proof at `https://demo.anytrans.ai/operate/conversations/cases/cmqaphvd60000qjb7rpqlk2ws`; screenshots under `.artifacts/delivery-audit/2026-06-12/cons-m2/screenshots/`
+- Owner decision needed: None for the production durability receipt itself.
+- Follow-up owner: none
+
+### 2026-06-12 - Wave 2 CONS-M1 Was Initially Started On A Stale Wave-1 Branch Base
+
+- Area: Consolidation coordinator / Wave 2 dispatch baseline
+- Status: fixed
+- Severity: P1
+- Uncertainty: The first `CONS-M1` dispatch accidentally started from `codex/cons-wave1-wip` at `47017d9a`, which did not contain the later `main` baseline including `CONS-M2` closure and downstream mainline fixes. Continuing M1 there would have built on a stale Wave 1 base.
+- Default action taken: Stopped the stale-base worker before any M1-owned code edits landed, verified the worktree had no M1 code modifications, moved the coordinator checkout to a fresh `main`-derived branch (`codex/cons-m1-main-base`), synchronized the finalized `CONS-M2` production evidence into the current checkout, and prepared to respawn `CONS-M1` from the corrected baseline.
+- Why this default: M1 is a Wave 2 sequential runtime/schema lane. Running it on a stale pre-closure Wave 1 branch would create false review noise and risk replaying work against the wrong runtime truth.
+- Evidence: `git log --oneline --decorate --graph --left-right --cherry-pick --boundary 47017d9a...main`; `git status --short`; `git switch -c codex/cons-m1-main-base main`; coordinator thread record showing worker `019ebb54-7407-7552-8d29-335a97889ed2` shut down before owned-file edits landed
+- Production URL / screenshot / receipt: Not applicable; coordinator dispatch correction only.
+- Owner decision needed: None. Respawn `CONS-M1` only from the `main`-derived baseline.
+- Follow-up owner: coordinator
 
 ### 2026-06-12 - CONS-M5 Raw-Access Guard Uses Reviewed Allowlist For Out-Of-Lane Admin Routes
 
@@ -101,7 +140,7 @@ Use this format for each new item:
 - Why this default: It closes the code-side P0/P1 blockers for merge-candidate review without pretending that injected proof equals live provider proof or that an unauthenticated/auth-gate screenshot equals a verified editor smoke pass.
 - Evidence: `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/baseline-audit.md`; `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/summary.md`; `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/procedure-v2-runtime-receipt.json`; `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/procedure-v2-runtime-receipt.md`
 - Production URL / screenshot / receipt: No production deploy was performed. Runtime proof lives at `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/procedure-v2-runtime-receipt.json`. The Fin reference image is archived at `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/reference-fin-procedure-ui.png`. Strongest actual local browser evidence remains the auth/degraded gate screenshot `.artifacts/delivery-audit/2026-06-12/procedure-v2-worktree/screenshots/procedure-route-auth-gate.png`, which is explicitly not authenticated editor proof.
-- Owner decision needed: Confirm whether injected runtime-proof receipts are sufficient before a separate live-provider proof lane. Confirm the production `llm_eval` provider/model/timeout/failure policy. Confirm whether `no_progress_loop` should stay at the current default threshold of `3` customer messages without progress. Confirm whether existing saved v1 procedures should remain lazy-compatible or get a later explicit migration plan. Confirm whether `paused + reason=waiting_human` should remain the persisted handoff terminal state until a future dedicated status type exists. Confirm whether Delivery Agent 1 may merge/cherry-pick before authenticated local editor screenshots are available, or whether a dedicated local env/smoke lane must land first.
+- Owner decision needed: Confirm whether injected runtime-proof receipts are sufficient before a separate live-provider proof lane. Confirm the production `llm_eval` provider/model/timeout/failure policy. Confirm whether `no_progress_loop` should stay at the current default threshold of `3` customer messages without progress. Confirm whether existing saved v1 procedures should remain lazy-compatible or get a later explicit migration plan. Resolved on 2026-06-15: successful human handoff on any channel finalizes the Procedure, so `paused + reason=waiting_human` is no longer the desired terminal contract. Confirm whether Delivery Agent 1 may merge/cherry-pick before authenticated local editor screenshots are available, or whether a dedicated local env/smoke lane must land first.
 - Follow-up owner: founder / architect / delivery lead
 
 ### 2026-06-12 - Provider Transcript Persistence Defaults
@@ -419,3 +458,94 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/release` remained healthy and accepted immediately after the warning. Lane proof is recorded in `.artifacts/delivery-audit/2026-06-12/cons-r1a/`.
 - Owner decision needed: Decide whether to open a dedicated deploy/standalone tracing repair lane, or leave this as monitor-only unless the warning becomes user-visible or blocks a future deploy.
 - Follow-up owner: architect / release lane owner
+
+### 2026-06-15 - CONS-M1 Local Migration Dry-Run Needed Explicit Safe DSN, Not Ambient Env
+
+- Area: CONS-M1 / Procedure migration verification
+- Status: fixed
+- Severity: P2
+- Uncertainty: This checkout has no checked-in local env files (`.env.local`, `packages/shared/.env`, `apps/console/.env.local`, `apps/console/.env.test.local`), and an earlier turn risked overstating that as a hard `DATABASE_URL` blocker for the Procedure v1→v2 migration dry-run.
+- Default action taken: Re-ran the migration script with an explicit safe local DSN instead of ambient shell config: `DATABASE_URL='postgresql://intera:intera@localhost:5434/intera' node scripts/migrate-procedures-v1-to-v2.mjs --dry-run`. The command passed and refreshed the lane artifact.
+- Why this default: It converts an environment-assumption blocker into auditable proof while still respecting the repo rule that DB-touching verification must target the safe local Postgres listener on `localhost:5434`, not any production tunnel.
+- Evidence: `docker-compose.yml`; `.artifacts/delivery-audit/2026-06-12/cons-m1/migration-dry-run.json`; `.artifacts/delivery-audit/2026-06-12/cons-m1/progress-summary.md`
+- Production URL / screenshot / receipt: Not applicable. This closes a local verification ambiguity only; the remaining M1 blockers are still snapshot-proof, bundled J1B rerun, and one production v2 Procedure receipt on `https://demo.anytrans.ai`.
+- Owner decision needed: None. Future DB-touching M1 verification in this checkout should continue using an explicit safe local DSN unless a controlled env harness is added.
+- Follow-up owner: CONS-M1 lane owner / architect
+
+### 2026-06-15 - CONS-M1 Still Carries `procedureDefinition*` Naming Aliases In Contract/Editor Surfaces
+
+- Area: CONS-M1 / Procedure contract naming cleanup
+- Status: fixed
+- Severity: P3
+- Uncertainty: After the v2-only runtime cleanup, the shared contract/editor/import surfaces still used `procedureDefinitionSchema`, `ProcedureDefinitionContract`, `parseProcedureDefinition`, `simulateProcedureDefinition`, and `ProcedureDefinition` naming even though they no longer represented a separate definition/compatibility layer.
+- Default action taken: Removed the active-code naming aliases and renamed the public helpers/call sites to canonical Procedure names (`parseProcedure`, `simulateProcedure`, `ProcedureV2`, `procedureV2Schema`, `buildProcedurePrompt`, `toProcedure`, `buildNewProcedure`).
+- Why this default: With the v1 dual track already removed, continuing to ship the old alias vocabulary would have left a false second center in the public/runtime/editor mental model for no product value.
+- Evidence: `packages/shared/contracts/procedures.ts`; `packages/shared/contracts/case-types.ts`; `packages/shared/contracts/agent-template.ts`; `packages/shared/types/index.ts`; `apps/console/app/build/components/procedures/**`; `apps/console/lib/agent/procedure-executor.ts`; `apps/console/lib/agent/session-store.ts`
+- Production URL / screenshot / receipt: Not applicable. This closes a naming-consistency cleanup inside the active code path; external M1 blockers are still prod-snapshot migration proof, bundled J1B rerun, and one production v2 Procedure receipt on `https://demo.anytrans.ai`.
+- Owner decision needed: None. If any downstream package still wants the older label in docs, that is now an archive/docs-only decision, not an active-code compatibility requirement.
+- Follow-up owner: none
+
+### 2026-06-15 - CONS-M1 Safe Local Postgres Still Had One Legacy Stored Procedure, And The Real Apply Path Migrated It Cleanly
+
+- Area: CONS-M1 / Procedure migration data-plane proof
+- Status: fixed
+- Severity: P2
+- Uncertainty: The earlier M1 note only proved a dry-run on the safe local DSN. It did not yet prove that the checked-in migration script could mutate a real stored Procedure row and leave it re-readable as v2.
+- Default action taken: Queried the safe local Postgres copy on `localhost:5434`, captured the stored CaseType procedure row before apply, ran the migration script for real, captured the row again after apply, and then reran the dry-run to confirm idempotence.
+- Why this default: It upgrades the local proof from "script would migrate one row" to "script did migrate one real stored row and the persisted result re-parsed as v2," while still staying on the owner-approved safe local DSN rather than any production tunnel or snapshot.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m1/local-db-procedure-before.json`; `.artifacts/delivery-audit/2026-06-12/cons-m1/migration-apply-local.json`; `.artifacts/delivery-audit/2026-06-12/cons-m1/local-db-procedure-after.json`; `.artifacts/delivery-audit/2026-06-12/cons-m1/migration-dry-run-after-apply.json`
+- Production URL / screenshot / receipt: Not applicable. This closes a local data-plane gap only. The remaining M1 blockers are still the prod-snapshot migration proof, the bundled J1B matrix rerun, and one production v2 Procedure receipt on `https://demo.anytrans.ai`.
+- Owner decision needed: None. The next escalation point is not local mutation correctness anymore; it is whether a production-snapshot copy can be staged for the required snapshot-level verification.
+- Follow-up owner: CONS-M1 lane owner / architect
+
+### 2026-06-15 - CONS-M1 Runtime-v1 Migration Was Over-Promoting `create_human_task` From `allowedTools` Into Hard Actions
+
+- Area: CONS-M1 / Procedure migration semantics
+- Status: fixed
+- Severity: P1
+- Uncertainty: The intermediate `version: 1` runtime shape uses `allowedTools` as the tool capability set for a step. The first migration pass treated every listed tool as a top-level v2 action, which incorrectly turned `create_human_task` into an unconditional `request_human_handoff` action on investigative/finalization steps even when it was only a safe fallback capability.
+- Default action taken: Tightened `scripts/migrate-procedures-v1-to-v2.mjs` so ordinary tools still map into primary actions, but `create_human_task` now migrates into a conditional `llm_eval` handoff branch (or a direct action only when it was the only actionable tool in the step). Then restored the safe local `deposit_issue` row back to its embedded `legacy.procedureV1`, reran the migration for real, and refreshed the apply artifacts.
+- Why this default: It preserves the original semantics of runtime-v1 `allowedTools` as "available tools for this step" instead of silently rewriting the playbook into "every listed tool is a primary required action," which would have made migrated procedures more escalation-heavy than the source runtime intended.
+- Evidence: `scripts/migrate-procedures-v1-to-v2.mjs`; `scripts/migrate-procedures-v1-to-v2.test.ts`; `.artifacts/delivery-audit/2026-06-12/cons-m1/local-db-procedure-after.json`
+- Production URL / screenshot / receipt: Not applicable. This is a local migration-correctness fix; the remaining M1 acceptance blockers are still prod-snapshot migration proof, bundled J1B rerun, and one production v2 Procedure receipt on `https://demo.anytrans.ai`.
+- Owner decision needed: None. The migration default is now the stricter and safer interpretation unless owner review later prefers a more explicit generated branch prompt vocabulary.
+- Follow-up owner: CONS-M1 lane owner / architect
+
+### 2026-06-15 - CONS-M1 Production Probe Shows V2 Editor Live But Repeats Already-Submitted Deposit Facts
+
+- Area: CONS-M1 / production Procedure proof / fact carry-forward
+- Status: fixed
+- Severity: P0
+- Uncertainty: The first authenticated production probe on `https://demo.anytrans.ai` proved that `/build/components/procedures/deposit_not_credited` was already rendering the live v2 editor surface (`Procedure v2 编排`, `6` steps, `2` branches), and `/build/pilot-lab?tab=playground` in `Runtime` mode did start `deposit_not_credited`. However, that initial run did not carry structured form inputs forward reliably: after submitting `member_id = JAYA113C88F`, the assistant later asked for `会员ID` again; after additional `amount`, `payment_channel`, and `transfer_time` submissions, the run still returned to asking for `会员ID` and `存款时间` instead of progressing to the evidence/tool step.
+- Default action taken: Treated the first probe as a real production blocker rather than "missing proof". Captured the live editor screenshot plus looping-runtime receipts under `.artifacts/delivery-audit/2026-06-15/cons-m1-production-probe/`, landed the structured `formResult` submit/run hotfix, and traced the deeper continuity bug: after `start_procedure`, Playground was still restoring sessions via `chatId + type='playground'`, so once the runtime rewrote `Case.type` to `deposit_not_credited` every follow-up turn silently minted a fresh backend case while the UI kept posting the stale `chatId`. The fix now keys Playground continuity on `chatId + orgId + userId`, updates session list/detail/delete routes to the same contract, and lets the frontend accept a newly minted `session_init.chatId` when the backend rotates it. After deploy, reran production twice: a direct partial-form API replay still shows that `/api/admin/playground/run` will accept incomplete `formResult` payloads without UI required-field enforcement, but the UI-faithful rerun using the actual 4-field required form advanced beyond collection, executed `get_latest_deposit` + `get_transaction_history`, and restored cleanly in the Pilot Lab UI.
+- Why this default: It preserves the honest failure evidence from the first probe, closes the real customer-visible continuity blocker with a realistic production rerun, and records the remaining partial-form behavior as a narrower robustness note instead of overstating it as an active production loop.
+- Evidence: historical fail: `.artifacts/delivery-audit/2026-06-15/cons-m1-production-probe/summary.md`, `.artifacts/delivery-audit/2026-06-15/cons-m1-production-probe/production-procedure-v2-editor-deposit_not_credited.png`, `.artifacts/delivery-audit/2026-06-15/cons-m1-production-probe/pilot-lab-deposit-probe-duplicate-ask.png`, `.artifacts/delivery-audit/2026-06-15/cons-m1-production-probe/pilot-lab-deposit-probe-looping-collect-step.png`; local hotfix proof: `.artifacts/delivery-audit/2026-06-15/cons-m1-playground-formresult-hotfix-local/summary.md`; passing production rerun: `.artifacts/delivery-audit/2026-06-15/cons-m1-production-rerun-full-form/summary.json`, `.artifacts/delivery-audit/2026-06-15/cons-m1-production-rerun-full-form/summary.md`, `.artifacts/delivery-audit/2026-06-15/cons-m1-production-rerun-full-form/after.png`
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/components/procedures/deposit_not_credited` showed the live v2 editor; `https://demo.anytrans.ai/build/pilot-lab?tab=playground` first reproduced the looping `collect_deposit_details` bug, and after deploy the same surface restored a passing runtime-backed rerun where the required 4-field form was submitted once, the run advanced into `get_latest_deposit` / `get_transaction_history`, and the restored UI showed the resolved account evidence instead of re-asking for facts.
+- Owner decision needed: None for the continuity blocker itself. Remaining M1 blockers are now the prod-snapshot migration proof and the bundled Wave-2 J1B rerun. If product wants stricter server-side enforcement on incomplete `formResult` payloads, open that as a follow-up hardening item rather than reopening this resolved production continuity bug.
+- Follow-up owner: CONS-M1 / runtime lane owner / architect
+
+### 2026-06-15 - Scenario Receipts Were Collapsing Case `waiting_human` And Procedure Terminal Truth Into One `finalStatus`
+
+- Area: Scenario Lab / Pilot receipts / Procedure acceptance semantics
+- Status: fixed
+- Severity: P2
+- Uncertainty: After the 2026-06-15 owner decision ("successful human handoff on any channel finalizes the Procedure"), Scenario receipts still exposed only a single top-level `finalStatus`. In handoff cases that field continued to read `waiting_human`, which is still correct for the outer case/chat layer, but it no longer proved the Procedure terminal contract. That made runtime receipts easy to misread as "Procedure paused for human review" even when `ProcedureRun.status=completed`.
+- Default action taken: Kept `finalStatus` as the outer case/chat status, then added explicit `procedureStatus` and `procedureOutcome` fields to the Scenario contract, runtime evidence builder, Pilot authoring surface, and receipt panel. Runtime receipts now surface both truths simultaneously: e.g. `finalStatus=waiting_human` together with `procedureStatus=completed` and `procedureOutcome=handed_off`.
+- Why this default: Renaming or overloading `finalStatus` would have broken existing receipt meaning and made historical comparisons harder. Adding explicit Procedure terminal fields preserves backward compatibility while making the owner-approved handoff contract directly auditable.
+- Evidence: `packages/shared/contracts/scenarios.ts`; `apps/console/lib/scenarios/runner.ts`; `apps/console/lib/scenarios/runtime-runner.ts`; `apps/console/components/scenario-receipts/scenario-receipt-panel.tsx`; `apps/console/app/build/pilot-lab/page.tsx`; focused tests across `foundation-reset-contract`, `scenario-runner`, `runtime-runner`, `procedure-v2-runtime-artifact`, `admin/scenarios`, `admin/pilot gate A`, and `pilot-lab/page`.
+- Production URL / screenshot / receipt: Not applicable yet. This is a local receipt-contract clarification that will make the next production v2 Procedure receipt on `https://demo.anytrans.ai` materially clearer and harder to misread.
+- Owner decision needed: None for the contract split itself. If product later wants a UI label change from "Final status" to "Case status", that is copy polish, not a semantic blocker.
+- Follow-up owner: CONS-M1 / Pilot receipt surfaces / architect
+
+### 2026-06-15 - Production Scenario Authoring Still Drops `procedureStatus` And `procedureOutcome` Expectations
+
+- Area: CONS-M1 / production Scenario authoring / handoff acceptance semantics
+- Status: open
+- Severity: P1
+- Uncertainty: After the 2026-06-15 owner decision ("successful human handoff on any channel finalizes the Procedure"), the production Scenario update flow on `https://demo.anytrans.ai` still did not persist the new expectation fields `procedureStatus` and `procedureOutcome` during a live patch of J1B handoff scenarios. The same update did keep `humanTransfer=true` and `finalStatus=waiting_human`, so the authoring surface is still missing part of the stricter terminal-contract shape even though runtime receipts can already expose Procedure terminal truth.
+- Default action taken: Updated the local tool/prompt/docs contract to the new handoff-finalizes rule, re-patched the production J1B Scenario set, and recorded the live readback showing that handoff scenarios still round-trip only `humanTransfer` plus `finalStatus`. For current reruns, treat runtime receipt evidence (`procedureRuns`, `procedureStatus`, `procedureOutcome`) as the source of truth for Procedure terminal validation instead of relying on production Scenario config round-trip alone.
+- Why this default: It keeps the acceptance run moving without falsely claiming that the production authoring surface can yet encode the full handoff terminal contract. The runtime evidence remains the stronger truth source for M1 until the updated Scenario contract/UI is actually deployed.
+- Evidence: `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle/scenario-patch-summary.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle/duplicate_deposit_basic-patched.json`; `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle/human_support_requested_basic-patched.json`; `packages/shared/contracts/scenarios.ts`; `apps/console/lib/scenarios/runner.ts`
+- Production URL / screenshot / receipt: Production Scenario patch flow used the authenticated admin route on `https://demo.anytrans.ai/build/pilot-lab`; the readback stored under `.artifacts/delivery-audit/2026-06-15/cons-m1-wave2-j1b-bundle/scenario-patch-summary.json` shows `finalStatus=waiting_human` persisted but no `procedureStatus` / `procedureOutcome` keys returned.
+- Owner decision needed: Confirm whether M1 must deploy the updated Scenario contract/UI before final J1B bundle sign-off, or whether owner-reviewed runtime receipts are sufficient for this one acceptance wave while the authoring surface catches up.
+- Follow-up owner: CONS-M1 lane owner / architect / delivery lead

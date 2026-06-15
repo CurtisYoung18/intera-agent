@@ -19,7 +19,9 @@ export const createHumanTaskTool: Tool<Input, Output> = {
 
   async prompt(_ctx: ToolContext) {
     return 'Create a human task for manual confirmation or processing. ' +
-      'This will pause the agent loop until a human responds. ' +
+      'Call this when a human must take over; do not only promise a transfer in plain text. ' +
+      'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
+      'even if the outer case or chat remains waiting_human for operator work. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
       'their answers return as structured runtime input when they resolve the task.'
   },

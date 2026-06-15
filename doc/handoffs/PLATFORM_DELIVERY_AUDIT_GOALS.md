@@ -184,6 +184,14 @@ Production acceptance minimum for every user-facing implementation/fix:
 - production persistence or runtime evidence proves the data did not only live in local component state
 - any adjacent production issue discovered during the workflow is fixed, retested, or explicitly owner-deferred
 
+Human-handoff acceptance rule:
+
+- if any channel successfully creates a persisted human handoff, that Procedure is finalized
+- the receipt must prove both layers of truth separately:
+  - case/chat status may remain `waiting_human`
+  - Procedure truth must show terminal evidence such as `procedureStatus=completed` and `procedureOutcome=handed_off`
+- do not accept a handoff receipt that proves only `waiting_human` without proving the Procedure terminal state
+
 ---
 
 ## 5. Phase 0 - Audit Harness And Baseline
