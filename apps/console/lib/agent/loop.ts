@@ -63,6 +63,7 @@ import {
 } from '@intera/runtime-core/provider-tool-turn'
 import { StopHookHandler } from './stop-hook-handler'
 import { HumanTaskHandoffHandler, type PendingHumanTaskEscalation } from './human-task-handoff-handler'
+import { buildHookHitCounts, TurnPreflight } from './turn-preflight'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -152,6 +153,7 @@ export class AgentLoop {
   private memoryLifecycle: RuntimeMemoryLifecycle
   private stopHookHandler: StopHookHandler
   private humanTaskHandoffHandler: HumanTaskHandoffHandler
+  private turnPreflight: TurnPreflight
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -204,6 +206,16 @@ export class AgentLoop {
       traceWriter: this.traceWriter,
       getMessages: () => this.messages,
       addMessage: (message) => this.messages.push(message),
+    })
+    this.turnPreflight = new TurnPreflight({
+      caseId: deps.caseId,
+      chatMemory: this.chatMemory,
+      traceWriter: this.traceWriter,
+      getHookEngine: () => this.hookEngine,
+      getMessages: () => this.messages,
+      addMessage: (message) => this.messages.push(message),
+      getCurrentStage: () => this.currentStage,
+      getIterationCount: () => this.iterationCount,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -312,67 +324,9 @@ export class AgentLoop {
       this.iterationCount++
       this.profiler.incrementIteration()
 
-      // ── Consume queued messages from concurrent requests ──────
-      try {
-        const { hasSession, getOrCreateSession } = await import('./session-store')
-        if (this.deps.caseId && hasSession(this.deps.caseId)) {
-          const session = getOrCreateSession(this.deps.caseId)
-          let pending
-          while ((pending = session.queue.dequeueNonBlocking())) {
-            if (pending.content === '__SESSION_CLOSED__') continue
-            const hasImages = pending.contentBlocks?.some((b: any) => b.type === 'image')
-            this.messages.push({
-              id: crypto.randomUUID(),
-              role: 'user' as const,
-              content: hasImages ? pending.content : `[SYSTEM] Runtime input event (${pending.source}, epoch ${pending.inputEpoch}) arrived while you were working. Do not classify the customer's intent. Reconcile the latest inputEpoch before advancing any active ProcedureRun. Content: ${pending.content}`,
-              contentBlocks: pending.contentBlocks,
-              createdAt: new Date(),
-            })
-            sendEvent({
-              type: 'withheld',
-              data: 'Processing additional user input...',
-              timestamp: new Date().toISOString(),
-            })
-          }
-        }
-      } catch { /* session-store unavailable (e.g. build-time), skip */ }
-
-      // ── Graduated Hook escalation check ─────────────────────
-      // If any Hook has been hit 3+ times in this session, escalate.
-      const buildHitCounts = (): Map<string, number> => {
-        const m = new Map<string, number>()
-        for (const name of this.hookEngine.getHookNames()) {
-          const c = this.chatMemory.getHookHitCount(name)
-          if (c > 0) m.set(name, c)
-        }
-        return m
-      }
-      {
-        const hitCounts = buildHitCounts()
-        let maxHookHits = 0
-        for (const count of hitCounts.values()) {
-          if (count > maxHookHits) maxHookHits = count
-        }
-        if (maxHookHits >= 3) {
-          await this.traceWriter.write('loop_decision', 'Exit: max Hook hits', {
-            hookEscalation: true,
-            maxHookHits,
-            iteration: this.iterationCount,
-          })
-          sendEvent({
-            type: 'error',
-            data: `Agent repeatedly hit Hooks (${maxHookHits} hits) - needs human intervention`,
-            timestamp: new Date().toISOString(),
-          })
-          return {
-            messages: this.messages,
-            caseStatus: 'escalated',
-            transition: 'error',
-            currentStage: this.currentStage,
-            reason: 'max_hook_hits',
-          }
-        }
-      }
+      const preflight = await this.turnPreflight.run(sendEvent)
+      if (preflight.kind === 'terminal') return preflight.result
+      const buildHitCounts = () => buildHookHitCounts(this.hookEngine, this.chatMemory)
 
       // ── isCaseActive for this iteration ─────────────────────────────────
       const isCaseActive = this.caseLoop?.isStageActive() ?? false
