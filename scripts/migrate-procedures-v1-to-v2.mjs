@@ -73,6 +73,50 @@ function uniqueStrings(values) {
   return [...new Set(values.map((value) => asNonEmptyString(value)).filter(Boolean))]
 }
 
+function fieldKeyFromRecord(value) {
+  if (!isRecord(value)) return ''
+  return asNonEmptyString(value.key)
+    || asNonEmptyString(value.id)
+    || asNonEmptyString(value.name)
+    || asNonEmptyString(value.field)
+}
+
+function extractFieldKeys(value) {
+  if (Array.isArray(value)) {
+    return uniqueStrings(value.flatMap((entry) => {
+      if (typeof entry === 'string') return splitFields(entry, '')
+      if (isRecord(entry)) return [fieldKeyFromRecord(entry)]
+      return []
+    }))
+  }
+  if (typeof value === 'string') return splitFields(value, '')
+  if (!isRecord(value)) return []
+  if (isRecord(value.properties)) {
+    return uniqueStrings(Object.keys(value.properties))
+  }
+  return uniqueStrings([
+    fieldKeyFromRecord(value),
+    ...extractFieldKeys(value.fields),
+    ...extractFieldKeys(value.formFields),
+    ...extractFieldKeys(value.questions),
+  ])
+}
+
+function collectAskStepFields(step) {
+  if (!isRecord(step)) return []
+  return uniqueStrings([
+    ...extractFieldKeys(step.fields),
+    ...extractFieldKeys(step.formFields),
+    ...extractFieldKeys(step.askFields),
+    ...extractFieldKeys(step.questions),
+    ...extractFieldKeys(step.form),
+    ...extractFieldKeys(step.input),
+    ...extractFieldKeys(step.toolInput),
+    ...extractFieldKeys(step.schema),
+    ...extractFieldKeys(step.inputSchema),
+  ])
+}
+
 function isSyntheticBucketField(field) {
   const normalized = asNonEmptyString(field)
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -82,16 +126,25 @@ function isSyntheticBucketField(field) {
 }
 
 function resolveAskFields(rawFields, fallbackFields, context) {
-  const fields = uniqueStrings(rawFields.length > 0 ? rawFields : fallbackFields)
+  const explicitAskFields = uniqueStrings(context?.askStepFields ?? [])
+  const fields = uniqueStrings(rawFields.length > 0
+    ? rawFields
+    : explicitAskFields.length > 0
+      ? explicitAskFields
+      : fallbackFields)
   const caseTypeRequiredFacts = uniqueStrings(context?.caseTypeRequiredFacts ?? [])
   const syntheticFields = fields.filter(isSyntheticBucketField)
   if (syntheticFields.length === 0) {
     return fields.length > 0 ? fields : caseTypeRequiredFacts
   }
-  if (caseTypeRequiredFacts.length === 0) {
-    throw new Error(`Synthetic ask field(s) ${syntheticFields.join(', ')} require caseType.requiredFacts for expansion.`)
+  const granularFields = uniqueStrings([
+    ...explicitAskFields,
+    ...caseTypeRequiredFacts,
+  ]).filter((field) => !isSyntheticBucketField(field))
+  if (granularFields.length === 0) {
+    throw new Error(`Synthetic ask field(s) ${syntheticFields.join(', ')} require explicit ask fields or caseType.requiredFacts for expansion.`)
   }
-  return caseTypeRequiredFacts
+  return granularFields
 }
 
 export function collectSyntheticBucketReferences(definition) {
@@ -170,7 +223,10 @@ function buildActionFromLegacyStep(step, index, context) {
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
         required: !!step.required,
-        fields: resolveAskFields(splitFields(target, `field_${index + 1}`), [`field_${index + 1}`], context),
+        fields: resolveAskFields(splitFields(target, `field_${index + 1}`), [`field_${index + 1}`], {
+          ...context,
+          askStepFields: collectAskStepFields(step),
+        }),
       }
     case 'use':
       return {
@@ -288,7 +344,10 @@ function buildActionFromRuntimeV1Tool(toolName, step, index, context) {
         fields: resolveAskFields(
           Array.isArray(step.requiredFacts) ? step.requiredFacts : [],
           [`field_${index + 1}`],
-          context,
+          {
+            ...context,
+            askStepFields: collectAskStepFields(step),
+          },
         ),
       }
     case 'finalize_procedure':

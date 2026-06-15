@@ -237,6 +237,73 @@ describe('migrate-procedures-v1-to-v2', () => {
     expect(collectSyntheticBucketReferences(migrated)).toEqual([])
   })
 
+  it('prefers real ask form field keys over aggregate bucket labels during legacy migration', () => {
+    const { summary, normalizedRows } = migrateCaseTypeRows([
+      {
+        id: 'legacy_real_fields',
+        type: 'withdrawal_not_credited',
+        requiredFacts: '["withdrawal_missing_details"]',
+        procedure: JSON.stringify({
+          steps: [
+            {
+              id: 'collect_withdrawal_details',
+              action: 'ask',
+              target: 'withdrawal_missing_details',
+              guidance: 'Collect the real form fields.',
+              required: true,
+              fields: [
+                { key: 'member_id', label: 'Member ID', type: 'text' },
+                { key: 'amount', label: 'Amount', type: 'number' },
+                { key: 'approximate_time', label: 'Approximate time', type: 'text' },
+              ],
+            },
+          ],
+        }),
+      },
+    ])
+
+    const migrated = JSON.parse(normalizedRows[0].procedure)
+    expect(summary.invalid).toBe(0)
+    expect(migrated.steps[0].actions[0].fields).toEqual([
+      'member_id',
+      'amount',
+      'approximate_time',
+    ])
+    expect(collectSyntheticBucketReferences(migrated)).toEqual([])
+  })
+
+  it('prefers runtime-v1 ask tool form fields over aggregate requiredFacts', () => {
+    const normalized = normalizeStoredProcedure(JSON.stringify({
+      version: 1,
+      startStepId: 'collect_facts',
+      steps: [
+        {
+          id: 'collect_facts',
+          title: 'Collect withdrawal facts',
+          instructions: 'Collect structured withdrawal evidence.',
+          requiredFacts: ['withdrawal_missing_details'],
+          formFields: [
+            { key: 'member_id', label: 'Member ID', type: 'text' },
+            { key: 'amount', label: 'Amount', type: 'number' },
+            { key: 'approximate_time', label: 'Approximate time', type: 'text' },
+          ],
+          allowedTools: ['ask_user_questions'],
+          next: [],
+        },
+      ],
+    }), {
+      caseTypeRequiredFacts: ['withdrawal_missing_details'],
+    })
+
+    expect(normalized.status).toBe('legacy')
+    expect(normalized.definition.steps[0].actions[0].fields).toEqual([
+      'member_id',
+      'amount',
+      'approximate_time',
+    ])
+    expect(collectSyntheticBucketReferences(normalized.definition)).toEqual([])
+  })
+
   it('repairs already-migrated v2 rows when legacy.procedureV1 is still available', () => {
     const legacyProcedure = {
       steps: [
@@ -313,7 +380,7 @@ describe('migrate-procedures-v1-to-v2', () => {
     ])
 
     expect(summary.invalid).toBe(1)
-    expect(summary.failures[0]?.reason).toContain('Synthetic ask field(s) withdrawal_missing_details require caseType.requiredFacts')
+    expect(summary.failures[0]?.reason).toContain('Synthetic ask field(s) withdrawal_missing_details require explicit ask fields or caseType.requiredFacts')
     expect(summary.results[0]).toMatchObject({
       id: 'bad_agg',
       type: 'withdrawal_not_credited',
