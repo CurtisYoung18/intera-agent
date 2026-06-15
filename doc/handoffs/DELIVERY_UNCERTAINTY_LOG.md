@@ -419,3 +419,16 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: `https://demo.anytrans.ai/build/release` remained healthy and accepted immediately after the warning. Lane proof is recorded in `.artifacts/delivery-audit/2026-06-12/cons-r1a/`.
 - Owner decision needed: Decide whether to open a dedicated deploy/standalone tracing repair lane, or leave this as monitor-only unless the warning becomes user-visible or blocks a future deploy.
 - Follow-up owner: architect / release lane owner
+
+### 2026-06-16 - CONS-M6 Procedure Metrics Are Local-PASS But Not Production-Accepted
+
+- Area: Operate / ProcedureRun metrics / outcome taxonomy
+- Status: open
+- Severity: P1
+- Uncertainty: `codex/cons-m6-operate-feedback` now records canonical ProcedureRun outcomes locally (`resolved_by_agent`, `handed_off`, `abandoned`) and adds `/api/operate/procedures/metrics` plus `/operate/procedures`, but this lane has not been deployed or verified on `https://demo.anytrans.ai`.
+- Default action taken: Treated the lane as local merge candidate only. The metrics API uses org-scoped `repo.procedureRun`; UI shows aggregate rates, recent runs, top blockers, run detail links, and Open playbook CTA; unknown terminal rows remain explicit instead of being counted as resolved.
+- Why this default: It gives operators the feedback loop required for handoff-rate tracking without pretending local build/test proof is production acceptance.
+- Evidence: Local gates passed on 2026-06-16 for commit `1fb558121e34dc7ce9a4787496b60929ee226d48`: focused Vitest (`3` files / `15` tests), sidebar/metrics focused Vitest (`2` files / `6` tests), `npx tsc --noEmit -p apps/console/tsconfig.json`, `npm test` (`144` passed / `5` skipped files, `998` passed / `28` skipped tests), `npm run build:console`, and `git diff --check`.
+- Production URL / screenshot / receipt: Not yet available. Required production proof after cherry-pick/deploy: authenticated `https://demo.anytrans.ai/operate/procedures` screenshot, `GET /api/operate/procedures/metrics` response shape proof with secrets/state redacted, navigation proof from sidebar, at least one recent-run detail link proof, and confirmation that rates match known seeded ProcedureRun outcomes.
+- Owner decision needed: After the hotfix lane lands, cherry-pick/deploy this commit and run the production proof loop before marking CONS-M6 accepted.
+- Follow-up owner: architect / delivery lead
