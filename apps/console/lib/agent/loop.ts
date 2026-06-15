@@ -62,6 +62,7 @@ import { HumanTaskHandoffHandler, type PendingHumanTaskEscalation } from './huma
 import { buildHookHitCounts, TurnPreflight } from './turn-preflight'
 import { ProcedureConditionCheckpoint } from './procedure-condition-checkpoint'
 import { HookContextBuilder } from './hook-context-builder'
+import { TurnExitHandler } from './turn-exit-handler'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -154,6 +155,7 @@ export class AgentLoop {
   private turnPreflight: TurnPreflight
   private procedureConditionCheckpoint: ProcedureConditionCheckpoint
   private hookContextBuilder: HookContextBuilder
+  private turnExitHandler: TurnExitHandler
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -230,6 +232,13 @@ export class AgentLoop {
       getCaseSchema: () => this.deps.caseSchema,
       getCurrentStage: () => this.currentStage,
       getIterationCount: () => this.iterationCount,
+    })
+    this.turnExitHandler = new TurnExitHandler({
+      traceWriter: this.traceWriter,
+      getMessages: () => this.messages,
+      getCurrentStage: () => this.currentStage,
+      getIterationCount: () => this.iterationCount,
+      getNudgeCount: () => this.nudgeCount,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -1122,36 +1131,13 @@ export class AgentLoop {
         return handoffResult
       }
 
-      sendEvent({
-        type: 'message_stop',
-        data: { reason: 'next_turn', stage: this.currentStage },
-        timestamp: new Date().toISOString(),
-      })
-
-      // Post-tool auto-escalation: human task was created during this iteration.
-      // The LLM has had a chance to respond naturally — now exit to waiting_human.
-      if (this.pendingEscalation) {
+      const turnExit = this.turnExitHandler.completePostToolTurn({
+        pendingEscalation: this.pendingEscalation,
+        stopReason,
+      }, sendEvent)
+      if (turnExit.kind === 'terminal') {
         this.persistTurnMemory()
-        return {
-          messages: this.messages,
-          caseStatus: 'escalated',
-          transition: 'waiting_human',
-          currentStage: this.currentStage,
-          reason: 'auto_escalated_by_hook',
-        }
-      }
-
-      // End-turn exit: return cleanly from inside the loop body so we never
-      // reach the "Max iterations" trace block below the while condition.
-      if (stopReason === 'end_turn' || stopReason === 'max_tokens') {
-        this.persistTurnMemory()
-        return {
-          messages: this.messages,
-          caseStatus: this.currentStage as CaseStatus,
-          transition: 'next_turn',
-          currentStage: this.currentStage,
-          reason: stopReason ?? undefined,
-        }
+        return turnExit.result
       }
     } while (
       this.iterationCount < this.deps.config.maxIterations &&
@@ -1159,30 +1145,7 @@ export class AgentLoop {
       stopReason !== 'max_tokens'
     )
 
-    // Max iterations reached
-    await this.traceWriter.write('loop_decision', 'Exit: max iterations', {
-      stopReason, iteration: this.iterationCount, messageCount: this.messages.length,
-    })
-
-    // Only escalate when the agent was repeatedly nudged and still failed.
-    // If it just ran out of iterations (e.g. when a Procedure needs multiple
-    // tool calls), preserve the current status so the
-    // next HTTP request can continue from where it left off.
-    const shouldEscalate = this.nudgeCount >= 3
-    sendEvent({
-      type: shouldEscalate ? 'escalated' : 'message_stop',
-      data: shouldEscalate
-        ? { reason: 'max_iterations', stage: this.currentStage }
-        : { reason: 'max_iterations', stopReason, stage: this.currentStage },
-      timestamp: new Date().toISOString(),
-    })
-        return {
-      messages: this.messages,
-      caseStatus: shouldEscalate ? 'escalated' : (this.currentStage as CaseStatus),
-      transition: shouldEscalate ? 'error' : 'next_turn',
-      currentStage: this.currentStage,
-      reason: 'max_iterations',
-    }
+    return this.turnExitHandler.maxIterations(stopReason, sendEvent)
   }
 
   // -----------------------------------------------------------------------
