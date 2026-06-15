@@ -783,35 +783,6 @@ export function finalizeProcedureRun(caseId: string, input: {
   return { ok: true, stale: false, run: cloneRun(run) }
 }
 
-function findLatestPersistedHandoffEvidence(
-  run: ProcedureRunState,
-  taskId?: string,
-): ProcedureRunEvidenceState | undefined {
-  return [...run.evidence]
-    .filter((entry) => {
-      if (entry.toolName !== 'create_human_task') return false
-      const output = isRecord(entry.metadata?.output) ? entry.metadata.output : null
-      if (!output || output.persisted !== true) return false
-      if (!taskId) return true
-      return output.taskId === taskId
-    })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
-}
-
-function findHandoffMatch(
-  run: ProcedureRunState,
-  evidence: ProcedureRunEvidenceState,
-): { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null {
-  const step = evidence.stepId
-    ? run.steps.find((candidate) => candidate.id === evidence.stepId)
-    : undefined
-  if (!step) return null
-  const action = evidence.actionId
-    ? step.actions?.find((candidate) => candidate.id === evidence.actionId)
-    : undefined
-  return { step, action }
-}
-
 export async function confirmProcedureHumanHandoff(caseId: string, input?: {
   agentConfigId?: string
   taskId?: string
