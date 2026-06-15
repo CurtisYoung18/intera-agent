@@ -64,6 +64,7 @@ graph LR
 - `codex/cons-integration-m1-m7-full` stacks M1, M3A/M4, M6, M7C, and M3B on the current main baseline.
 - Local proof on that branch: focused runtime/Console seam tests, `npm run test:runtime`, `npm test`, `npm run build:console`, `npx tsc --noEmit -p apps/console/tsconfig.json`, deploy script syntax checks, and `git diff --check` pass.
 - Security proof: `next` is patched to `15.5.18`, clearing production high/critical Next audit findings; `npm audit --omit=dev` still reports a moderate advisory from Next's bundled `postcss@8.4.31`. Track the owner decision in [`../handoffs/DELIVERY_UNCERTAINTY_LOG.md`](../handoffs/DELIVERY_UNCERTAINTY_LOG.md).
+- Production readiness command: after deploy, run `npm run check:production-readiness`. It must pass public health, public `/internal/*` blocking, unauthenticated metrics protection, production audit high/critical=0, authenticated Procedure metrics shape (with `PRODUCTION_AUTH_COOKIE`), and host-local runtime health (with `PRODUCTION_RUNTIME_INTERNAL_URL` + `INTERNAL_API_SECRET`). A pre-deploy run currently fails on `/api/operate/procedures/metrics` returning `404`, which is expected until this branch is deployed and must not be accepted as production proof.
 - Not accepted yet: production deploy, authenticated production screenshots/receipts, runtime dual-process proof, LiveChat runtime round trip, Operate metrics proof, and the bundled J1B matrix PASS remain required before this consolidation can be called complete.
 
 ---
