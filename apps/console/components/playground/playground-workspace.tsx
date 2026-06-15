@@ -11,7 +11,7 @@ import {
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
 import { apiClient } from '@/lib/api/client'
-import type { ContentBlock, LifecycleNotice } from '@intera/shared/types'
+import type { LifecycleNotice } from '@intera/shared/types'
 import { useSession } from '@/lib/hooks/use-session'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
@@ -148,18 +148,6 @@ function imagesFromContentBlocks(blocks: unknown): AttachedImage[] | undefined {
     }]
   })
   return images.length > 0 ? images : undefined
-}
-
-function imagesToContentBlocks(images: AttachedImage[] | undefined): ContentBlock[] | undefined {
-  if (!images || images.length === 0) return undefined
-  return images.map((img) => ({
-    type: 'image',
-    source: {
-      type: 'base64',
-      media_type: img.mimeType,
-      data: img.base64,
-    },
-  }))
 }
 
 function findLatestRuntimeTruth(turnTraces: Array<Array<{ runtimeTruth?: PlaygroundCapabilityTruth }>>): PlaygroundCapabilityTruth | null {
@@ -980,14 +968,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             role: m.role,
             content: m.content,
             thinking: m.thinking,
-            contentBlocks: m.images?.map((img) => ({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: img.mimeType,
-                data: img.base64,
-              },
-            })),
           })),
           traces: turnTraces,
         }),
@@ -1007,7 +987,14 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
   /* ── Run turn ── */
 
-  const runTurn = useCallback(async (msg: string, queuedImages?: AttachedImage[]) => {
+  const runTurn = useCallback(async (
+    displayMessage: string,
+    queuedImages?: AttachedImage[],
+    requestOverride?: {
+      message?: string
+      formResult?: { answers: Record<string, string> }
+    },
+  ) => {
     if (runningRef.current) return
     const currentImages = queuedImages ?? attachedImagesRef.current
     if (currentImages.length > 0 && !canAttachImages) {
@@ -1029,13 +1016,16 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     setResponding(true)
     setSidebarCollapsed(false)
     setAttachedImages([])
-    setChatMessages(prev => [...prev, { role: 'user' as const, content: msg, images: currentImages.length > 0 ? currentImages : undefined }])
+    setChatMessages(prev => [...prev, { role: 'user' as const, content: displayMessage, images: currentImages.length > 0 ? currentImages : undefined }])
 
     try {
-      const body: Record<string, unknown> = { message: msg }
+      const body: Record<string, unknown> = {
+        message: requestOverride?.message ?? (requestOverride?.formResult ? '' : displayMessage),
+      }
       if (selectedAgentId) body.configId = selectedAgentId
       body.config = { debug: debugMode, emitThinking: showThinkingRef.current, toolExecutionMode: toolExecutionModeRef.current }
       if (chatIdRef.current) body.chatId = chatIdRef.current
+      if (requestOverride?.formResult) body.formResult = requestOverride.formResult
       if (currentImages.length > 0) {
         body.contentBlocks = currentImages.map(img => ({
           type: 'image',
@@ -1077,7 +1067,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             }
             else if (event.type === 'session_init') {
               const d = event.data as { chatId: string; caseId: string }
-              if (d?.chatId && !chatIdRef.current) {
+              if (d?.chatId && d.chatId !== chatIdRef.current) {
                 setChatId(d.chatId)
                 try { localStorage.setItem(lskRef.current.chatId, d.chatId) } catch {}
               }
@@ -1706,11 +1696,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     {m.role === 'user' ? (isZh ? '你' : 'You') : snapshot?.name || 'Agent'}
                   </div>
                   {m.role === 'agent' ? (
-                    <MessageContent
-                      content={m.content}
-                      contentBlocks={imagesToContentBlocks(m.images)}
-                      imagePreviewMode="auto"
-                    />
+                    <MessageContent content={m.content} />
                   ) : (
                     <>
                       {m.images && m.images.length > 0 && (
@@ -1844,7 +1830,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     .map(([k, v]) => `${k}: ${v}`)
                     .join('\n')
                   setFormRequest(null)
-                  if (answerText) runTurn(`[Form submission]\n${answerText}`)
+                  if (answerText) {
+                    runTurn(`[Form submission]\n${answerText}`, undefined, {
+                      formResult: { answers },
+                    })
+                  }
                 }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {formRequest.fields.map(f => (
                     <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

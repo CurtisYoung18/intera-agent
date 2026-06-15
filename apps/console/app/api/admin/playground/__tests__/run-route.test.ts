@@ -93,6 +93,31 @@ describe('POST /api/admin/playground/run', () => {
     }))
   })
 
+  it('passes structured formResult through without requiring a plain-text message', async () => {
+    const formResult = {
+      answers: {
+        member_id: 'JAYA113C88F',
+        amount: '500',
+      },
+    }
+
+    const res = await POST(makeRequest({
+      message: '',
+      configId: 'agent-1',
+      formResult,
+      chatId: 'pg_agent-1_form_x',
+    }))
+
+    expect(res.status).toBe(200)
+    await readSse(res)
+    expect(h.mockRunPlaygroundTurn).toHaveBeenCalledWith(expect.objectContaining({
+      message: '',
+      configId: 'agent-1',
+      chatId: 'pg_agent-1_form_x',
+      formResult,
+    }))
+  })
+
   it('allows explicit dry-run mode for side-effect-safe debugging', async () => {
     const res = await POST(makeRequest({
       message: 'hello',

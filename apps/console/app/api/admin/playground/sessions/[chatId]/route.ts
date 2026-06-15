@@ -36,7 +36,6 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
       where: {
         orgId: repo.orgId,
         chatId: params.chatId,
-        type: 'playground',
         userId: vendor.userId,
       },
       select: { id: true },
@@ -120,7 +119,6 @@ export const DELETE = defineRoute<void, { chatId: string }>({
       where: {
         orgId: repo.orgId,
         chatId: params.chatId,
-        type: 'playground',
         userId: vendor.userId,
       },
       select: { id: true },

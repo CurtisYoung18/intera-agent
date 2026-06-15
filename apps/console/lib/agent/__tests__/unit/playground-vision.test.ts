@@ -16,23 +16,35 @@ const h = vi.hoisted(() => ({
   mockLoadMemory: vi.fn(),
   mockAgentLoopCreate: vi.fn(),
   mockCaseFindFirst: vi.fn(),
+  mockCaseFindUnique: vi.fn(),
   mockCaseCount: vi.fn(),
   mockCaseFindMany: vi.fn(),
   mockCaseDeleteMany: vi.fn(),
   mockCaseUpsert: vi.fn(),
+  mockProcedureRunFindFirst: vi.fn(),
   mockMessageFindMany: vi.fn(),
   mockMessageUpsert: vi.fn(),
   mockTransaction: vi.fn(),
+  mockRecordInitialInputEvent: vi.fn(),
+  mockGetProcedureRuntime: vi.fn(() => ({
+    activeProcedureRun: undefined,
+    pausedProcedureRuns: [],
+    completedProcedureRuns: [],
+  })),
 }))
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
     case: {
       findFirst: h.mockCaseFindFirst,
+      findUnique: h.mockCaseFindUnique,
       count: h.mockCaseCount,
       findMany: h.mockCaseFindMany,
       deleteMany: h.mockCaseDeleteMany,
       upsert: h.mockCaseUpsert,
+    },
+    procedureRun: {
+      findFirst: h.mockProcedureRunFindFirst,
     },
     message: {
       findMany: h.mockMessageFindMany,
@@ -99,6 +111,11 @@ vi.mock('../../loop', () => ({
   },
 }))
 
+vi.mock('../../session-store', () => ({
+  getProcedureRuntime: h.mockGetProcedureRuntime,
+  recordInitialInputEvent: h.mockRecordInitialInputEvent,
+}))
+
 function imageBlock() {
   return {
     type: 'image' as const,
@@ -135,13 +152,21 @@ beforeEach(() => {
     run: h.mockAgentRun,
   })
   h.mockCaseFindFirst.mockResolvedValue(null)
+  h.mockCaseFindUnique.mockResolvedValue(null)
   h.mockCaseCount.mockResolvedValue(0)
   h.mockCaseFindMany.mockResolvedValue([])
   h.mockCaseDeleteMany.mockResolvedValue({ count: 0 })
   h.mockCaseUpsert.mockResolvedValue({})
+  h.mockProcedureRunFindFirst.mockResolvedValue(null)
   h.mockMessageFindMany.mockResolvedValue([])
   h.mockMessageUpsert.mockResolvedValue({})
   h.mockTransaction.mockImplementation(async (calls: Promise<unknown>[]) => Promise.all(calls))
+  h.mockRecordInitialInputEvent.mockReset()
+  h.mockGetProcedureRuntime.mockReturnValue({
+    activeProcedureRun: undefined,
+    pausedProcedureRuns: [],
+    completedProcedureRuns: [],
+  })
 })
 
 describe('runPlaygroundTurn vision handling', () => {
@@ -233,7 +258,7 @@ describe('runPlaygroundTurn vision handling', () => {
     expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('dry_run_mixed')
   })
 
-  it('restores a provided chatId only inside the current org and user boundary', async () => {
+  it('restores a provided chatId inside the current org and user boundary even after the case type changes', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
     h.config = { ...h.config, model: 'openai/gpt-4o' }
     h.mockCaseFindFirst.mockResolvedValue({ id: 'case-existing' })
@@ -251,7 +276,6 @@ describe('runPlaygroundTurn vision handling', () => {
       where: {
         orgId: 'org-1',
         chatId: 'pg_agent-1_1_a',
-        type: 'playground',
         userId: 'user-1',
       },
       select: { id: true },
@@ -300,7 +324,39 @@ describe('runPlaygroundTurn vision handling', () => {
     })
 
     expect(h.mockCaseCount).toHaveBeenCalledWith({
-      where: { orgId: 'org-1', userId: 'user-1', type: 'playground' },
+      where: { orgId: 'org-1', userId: 'user-1', chatId: { startsWith: 'pg_' } },
     })
+  })
+
+  it('records structured formResult turns as customer_form_result runtime input', async () => {
+    const formResult = {
+      answers: {
+        member_id: 'JAYA113C88F',
+        amount: '500',
+        payment_channel: '银行转账',
+      },
+    }
+
+    await collect({
+      orgId: 'org-1',
+      message: '',
+      formResult,
+      playgroundConfig: { debug: false },
+      configId: 'agent-1',
+      userId: 'user-1',
+      chatId: 'pg_agent-1_form_x',
+    })
+
+    expect(h.mockRecordInitialInputEvent).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        source: 'customer_form_result',
+        formAnswers: formResult.answers,
+        content: 'Tool ask_user_questions result: {"member_id":"JAYA113C88F","amount":"500","payment_channel":"银行转账"}',
+      }),
+    )
+    expect(h.mockAgentRun.mock.calls[0]?.[0]).toBe(
+      'Tool ask_user_questions result: {"member_id":"JAYA113C88F","amount":"500","payment_channel":"银行转账"}',
+    )
   })
 })
