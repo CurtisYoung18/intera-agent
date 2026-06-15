@@ -29,7 +29,7 @@ vi.mock('@intera/shared/prisma', () => ({
   },
 }))
 
-import { getSession, upsertSession, updateSessionState, closeSession, appendTextBuffer, flushTextBuffer } from '../../session-store'
+import { getSession, upsertSession, updateSessionState, closeSession, rotateSessionCase, appendTextBuffer, flushTextBuffer } from '../../session-store'
 import { encodeLivechatTextBuffer } from '../../text-buffer-codec'
 
 describe('session-store', () => {
@@ -128,6 +128,22 @@ describe('session-store', () => {
       expect(mockUpdate).toHaveBeenCalledWith({
         where: { platform_externalChatId: { platform: 'livechat', externalChatId: 'chat-1' } },
         data: { status: 'archived', bridgeState: 'idle' },
+      })
+    })
+  })
+
+  describe('rotateSessionCase', () => {
+    it('rebinds the chat to a fresh internal case', async () => {
+      mockUpdate.mockResolvedValue({})
+      await rotateSessionCase('chat-1', 'case-fresh')
+      expect(mockUpdate).toHaveBeenCalledWith({
+        where: { platform_externalChatId: { platform: 'livechat', externalChatId: 'chat-1' } },
+        data: {
+          internalCaseId: 'case-fresh',
+          bridgeState: 'idle',
+          textBuffer: '',
+          status: 'active',
+        },
       })
     })
   })

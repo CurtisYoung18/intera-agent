@@ -6,6 +6,7 @@ const h = vi.hoisted(() => {
   const mockIsDuplicateWebhook = vi.fn()
   const mockGetLiveChatConfigForFamily = vi.fn()
   const mockCheckRateLimit = vi.fn()
+  const mockUpsertSession = vi.fn()
   const agentConfigs: Record<string, { id: string; name: string; orgId: string; isActive: boolean }> = {
     'active-agent': { id: 'active-agent', name: 'J1B', orgId: 'default', isActive: true },
     'inactive-agent': { id: 'inactive-agent', name: 'J1B', orgId: 'default', isActive: false },
@@ -18,6 +19,7 @@ const h = vi.hoisted(() => {
     mockIsDuplicateWebhook,
     mockGetLiveChatConfigForFamily,
     mockCheckRateLimit,
+    mockUpsertSession,
   }
 })
 
@@ -73,6 +75,10 @@ vi.mock('@/lib/livechat/livechat-api', () => ({
   sendTextMessage: h.mockSendTextMessage,
 }))
 
+vi.mock('@/lib/livechat/session-store', () => ({
+  upsertSession: h.mockUpsertSession,
+}))
+
 vi.mock('@/lib/livechat/webhook-dedup', () => ({
   isDuplicateWebhook: h.mockIsDuplicateWebhook,
 }))
@@ -83,6 +89,10 @@ vi.mock('@/lib/rate-limit', () => ({
 
 vi.mock('@/lib/livechat/config-store', () => ({
   getLiveChatConfigForFamily: h.mockGetLiveChatConfigForFamily,
+}))
+
+vi.mock('@/lib/utils', () => ({
+  generateCaseId: () => 'case-fresh',
 }))
 
 import { POST } from '@/app/api/livechat/webhook/[orgId]/[agentConfigId]/route'
@@ -107,6 +117,7 @@ beforeEach(() => {
   h.mockIsDuplicateWebhook.mockResolvedValue(false)
   h.mockSendTextMessage.mockResolvedValue(undefined)
   h.mockHandleIncomingEvent.mockResolvedValue(undefined)
+  h.mockUpsertSession.mockResolvedValue(undefined)
   h.mockGetLiveChatConfigForFamily.mockResolvedValue({
     enabled: true,
     webhookSecret: 'sec_livechat',
@@ -223,6 +234,14 @@ describe('per-agent LiveChat webhook route', () => {
 
     expect(res.status).toBe(200)
     expect(h.mockIsDuplicateWebhook).toHaveBeenCalledWith('livechat:evt-first')
+    expect(h.mockUpsertSession).toHaveBeenCalledWith({
+      chatId: 'chat-2',
+      orgId: 'default',
+      userId: 'customer-2',
+      caseId: 'case-fresh',
+      state: 'idle',
+      textBuffer: '',
+    })
     expect(h.mockHandleIncomingEvent).toHaveBeenCalledWith(
       'chat-2',
       'default',

@@ -78,6 +78,7 @@ function buildMessagesBody(
     userId: session.userId,
     chatId: session.chatId,
     caseId: session.caseId,
+    disableCaseRouting: true,
     ...(options?.pinCaseToSession ? { sessionCasePinned: true } : {}),
   }
 
@@ -175,10 +176,11 @@ export async function handleIncomingEvent(
   // Skip system-generated messages that would waste agent tokens
   if (event.type === 'message' && (event as { text?: string }).text) {
     const text = (event as { text?: string }).text ?? ''
-    if (/chat is idle|chat has been|chat closed|chat archived|archived the chat|deactivated/i.test(text)) {
-      console.log('[Bridge] Skipping system message, deactivating:', chatId)
-      deactivateChat(chatId, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId)
-        .catch(e => console.error('[Bridge] deactivateChat failed:', e))
+    if (/chat is idle|chat has been|chat closed|closed the chat|chat archived|archived the chat|deactivated/i.test(text)) {
+      // LiveChat already emitted its own closure/archive system event. Calling
+      // deactivate_chat again can create duplicate "closed the chat" messages
+      // in the customer transcript, so only rotate our internal bridge state.
+      console.log('[Bridge] Skipping closure system message, rotating session:', chatId)
       await closeSession(chatId, 'idle_timeout')
       // Reset session for fresh start on reopen
       await upsertSession({ chatId, orgId, userId, caseId: generateCaseId(), state: 'idle', textBuffer: '' })

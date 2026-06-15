@@ -242,6 +242,7 @@ export async function POST(request: NextRequest) {
           caseType: bodyCaseType,
           bootstrapNewCase: rawBootstrapNewCase,
           sessionCasePinned: rawSessionCasePinned,
+          disableCaseRouting: rawDisableCaseRouting,
         } = body
 
         // Session-based requests (web/playground) pass agentConfigId via body;
@@ -250,6 +251,7 @@ export async function POST(request: NextRequest) {
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
         const sessionCasePinned = rawSessionCasePinned === true
+        const disableCaseRouting = rawDisableCaseRouting === true
 
         // orgId mismatch check: if body sends a different orgId than the credential
         if (authOrgId && orgId && orgId !== authOrgId) {
@@ -467,7 +469,8 @@ export async function POST(request: NextRequest) {
           !bootstrapNewCase &&
           !interactionResult &&
           !clientCaseIsNew &&
-          !sessionCasePinned
+          !sessionCasePinned &&
+          !disableCaseRouting
         ) {
           try {
             const activeCases = await prisma.case.findMany({
@@ -501,39 +504,27 @@ export async function POST(request: NextRequest) {
                 resolvedCaseId = routed.caseId
               }
             } else if (activeCases.length > 1) {
-              // Check for pending interactions first
-              const pendingTask = await prisma.humanTask.findFirst({
-                where: {
-                  orgId: resolvedOrgId,
-                  chatId: resolvedChatId,
-                  caseId: { in: activeCases.map((c: { id: string }) => c.id) },
-                  status: 'pending',
-                },
-                orderBy: { createdAt: 'desc' },
-              })
-              if (pendingTask) {
-                resolvedCaseId = pendingTask.caseId
+              // LLM-based intent routing: classify the message to the right case.
+              // Do not auto-hijack arbitrary customer text into the newest pending
+              // human task; that keeps stale handoff cases alive forever.
+              const routed = await resolveCaseByIntent(
+                userMessage,
+                activeCases,
+                resolvedCaseId,
+              )
+              if (routed.kind === 'new') {
+                const newCase = await prisma.case.create({
+                  data: {
+                    orgId: resolvedOrgId,
+                    userId: resolvedUserId,
+                    type: 'general',
+                    status: 'created',
+                    chatId: resolvedChatId,
+                  },
+                })
+                resolvedCaseId = newCase.id
               } else {
-                // LLM-based intent routing: classify the message to the right case
-                const routed = await resolveCaseByIntent(
-                  userMessage,
-                  activeCases,
-                  resolvedCaseId,
-                )
-                if (routed.kind === 'new') {
-                  const newCase = await prisma.case.create({
-                    data: {
-                      orgId: resolvedOrgId,
-                      userId: resolvedUserId,
-                      type: 'general',
-                      status: 'created',
-                      chatId: resolvedChatId,
-                    },
-                  })
-                  resolvedCaseId = newCase.id
-                } else {
-                  resolvedCaseId = routed.caseId
-                }
+                resolvedCaseId = routed.caseId
               }
             }
           } catch (err) { console.error('[Intera] Hub routing failed:', err) }

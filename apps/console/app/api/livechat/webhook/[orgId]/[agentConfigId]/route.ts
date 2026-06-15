@@ -7,10 +7,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { defineRoute, UnauthorizedError, NotFoundError } from '@/lib/api/define-route'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
+import { upsertSession } from '@/lib/livechat/session-store'
 import { sendTextMessage } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { getLiveChatConfigForFamily } from '@/lib/livechat/config-store'
+import { generateCaseId } from '@/lib/utils'
 import type { InteraInteractionSubmit, InteraFormSubmit } from '@/lib/livechat/types'
 
 function getChatPresence(body: Record<string, unknown>): string[] {
@@ -208,6 +210,18 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
           if (!text) return false
           if (config.agentAccountId && threadEvent.author_id === config.agentAccountId) return false
           return true
+        })
+
+        const freshSessionUserId =
+          (customerMessages[0]?.author_id as string | undefined) ??
+          userId
+        await upsertSession({
+          chatId,
+          orgId,
+          userId: freshSessionUserId,
+          caseId: generateCaseId(),
+          state: 'idle',
+          textBuffer: '',
         })
 
         if (customerMessages.length === 0) {

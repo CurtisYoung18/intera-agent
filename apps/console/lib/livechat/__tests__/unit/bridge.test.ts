@@ -229,6 +229,9 @@ describe('livechat bridge', () => {
       undefined,
     )
     const [, fetchInit] = mockFetch.mock.calls[0]!
+    expect(JSON.parse(String(fetchInit.body))).toMatchObject({
+      disableCaseRouting: true,
+    })
     expect(JSON.parse(String(fetchInit.body))).not.toHaveProperty('sessionCasePinned')
   })
 
@@ -261,6 +264,7 @@ describe('livechat bridge', () => {
     expect(JSON.parse(String(fetchInit.body))).toMatchObject({
       chatId: 'chat-1',
       caseId: 'case-generated',
+      disableCaseRouting: true,
       sessionCasePinned: true,
       message: 'hello again',
     })
@@ -274,5 +278,25 @@ describe('livechat bridge', () => {
       undefined,
       undefined,
     )
+  })
+
+  it('does not deactivate the chat again when LiveChat sends a closure system message', async () => {
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'You have closed the chat.' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockDeactivateChat).not.toHaveBeenCalled()
+    expect(mockCloseSession).toHaveBeenCalledWith('chat-1', 'idle_timeout')
+    expect(mockUpsertSession).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: 'chat-1',
+      caseId: 'case-generated',
+      state: 'idle',
+      textBuffer: '',
+    }))
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })

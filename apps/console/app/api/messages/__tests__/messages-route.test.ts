@@ -256,6 +256,35 @@ describe('POST /api/messages runtime session guards', () => {
     }))
   })
 
+  it('keeps a livechat bridge caseId when case routing is explicitly disabled', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-livechat',
+      orgId: 'org-a',
+      chatId: 'chat-1',
+      status: 'created',
+      memory: null,
+    })
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      message: '怎么注册',
+      caseId: 'case-livechat',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+      disableCaseRouting: true,
+    }))
+    await readSse(res)
+
+    expect(h.prisma.case.findMany).not.toHaveBeenCalled()
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-livechat',
+      chatId: 'chat-1',
+      userId: 'user-1',
+    }))
+  })
+
   it('creates a fresh case when the router says a single active case does not match the new topic', async () => {
     h.prisma.case.findUnique.mockResolvedValue({
       id: 'case-stale',
@@ -287,6 +316,60 @@ describe('POST /api/messages runtime session guards', () => {
     }))
     await readSse(res)
 
+    expect(h.prisma.case.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orgId: 'org-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        type: 'general',
+        status: 'created',
+      }),
+    })
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-created',
+      chatId: 'chat-1',
+      userId: 'user-1',
+    }))
+  })
+
+  it('does not let a pending human task hijack a new topic when multiple active cases share the chat', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-stale',
+      orgId: 'org-a',
+      chatId: 'chat-1',
+      status: 'investigating',
+      memory: null,
+    })
+    h.prisma.case.findMany.mockResolvedValue([
+      { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
+      { id: 'case-old-general', type: 'general', status: 'waiting_human' },
+    ])
+    h.prisma.humanTask.findFirst.mockResolvedValue({
+      id: 'task-pending',
+      caseId: 'case-deposit',
+      status: 'pending',
+    })
+    h.createAgentClient.mockReturnValue({
+      messages: {
+        create: vi.fn(async () => ({
+          content: [{ text: 'new' }],
+        })),
+      },
+    })
+
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      message: '怎么注册',
+      caseId: 'case-stale',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.prisma.humanTask.findFirst).not.toHaveBeenCalled()
     expect(h.prisma.case.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         orgId: 'org-a',

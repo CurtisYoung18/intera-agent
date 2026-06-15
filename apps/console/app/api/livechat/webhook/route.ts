@@ -167,6 +167,18 @@ export async function POST(request: NextRequest) {
       return true
     })
 
+    const freshSessionUserId =
+      (customerMessages[0]?.author_id as string | undefined) ??
+      userId
+    await upsertSession({
+      chatId,
+      orgId,
+      userId: freshSessionUserId,
+      caseId: generateCaseId(),
+      state: 'idle',
+      textBuffer: '',
+    })
+
     if (customerMessages.length === 0) {
       sendTextMessage(
         chatId, 'Hello! I\'m an AI assistant. How can I help you today?',

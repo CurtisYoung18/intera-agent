@@ -110,6 +110,26 @@ export async function closeSession(chatId: string, reason: string): Promise<void
   }
 }
 
+/** Rotates the internal case binding while keeping the external chat alive. */
+export async function rotateSessionCase(chatId: string, nextCaseId: string): Promise<void> {
+  try {
+    await prisma.externalConversation.update({
+      where: { platform_externalChatId: { platform: PLATFORM, externalChatId: chatId } },
+      data: {
+        internalCaseId: nextCaseId,
+        bridgeState: 'idle',
+        textBuffer: '',
+        status: 'active',
+      },
+    })
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      return
+    }
+    throw err
+  }
+}
+
 /** Returns the buffered text and resets the buffer to empty. */
 export async function flushTextBuffer(chatId: string): Promise<string> {
   return prisma.$transaction(async (tx) => {

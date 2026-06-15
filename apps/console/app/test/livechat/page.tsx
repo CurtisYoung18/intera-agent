@@ -19,6 +19,61 @@ export default function LiveChatTestPage() {
         window.__lc.product_name = "livechat";
         ;(function(n,t,c){function i(n){return e._h?e._h.apply(null,n):e._q.push(n)}var e={_q:[],_h:null,_v:"2.0",on:function(){i(["on",c.call(arguments)])},once:function(){i(["once",c.call(arguments)])},off:function(){i(["off",c.call(arguments)])},get:function(){if(!e._h)throw new Error("[LiveChatWidget] You can't use getters before load.");return i(["get",c.call(arguments)])},call:function(){i(["call",c.call(arguments)])},init:function(){var n=t.createElement("script");n.async=!0,n.type="text/javascript",n.src="https://cdn.livechatinc.com/tracking.js",t.head.appendChild(n)}};!n.__lc.asyncInit&&e.init(),n.LiveChatWidget=n.LiveChatWidget||e}(window,document,[].slice))
       `}</Script>
+      <Script
+        id="livechat-session-boundary"
+        strategy="afterInteractive"
+      >{`
+        (function() {
+          var storageKey = 'intera_livechat_chat_id';
+          var lastStatus = null;
+
+          function rememberChatId() {
+            try {
+              var chat = window.LiveChatWidget && window.LiveChatWidget.get && window.LiveChatWidget.get('chat_data');
+              if (chat && chat.chatId) {
+                window.sessionStorage.setItem(storageKey, chat.chatId);
+              }
+            } catch {}
+          }
+
+          function markFreshStart() {
+            try {
+              var chatId = window.sessionStorage.getItem(storageKey);
+              if (!chatId) return;
+              var payload = JSON.stringify({ chatId: chatId });
+              if (navigator.sendBeacon) {
+                navigator.sendBeacon('/api/livechat/widget-session-close', new Blob([payload], { type: 'application/json' }));
+                return;
+              }
+              fetch('/api/livechat/widget-session-close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: payload,
+                keepalive: true,
+              }).catch(function() {});
+            } catch {}
+          }
+
+          function handleStatusChanged(data) {
+            rememberChatId();
+            var nextStatus = data && data.status ? data.status : null;
+            var wasActive = lastStatus === 'chatting' || lastStatus === 'queued' || lastStatus === 'invited';
+            if (wasActive && nextStatus === 'browsing') {
+              markFreshStart();
+            }
+            lastStatus = nextStatus;
+          }
+
+          window.LiveChatWidget.on('ready', function(initialData) {
+            rememberChatId();
+            lastStatus = initialData && initialData.customerData ? initialData.customerData.status : lastStatus;
+          });
+          window.LiveChatWidget.on('new_event', rememberChatId);
+          window.LiveChatWidget.on('customer_status_changed', handleStatusChanged);
+          window.addEventListener('pagehide', markFreshStart);
+          window.addEventListener('beforeunload', markFreshStart);
+        })();
+      `}</Script>
 
       <div style={{ maxWidth: 600, margin: '60px auto', padding: '0 24px', fontFamily: 'system-ui, sans-serif' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1a1a2e' }}>LiveChat Widget Test</h1>
