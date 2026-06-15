@@ -8,49 +8,27 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
-import type { Message, AssistantMessage, ToolUse, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
-import { StreamingToolExecutor } from './streaming-tool-executor'
+import type { Message, AssistantMessage, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
 import { ChatMemoryManager } from './memory'
 import { HookEngine } from './hook-engine'
 import { ToolRouter } from './tools'
 import { TraceWriter } from './trace'
 import { CaseAgentLoop, type CaseLoopServices } from './case-agent-loop'
 import { ConversationLoop } from './conversation-loop'
-import { classifyError } from './api/error-classifier'
-import { withRetry, CannotRetryError, FallbackTriggeredError } from './api/with-retry'
-import { reactiveCompact } from './compact'
 import { Profiler } from './profiler'
-import { writeDebugRequest, writeDebugResponse, writeDebugTranscript } from './debug-logger'
-import { buildModelList } from './build-model-list'
+import { writeDebugTranscript } from './debug-logger'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
-import { consumeStream, type StreamContentBlock, type StreamConsumeCallbacks } from './stream-handler'
-
-// ---------------------------------------------------------------------------
-// StreamingTextSanitizer
-// Strips <think>…</think>, orphan </think>, and "Tool X result: …" leakage
-// from the streaming text before it reaches the client.  The 60-char hold-back
-// ensures patterns that straddle chunk boundaries are caught correctly.
-// ---------------------------------------------------------------------------
-
-import { StreamingTextSanitizer } from './streaming-text-sanitizer'
 import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
-import type { TranscriptHealthMetrics } from './provider-transcript'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import {
-  getActiveProcedureRun,
   latestInputEpoch,
   procedureRunPromptTail,
   recordProcedureTextReply,
-  recordProcedureToolCall,
 } from './session-store'
 import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
 import { RuntimeMemoryLifecycle } from './runtime-memory-lifecycle'
-import {
-  assertProviderToolTurnInvariant,
-  finalizeProviderToolTurn,
-  type SynthesisReason,
-} from '@intera/runtime-core/provider-tool-turn'
+import type { SynthesisReason } from '@intera/runtime-core/provider-tool-turn'
 import { StopHookHandler } from './stop-hook-handler'
 import { HumanTaskHandoffHandler, type PendingHumanTaskEscalation } from './human-task-handoff-handler'
 import { buildHookHitCounts, TurnPreflight } from './turn-preflight'
@@ -60,6 +38,9 @@ import { TurnExitHandler } from './turn-exit-handler'
 import { PostToolUsePhase, addHookFeedbackMessage } from './post-tool-use-phase'
 import { NoToolTurnHandler } from './no-tool-turn-handler'
 import { ToolCompletionPhase } from './tool-completion-phase'
+import { LlmStreamPhase } from './llm-stream-phase'
+import { finalizeStreamingProviderToolTurn } from './provider-tool-turn-phase'
+import { writeProviderTranscriptHealth } from './provider-transcript-health-writer'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -135,6 +116,7 @@ export class AgentLoop {
   private postToolUsePhase: PostToolUsePhase
   private noToolTurnHandler: NoToolTurnHandler
   private toolCompletionPhase: ToolCompletionPhase
+  private llmStreamPhase: LlmStreamPhase
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -250,6 +232,26 @@ export class AgentLoop {
       dryRun: this.dryRun,
       persistRuntimeMemory: deps.persistRuntimeMemory,
       canCreateHumanTaskInGeneralMode: () => !this.caseLoop,
+    })
+    this.llmStreamPhase = new LlmStreamPhase({
+      config: deps.config,
+      configId: deps.configId,
+      caseId: deps.caseId,
+      getAnthropicClient: () => this.anthropicClient,
+      abortController: this.abortController,
+      traceWriter: this.traceWriter,
+      profiler: this.profiler,
+      chatMemory: this.chatMemory,
+      getMessages: () => this.messages,
+      setMessages: (messages) => { this.messages = messages },
+      addMessage: (message) => this.messages.push(message),
+      getCurrentStage: () => this.currentStage,
+      getHookEngine: () => this.hookEngine,
+      getToolRouter: () => this.toolRouter,
+      hookContextBuilder: this.hookContextBuilder,
+      buildToolInterceptorContext: () => this.buildToolInterceptorContext(),
+      emitThinking: deps.emitThinking,
+      dryRun: this.dryRun,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -386,39 +388,6 @@ export class AgentLoop {
       }
 
       const iterationBasedOnInputEpoch = latestInputEpoch(this.deps.caseId)
-      const toolBasedOnEpoch = new Map<string, number>()
-
-      sendEvent({
-        type: 'stream_request_start',
-        data: null,
-        timestamp: new Date().toISOString(),
-      })
-
-      // Per-iteration streaming sanitizer — strips <think>/Tool-result leakage
-      // from text_delta events before they reach the client.
-      const textSanitizer = new StreamingTextSanitizer()
-
-      // ── StreamingToolExecutor is created BEFORE the stream so tools
-      //    can be enqueued incrementally as each tool_use block completes.
-      const toolExecutor = new StreamingToolExecutor(
-        this.toolRouter.getToolDefinitions(),
-        (toolUse, status, renderHints) => {
-          const skillDef = this.toolRouter.getTool(toolUse.name)
-          sendEvent({
-            type: status === 'executing' ? 'tool_executing' : 'tool_result',
-            data: {
-              name: toolUse.name,
-              status,
-              result: status !== 'executing' ? toolUse.result : undefined,
-              displayVerb: status === 'executing' ? skillDef?.displayVerb : undefined,
-              renderHints: renderHints ?? skillDef?.renderHints,
-            },
-            timestamp: new Date().toISOString(),
-          })
-        },
-        this.dryRun,
-        this.deps.configId,
-      )
 
       // ── Phase 1: Dual-mode prompt + tool selection ──────────────────────────
       const { prompt: stagePrompt, tools: stageTools } = selectPromptAndTools({
@@ -434,45 +403,16 @@ export class AgentLoop {
         procedureRunTail: procedureRunPromptTail(this.deps.caseId),
       })
 
-      const blocks = new Map<number, StreamContentBlock>()
-      let assistantMessage: AssistantMessage | null = null
-      let assistantPushed = false
-      let fullText = ''
-      let reconcileGateBlockedThisIteration = false
-      const visibleTextBuffer: string[] = []
-      const streamSendEvent = (event: SSEEvent) => {
-        if (event.type === 'text_delta') {
-          visibleTextBuffer.push(String(event.data ?? ''))
-          return
-        }
-        sendEvent(event)
-      }
-      const flushVisibleText = () => {
-        for (const chunk of visibleTextBuffer) {
-          if (!chunk) continue
-          sendEvent({
-            type: 'text_delta',
-            data: chunk,
-            timestamp: new Date().toISOString(),
-          })
-        }
-        visibleTextBuffer.length = 0
-      }
-      const discardVisibleText = () => {
-        visibleTextBuffer.length = 0
-      }
       // Reset per-iteration
       stopReason = null
       usage = null
 
       const iterationStartTime = Date.now()
-      let streamEndedAt = iterationStartTime
-      let streamFatalError: string | null = null
 
       if (this.abortController.signal.aborted) break
 
       const { messages: apiMessages, metrics: transcriptHealth } = this.buildApiMessages()
-      await this.writeProviderTranscriptHealth(transcriptHealth)
+      await writeProviderTranscriptHealth(this.traceWriter, transcriptHealth)
 
       if (debugLogsEnabled) {
         console.log('[DebugMode] stagePrompt:', stagePrompt.slice(0, 3000))
@@ -480,272 +420,33 @@ export class AgentLoop {
         console.log('[DebugMode] isCaseActive:', isCaseActive, 'stage:', this.currentStage)
       }
 
-      // ── S2: Stream creation with classified retry ──
-      let stream: ReturnType<typeof this.anthropicClient.messages.stream>
-      try {
-        stream = await withRetry(
-          async (_client, ctx) => {
-            return this.anthropicClient.messages.stream({
-              model: ctx.model,
-              max_tokens: ctx.maxTokensOverride ?? (this.deps.config.maxOutputTokens ?? 4096),
-              system: stagePrompt,
-              messages: apiMessages,
-              tools: stageTools,
-              tool_choice: { type: 'auto' as const, disable_parallel_tool_use: false },
-              ...(this.deps.config.extendedThinking &&
-                (buildModelList().find(m => m.id === ctx.model)?.supportsThinking ?? false) ? {
-                thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },
-              } : {}),
-            }, { signal: this.abortController.signal })
-          },
-          {
-            querySource: 'main_loop',
-            model: this.deps.config.model,
-            fallbackModel: this.deps.config.fallbackModel,
-            signal: this.abortController.signal,
-            onRetry: (info) => {
-              sendEvent({
-                type: 'retry_pending',
-                data: { attempt: info.attempt, delayMs: info.delayMs, errorClass: info.errorClass, message: info.message },
-                timestamp: new Date().toISOString(),
-              })
-            },
-          },
-          () => this.anthropicClient,
-        )
-      } catch (err) {
-        // P1-4: Transient LLM API errors should NOT trigger escalated/transfer.
-        // Only intentional handoffs (Hook escalation, max_nudges) should escalate.
-        if (err instanceof FallbackTriggeredError) {
-          sendEvent({ type: 'error', data: `Model fallback exhausted: ${err.originalModel}`, timestamp: new Date().toISOString() })
-          return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: 'llm_fallback_exhausted' }
-        }
-        if (err instanceof CannotRetryError && err.errorClass === 'context_overflow') {
-          this.messages = reactiveCompact(this.messages)
-          await this.traceWriter.write('loop_decision', 'Reactive compact on context overflow', { error: String(err) })
-          continue
-        }
-        if (err instanceof CannotRetryError && err.errorClass === 'aborted') {
-          await this.traceWriter.write('loop_decision', 'Stream aborted', { iteration: this.iterationCount })
-          return { messages: this.messages, caseStatus: this.currentStage as CaseStatus, transition: 'connection_lost', currentStage: this.currentStage, reason: 'connection_lost' }
-        }
-        const classified = err instanceof CannotRetryError ? err.errorClass : classifyError(err)
-        const detail = (err as any)?.message || (err as any)?.error?.message || String(err)
-        sendEvent({ type: 'error', data: `LLM API error (${classified}): ${detail}`, timestamp: new Date().toISOString() })
-        return { messages: this.messages, transition: 'machine_error' as const, caseStatus: this.currentStage as CaseStatus, reason: `llm_error:${classified}` }
-      }
-
-      // Debug: full API request
-      let debugSeq = -1
-      if (debugLogsEnabled) {
-        console.log(`[DebugMode] Writing request log for case ${this.deps.caseId} iteration ${this.iterationCount}`)
-        debugSeq = writeDebugRequest(this.deps.caseId, this.iterationCount, this.deps.config.model, {
-          system: stagePrompt,
-          messages: apiMessages as any,
-          tools: stageTools as any,
-          max_tokens: this.deps.config.maxOutputTokens ?? 4096,
-          temperature: this.deps.config.temperature,
-        })
-      }
-
-      await this.traceWriter.writeLlmRequestStart(
-        this.deps.config.model,
-        this.messages.length,
+      const streamPhase = await this.llmStreamPhase.run({
         stagePrompt,
-        apiMessages,
         stageTools,
-        { type: 'auto' as const, disable_parallel_tool_use: false },
-      )
-
-      sendEvent({
-        type: 'llm_request_start',
-        data: {
-          model: this.deps.config.model,
-          systemPrompt: stagePrompt,
-          messages: apiMessages,
-          tools: stageTools,
-          toolChoice: { type: 'auto' as const, disable_parallel_tool_use: false },
-        },
-        timestamp: new Date().toISOString(),
+        apiMessages,
+        iterationCount: this.iterationCount,
+        iterationBasedOnInputEpoch,
+        missingReasons,
+        pendingHookFeedback,
+        debugLogsEnabled,
+        sendEvent,
       })
+      if (streamPhase.kind === 'continue') continue
+      if (streamPhase.kind === 'terminal') return streamPhase.result
 
-      try {
-        const streamResult = await consumeStream(stream, blocks, {
-          sendEvent: streamSendEvent,
-          sanitizeChunk: (text: string) => textSanitizer.feed(text),
-          flushSanitizer: () => textSanitizer.flush(),
-          recordFirstToken: () => this.profiler.recordFirstToken(),
-          emitThinking: this.deps.emitThinking ?? false,
-          onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
-            const activeRun = getActiveProcedureRun(this.deps.caseId)
-            if (
-              activeRun?.needsReconcile &&
-              !['reconcile_procedure_input', 'read_chat_memory', 'read_user_profile'].includes(toolUse.name)
-            ) {
-              reconcileGateBlockedThisIteration = true
-              await this.traceWriter.write('loop_decision', `ProcedureRun reconcile gate blocked Tool: ${toolUse.name}`, {
-                runId: activeRun.runId,
-                procedureId: activeRun.procedureId,
-                inputEpoch: activeRun.inputEpoch,
-                lastReconciledInputEpoch: activeRun.lastReconciledInputEpoch,
-                toolName: toolUse.name,
-              })
-              missingReasons.set(toolUse.id, 'hook_blocked')
-              pendingHookFeedback.push('[PROCEDURE RUNTIME] New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, call reconcile_procedure_input with the active runId and latest inputEpoch.')
-              if (!assistantPushed && am) {
-                this.messages.push(am)
-                assistantPushed = true
-              }
-              return
-            }
-
-            toolBasedOnEpoch.set(toolUse.id, iterationBasedOnInputEpoch)
-            recordProcedureToolCall(this.deps.caseId, {
-              toolName: toolUse.name,
-              toolUseId: toolUse.id,
-              basedOnInputEpoch: iterationBasedOnInputEpoch,
-              toolInput: toolUse.input,
-            })
-
-            // PreToolUse Hook checkpoint
-            const preHookEval = await this.hookEngine.evaluate('PreToolUse', {
-              ...this.hookContextBuilder.build('PreToolUse', {
-                toolName: toolUse.name,
-                toolInput: toolUse.input,
-              }),
-            }, buildHitCounts())
-
-            if (preHookEval.summary === 'block') {
-              // Record Hook hit for graduated response
-              const blockingHooks: string[] = []
-              for (const r of preHookEval.results) {
-                if (r.action !== 'allow') {
-                  this.chatMemory.recordHookHit(r.hookName)
-                  if (r.action === 'block') blockingHooks.push(r.hookName)
-                }
-              }
-              await this.traceWriter.write(
-                'loop_decision',
-                `Hook blocked Tool: ${toolUse.name}`,
-                preHookEval as unknown as Record<string, unknown>,
-              )
-              sendEvent({
-                type: 'hook_blocked',
-                data: { toolName: toolUse.name, hookNames: blockingHooks },
-                timestamp: new Date().toISOString(),
-              })
-              // S1: record missing reason — post-stream synthesis will build the tool_result.
-              // The feedback message comes AFTER the tool_result, not instead of it.
-              missingReasons.set(toolUse.id, 'hook_blocked')
-              if (preHookEval.feedbackMessage) {
-                pendingHookFeedback.push(preHookEval.feedbackMessage)
-              }
-              if (!assistantPushed && am) {
-                this.messages.push(am)
-                assistantPushed = true
-              }
-              return
-            }
-
-            // PreToolUse escalated with pendingToolCalls (for example: create_human_task).
-            if (preHookEval.pendingToolCalls && preHookEval.pendingToolCalls.length > 0) {
-              for (const r of preHookEval.results) {
-                if (r.action !== 'allow') this.chatMemory.recordHookHit(r.hookName)
-              }
-              await this.traceWriter.write(
-                'loop_decision',
-                `Hook escalated Tool: ${toolUse.name}`,
-                preHookEval as unknown as Record<string, unknown>,
-              )
-              sendEvent({
-                type: 'hook_blocked',
-                data: { toolName: toolUse.name, hookNames: preHookEval.results.filter(r => r.action === 'escalate').map(r => r.hookName) },
-                timestamp: new Date().toISOString(),
-              })
-              missingReasons.set(toolUse.id, 'hook_escalated')
-              if (preHookEval.feedbackMessage) {
-                pendingHookFeedback.push(preHookEval.feedbackMessage)
-              }
-              if (!assistantPushed && am) {
-                this.messages.push(am)
-                assistantPushed = true
-              }
-              // Process the escalation
-              await hookToolCalls(this.buildToolInterceptorContext(), preHookEval, sendEvent)
-              return
-            }
-
-            // Enqueue — starts executing immediately.
-            // text/thinking blocks that follow will stream to the
-            // frontend concurrently while this tool runs.
-            toolExecutor.enqueue(toolUse)
-          },
-        })
-
-        assistantMessage = streamResult.assistantMessage
-        fullText = streamResult.fullText
-        stopReason = streamResult.stopReason
-        usage = streamResult.usage
-
-        if (stopReason) {
-          await this.traceWriter.write(
-            'stream_event',
-            `stop_reason: ${stopReason}`,
-            { stopReason, iteration: this.iterationCount },
-          )
-        }
-      } catch (streamErr) {
-        const errStr = String(streamErr)
-        console.error('[AgentLoop] Stream error:', streamErr)
-
-        if (this.abortController.signal.aborted) {
-          // Connection lost — drain pending tools and exit without escalating.
-          // The case stays at its current stage so the user can retry.
-          await toolExecutor.waitForAll().catch(() => {})
-          await this.traceWriter.write('loop_decision', 'Stream aborted (connection lost)', {
-            iteration: this.iterationCount,
-          })
-          return {
-            messages: this.messages,
-            caseStatus: this.currentStage as CaseStatus,
-            transition: 'connection_lost',
-            currentStage: this.currentStage,
-            reason: 'connection_lost',
-          }
-        }
-
-        // Reactive compact on 413 during streaming
-        if (errStr.includes('413') || errStr.includes('context_length_exceeded')) {
-          this.messages = reactiveCompact(this.messages)
-          await this.traceWriter.write('loop_decision', 'Reactive compact on stream error', { error: errStr })
-          continue
-        }
-
-        // Non-connection error: record, let S1 synthesis run, then exit
-        streamFatalError = errStr
-      }
-
-      streamEndedAt = Date.now()
-
-      // Final usage per assistant completion (streaming APIs may emit usage on multiple deltas).
-      if (usage && hasRecognizedTokenUsage(usage)) {
-        const calledToolNames = [...blocks.values()].filter(b => b.type === 'tool_use').map(b => b.name)
-        // Debug: full API response
-        if (debugLogsEnabled) {
-          writeDebugResponse(this.deps.caseId, this.iterationCount, this.deps.config.model, debugSeq, {
-            stop_reason: stopReason,
-            usage,
-            text: fullText.slice(0, 100000),
-          })
-        }
-        await this.traceWriter.writeLlmResponse(stopReason, usage, this.iterationCount, fullText, calledToolNames, this.deps.config.model)
-        sendEvent({
-          type: 'llm_response',
-          data: { stopReason, usage, iteration: this.iterationCount, model: this.deps.config.model, textPreview: fullText.slice(0, 3000) },
-          timestamp: new Date().toISOString(),
-        })
-        this.profiler.addTokens(readInputTokens(usage), readOutputTokens(usage))
-      }
+      let assistantMessage = streamPhase.assistantMessage
+      let assistantPushed = streamPhase.assistantPushed
+      const fullText = streamPhase.fullText
+      stopReason = streamPhase.stopReason
+      usage = streamPhase.usage
+      const streamFatalError = streamPhase.streamFatalError
+      const streamEndedAt = streamPhase.streamEndedAt
+      const blocks = streamPhase.blocks
+      const toolExecutor = streamPhase.toolExecutor
+      const reconcileGateBlockedThisIteration = streamPhase.reconcileGateBlockedThisIteration
+      const toolBasedOnEpoch = streamPhase.toolBasedOnEpoch
+      const flushVisibleText = streamPhase.flushVisibleText
+      const discardVisibleText = streamPhase.discardVisibleText
 
       // Stream complete — finalize the assistant message
       if (!assistantMessage) {
@@ -866,34 +567,15 @@ export class AgentLoop {
       // API-format user messages with structured tool_result blocks.
       // This replaces the legacy addToolResultMessages (assistant text format).
       if (assistantMessage) {
-        const providerToolTurn = finalizeProviderToolTurn({
+        finalizeStreamingProviderToolTurn({
+          messages: this.messages,
           assistantMessage,
-          toolUseBlocks: [...blocks.values()],
-          completedResults: toolResults.map((r) => ({
-            toolUseId: r.toolUse?.id ?? r.name,
-            output: r.output,
-            isError: (r.output as { ok?: boolean })?.ok === false,
-          })),
+          blocks,
+          toolResults,
           missingReasons,
           pendingHookFeedback,
-          createId: () => crypto.randomUUID(),
-          createdAt: new Date(),
+          invariantCheckEnabled,
         })
-
-        this.messages.push(...providerToolTurn.messagesToAppend)
-        pendingHookFeedback.length = 0
-        missingReasons.clear()
-
-        // Dev-only invariant assertion
-        if (invariantCheckEnabled) {
-          try {
-            assertProviderToolTurnInvariant(
-              this.messages.filter((m) => 'role' in m) as Array<{ role: string; content: unknown; toolUses?: ToolUse[] }>,
-            )
-          } catch (err) {
-            console.error('[Invariant]', (err as Error).message)
-          }
-        }
       }
 
       // ── Stream fatal error after S1 synthesis: exit gracefully ──
@@ -1066,32 +748,6 @@ export class AgentLoop {
     return buildApiMessagesWithTranscriptHealth(this.messages, this.chatMemory, this.deps.config.memoryStrategy)
   }
 
-  private async writeProviderTranscriptHealth(metrics: TranscriptHealthMetrics): Promise<void> {
-    await this.traceWriter.write('provider_transcript_health', 'Provider transcript invariant check', {
-      providerTranscriptPersisted: false,
-      providerTranscriptPresent: metrics.providerTranscriptPersisted,
-      toolPairsChecked: metrics.toolPairsChecked,
-      toolPairsRepaired: metrics.toolPairsRepaired,
-      orphanToolResultsDropped: metrics.orphanToolResultsDropped,
-      legacyRowsSkipped: metrics.legacyRowsSkipped,
-      compactPairsSummarized: metrics.compactPairsSummarized,
-    })
-
-    for (const detail of metrics.details) {
-      const title =
-        detail.event === 'synthetic_repair' ? 'Provider transcript synthetic repair' :
-        detail.event === 'orphan_drop' || detail.event === 'duplicate_drop' ? 'Provider transcript orphan result dropped' :
-        detail.event === 'legacy_skip' ? 'Provider transcript legacy row skipped' :
-        'Provider transcript compact pair summarized'
-      const actionType =
-        detail.event === 'synthetic_repair' ? 'provider_transcript_repair' :
-        detail.event === 'orphan_drop' || detail.event === 'duplicate_drop' ? 'provider_transcript_orphan_drop' :
-        detail.event === 'legacy_skip' ? 'provider_transcript_legacy_skip' :
-        'provider_transcript_compact_summary'
-      await this.traceWriter.write(actionType, title, detail as unknown as Record<string, unknown>)
-    }
-  }
-
   // -----------------------------------------------------------------------
   getCaseType(): string {
     return this.deps.caseSchema?.type || 'general'
@@ -1102,25 +758,15 @@ export class AgentLoop {
     this.memoryLifecycle.persistChatSession().catch(() => {})
   }
 
-  private async checkAndCompact(): Promise<{ shouldCompact: boolean; reason?: string }> {
-    return this.memoryLifecycle.checkAndCompact()
-  }
+  private async checkAndCompact(): Promise<{ shouldCompact: boolean; reason?: string }> { return this.memoryLifecycle.checkAndCompact() }
 
-  private async persistChatSession(): Promise<void> {
-    return this.memoryLifecycle.persistChatSession()
-  }
+  private async persistChatSession(): Promise<void> { return this.memoryLifecycle.persistChatSession() }
 
-  private async compactUserProfile(): Promise<void> {
-    return this.memoryLifecycle.compactUserProfile()
-  }
+  private async compactUserProfile(): Promise<void> { return this.memoryLifecycle.compactUserProfile() }
 
-  private shouldPersistRuntimeMemory(): boolean {
-    return this.memoryLifecycle.shouldPersistRuntimeMemory()
-  }
+  private shouldPersistRuntimeMemory(): boolean { return this.memoryLifecycle.shouldPersistRuntimeMemory() }
 
-  private async persistChatMemory(): Promise<void> {
-    return this.memoryLifecycle.persistChatMemory()
-  }
+  private async persistChatMemory(): Promise<void> { return this.memoryLifecycle.persistChatMemory() }
 
   abort() {
     this.aborted = true
