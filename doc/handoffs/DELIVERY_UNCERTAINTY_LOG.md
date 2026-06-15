@@ -631,3 +631,16 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: Not yet rerun on `https://demo.anytrans.ai`. Local verification passed: focused Vitest (`25` tests), `r3-runtime-protocol` (`7` tests), `tsc`, and `build:console`.
 - Owner decision needed: None before the next rerun. Default next step is an authenticated production rerun of the remaining `4` scenarios to confirm whether this local fix closes them or exposes the next narrower blocker.
 - Follow-up owner: CONS-M1 lane owner / runtime owner
+
+### 2026-06-15 - Procedure Start Seam Renamed To `procedureInputs` While Preserving Legacy Nested-Record Compatibility
+
+- Area: CONS-M1 / runtime vocabulary lock / Procedure start semantics
+- Status: default-applied
+- Severity: P2
+- Uncertainty: After the local same-turn carry-forward fix landed, the owned M1 code still used the legacy internal field name `collectedFacts`, which contradicted the owner-approved v2 mental model (`inputs/evidence`, not facts-bag authority) and kept the Wave-2 grep gate semantically dirty even though behavior had improved.
+- Default action taken: Renamed the owned runtime seam to canonical `procedureInputs` in `tool-interceptor` and `session-store`, updated the structured-input timeline wording, and kept a narrow compatibility path that absorbs a single extra nested record on `start_procedure` input so production traces that still send the old shape do not regress before the next rerun.
+- Why this default: It moves the live M1 code closer to the approved v2 vocabulary without gambling on a hard compatibility break while the remaining `4` production scenarios are still awaiting rerun proof.
+- Evidence: `apps/console/lib/agent/tool-interceptor.ts`; `apps/console/lib/agent/session-store.ts`; `apps/console/lib/agent/__tests__/unit/tool-interceptor.test.ts`; `apps/console/lib/agent/__tests__/unit/session-store.test.ts`; `.artifacts/delivery-audit/2026-06-12/cons-m1/progress-summary.md`
+- Production URL / screenshot / receipt: Not yet rerun on `https://demo.anytrans.ai`. Local verification passed: focused Vitest (`3` files, `36` tests), `tsc`, `build:console`, and `git diff --check`.
+- Owner decision needed: None before the next production rerun. If the remaining live failures persist, the lane should treat this rename as settled and keep focusing on scenario closure + receipt-surface parity.
+- Follow-up owner: CONS-M1 lane owner / runtime owner

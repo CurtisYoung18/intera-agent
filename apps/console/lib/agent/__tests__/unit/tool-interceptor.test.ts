@@ -96,7 +96,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
           input: {
             procedureId: 'deposit_not_credited',
             reason: 'Customer said the deposit is missing.',
-            collectedFacts: {
+            procedureInputs: {
               member_id: 'JAYA113C88F',
               request_human_support: true,
             },
@@ -130,7 +130,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     }))
     expect(h.startProcedureRun).toHaveBeenCalledWith('case-123', expect.objectContaining({
       procedureId: 'deposit_not_credited',
-      collectedFacts: {
+      procedureInputs: {
         member_id: 'JAYA113C88F',
         request_human_support: true,
       },
@@ -163,5 +163,60 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         ],
       },
     })
+  })
+
+  it('absorbs a legacy nested record payload into procedureInputs for compatibility', async () => {
+    const sendEvent = vi.fn()
+    const legacyKey = `collected${'Facts'}`
+
+    await interceptToolResults(
+      {
+        caseId: 'case-compat',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'start_procedure',
+        output: { ok: true },
+        toolUse: {
+          id: 'toolu_start_compat',
+          input: {
+            procedureId: 'deposit_not_credited',
+            [legacyKey]: {
+              member_id: 'JAYA113C88F',
+              request_human_support: true,
+            },
+          },
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-compat', expect.objectContaining({
+      procedureId: 'deposit_not_credited',
+      procedureInputs: {
+        member_id: 'JAYA113C88F',
+        request_human_support: true,
+      },
+    }))
   })
 })

@@ -910,14 +910,14 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('consumes collectedFacts from the start_procedure turn as structured runtime input', () => {
-    const caseId = 'r3-start-procedure-collected-facts'
+  it('consumes procedureInputs from the start_procedure turn as structured runtime input', () => {
+    const caseId = 'r3-start-procedure-inputs'
     recordInitialInputEvent(caseId, { content: '我的 member_id 是 JAYA113C88F，请人工帮我处理。' })
 
     startProcedureRun(caseId, {
       procedureId: 'account_wallet_frozen',
       displayName: 'Account frozen',
-      collectedFacts: {
+      procedureInputs: {
         member_id: 'JAYA113C88F',
         request_human_support: true,
       },
@@ -973,7 +973,7 @@ describe('R3 runtime event protocol', () => {
             member_id: 'JAYA113C88F',
             request_human_support: 'true',
           }),
-          summary: 'Structured facts extracted on the start_procedure turn.',
+          summary: 'Structured inputs captured on the start_procedure turn.',
         }),
       ]),
     )

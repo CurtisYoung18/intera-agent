@@ -729,7 +729,7 @@ export function startProcedureRun(caseId: string, input: {
   reason?: string
   confidence?: number
   requestId?: string
-  collectedFacts?: Record<string, unknown>
+  procedureInputs?: Record<string, unknown>
   currentProcedureAction?: 'pause' | 'complete' | 'abandon'
 }): { run: ProcedureRunState; idempotent: boolean; pausedRun?: ProcedureRunState } {
   const session = getOrCreateSession(caseId)
@@ -830,7 +830,7 @@ export function startProcedureRun(caseId: string, input: {
     }
   }
   seedRunInputsFromRuntime(session, run)
-  applyCollectedFactsAtProcedureStart(session, run, input.collectedFacts, now)
+  applyProcedureInputsAtProcedureStart(session, run, input.procedureInputs, now)
   state.activeProcedureRun = run
   appendProcedureTimeline(session, run, {
     origin: 'system',
@@ -1695,15 +1695,15 @@ function seedRunInputsFromRuntime(session: CaseSession, run: ProcedureRunState):
   }
 }
 
-function applyCollectedFactsAtProcedureStart(
+function applyProcedureInputsAtProcedureStart(
   session: CaseSession,
   run: ProcedureRunState,
-  collectedFacts: Record<string, unknown> | undefined,
+  procedureInputs: Record<string, unknown> | undefined,
   now: string,
 ): void {
-  if (!collectedFacts || !isRecord(collectedFacts)) return
-  const formAnswers = normalizeCollectedFactAnswers(collectedFacts)
-  const requestedHuman = hasExplicitHumanRequestFact(collectedFacts)
+  if (!procedureInputs || !isRecord(procedureInputs)) return
+  const formAnswers = normalizeProcedureStartAnswers(procedureInputs)
+  const requestedHuman = hasExplicitHumanRequestInput(procedureInputs)
   if (Object.keys(formAnswers).length === 0 && !requestedHuman) return
 
   const event = createRuntimeEvent({
@@ -1717,9 +1717,9 @@ function applyCollectedFactsAtProcedureStart(
     priority: defaultPriority('customer_form_result'),
     enqueuePolicy: 'fifo',
     createdAt: now,
-    summary: 'Structured facts extracted on the start_procedure turn.',
+    summary: 'Structured inputs captured on the start_procedure turn.',
     metadata: {
-      synthetic: 'start_procedure_collected_facts',
+      synthetic: 'start_procedure_inputs',
       fields: Object.keys(formAnswers),
       explicitHumanRequest: requestedHuman,
     },
@@ -1727,14 +1727,14 @@ function applyCollectedFactsAtProcedureStart(
   run.timeline.push(event)
   ingestInputIntoRun(run, event, { refreshNoProgress: false })
   if (requestedHuman) {
-    setProcedureSignal(run, 'explicit_human_request', 'Structured facts extracted at procedure start indicated that the customer requested a human.')
+    setProcedureSignal(run, 'explicit_human_request', 'Structured inputs captured at procedure start indicated that the customer requested a human.')
     syncCurrentStepAfterProgress(run, now)
   }
 }
 
-function normalizeCollectedFactAnswers(collectedFacts: Record<string, unknown>): Record<string, string> {
+function normalizeProcedureStartAnswers(procedureInputs: Record<string, unknown>): Record<string, string> {
   const answers: Record<string, string> = {}
-  for (const [key, value] of Object.entries(collectedFacts)) {
+  for (const [key, value] of Object.entries(procedureInputs)) {
     if (value == null) continue
     if (typeof value === 'string') {
       const next = value.trim()
@@ -1752,8 +1752,8 @@ function normalizeCollectedFactAnswers(collectedFacts: Record<string, unknown>):
   return answers
 }
 
-function hasExplicitHumanRequestFact(collectedFacts: Record<string, unknown>): boolean {
-  return Object.entries(collectedFacts).some(([key, value]) => {
+function hasExplicitHumanRequestInput(procedureInputs: Record<string, unknown>): boolean {
+  return Object.entries(procedureInputs).some(([key, value]) => {
     if (value !== true) return false
     const normalized = key.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
     return normalized === 'request_human_support'
