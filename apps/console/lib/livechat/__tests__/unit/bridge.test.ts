@@ -229,4 +229,41 @@ describe('livechat bridge', () => {
       undefined,
     )
   })
+
+  it('resumes a transferred session when a new customer message returns to Intera', async () => {
+    mockGetSession.mockResolvedValue({
+      ...makeSession(),
+      state: 'transferred',
+    })
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'text_delta', data: 'Welcome back.', timestamp: '2026-06-15T03:30:00.000Z' },
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-15T03:30:01.000Z' },
+    ]))
+    mockFlushTextBuffer.mockResolvedValueOnce('Welcome back.')
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'hello again' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockUpsertSession).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: 'chat-1',
+      caseId: 'case-1',
+      state: 'idle',
+      textBuffer: '',
+    }))
+    expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'thinking')
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'Welcome back.',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
 })

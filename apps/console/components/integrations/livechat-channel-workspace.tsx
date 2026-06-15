@@ -259,10 +259,12 @@ export default function LiveChatChannelWorkspace({
     const params = new URLSearchParams({
       view: 'form',
       caseId: 'demo',
+      chatId: 'preview',
+      preview: '1',
       title: preset.title,
       fields: JSON.stringify(preset.fields),
     })
-    setMomentPreviewUrl(`/test/livechat?${params.toString()}`)
+    setMomentPreviewUrl(`/livechat-widget?${params.toString()}`)
   }
 
   if (!agentConfigId) {

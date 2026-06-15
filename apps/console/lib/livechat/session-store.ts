@@ -49,6 +49,7 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
     update: {
       orgId: session.orgId,
       internalCaseId: session.caseId,
+      status: 'active',
       bridgeState: session.state,
       textBuffer: encodeLivechatTextBuffer(session.textBuffer),
       metadata: { userId: session.userId },

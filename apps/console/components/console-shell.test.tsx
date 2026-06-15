@@ -45,4 +45,18 @@ describe('ConsoleShell', () => {
     expect(screen.queryByText('Sidebar')).toBeNull()
     expect(screen.queryByTestId('liquid-bg')).toBeNull()
   })
+
+  it('renders livechat widget without console chrome', () => {
+    mockUsePathname.mockReturnValue('/livechat-widget')
+
+    render(
+      <ConsoleShell>
+        <div>LiveChat widget</div>
+      </ConsoleShell>,
+    )
+
+    expect(screen.getByText('LiveChat widget')).not.toBeNull()
+    expect(screen.queryByText('Sidebar')).toBeNull()
+    expect(screen.queryByTestId('liquid-bg')).toBeNull()
+  })
 })

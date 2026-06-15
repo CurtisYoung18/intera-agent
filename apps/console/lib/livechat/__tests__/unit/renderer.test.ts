@@ -117,13 +117,33 @@ describe('LiveChatRenderer', () => {
   describe('form_request', () => {
     it('returns send_card with webview button for Moments', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('form_request', { fields: [{ id: 'name', type: 'text', label: 'Name' }] }), makeCtx())
+      const actions = r.render(makeEvent('form_request', {
+        title: 'Deposit details',
+        description: 'Please fill in the requested details.',
+        fields: [{ id: 'name', type: 'text', label: 'Name' }],
+      }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_card')
-      const card = (a as { type: 'send_card'; card: { title: string; buttons: Array<{ type: string; url: string }> } }).card
-      expect(card.title).toBe('Information Required')
+      const card = (a as { type: 'send_card'; card: { title: string; subtitle?: string; buttons: Array<{ label: string; type: string; url: string }> } }).card
+      expect(card.title).toBe('Deposit details')
+      expect(card.subtitle).toBe('Please fill in the requested details.')
+      expect(card.buttons[0]!.label).toBe('Fill details')
       expect(card.buttons[0]!.type).toBe('webview')
       expect(card.buttons[0]!.url).toContain('view=form')
+      expect(card.buttons[0]!.url).toContain('description=Please+fill+in+the+requested+details.')
+    })
+
+    it('localizes the button label when the form request is Chinese', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('form_request', {
+        title: '查询最近一次存款详情',
+        description: '请提供您最近一次存款的具体信息，以便我们帮您查询。',
+        fields: [{ key: 'amount', type: 'number', label: '存款金额' }],
+      }), makeCtx())
+      const a = actions[0]!
+      expect(a.type).toBe('send_card')
+      const card = (a as { type: 'send_card'; card: { buttons: Array<{ label: string }> } }).card
+      expect(card.buttons[0]!.label).toBe('填写信息')
     })
   })
 

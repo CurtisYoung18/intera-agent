@@ -8,6 +8,7 @@ import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
 import type { BridgeAction, FormField } from '@/lib/livechat/types'
+import { detectWidgetLocale, getWidgetCopy } from '@/lib/livechat/form-widget'
 
 export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
   readonly channel: Channel = 'livechat'
@@ -49,6 +50,15 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
         }
         const formCaseId = d.caseId ?? caseId
         const fields = d.fields ?? []
+        const locale = detectWidgetLocale({
+          title: d.title,
+          description: d.description,
+          fields: fields.map((field) => ({
+            label: typeof field.label === 'string' ? field.label : '',
+            placeholder: typeof field.placeholder === 'string' ? field.placeholder : undefined,
+          })),
+        })
+        const copy = getWidgetCopy(locale)
         const baseUrl = process.env.LIVECHAT_WIDGET_URL ?? 'https://demo.anytrans.ai/livechat-widget'
         const params = new URLSearchParams({
           view: 'form',
@@ -56,17 +66,18 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           // chatId lets the form webview deliver answers via /api/livechat/form-submit
           // (SDK-independent path — see BUG-F fix).
           chatId: ctx.sessionId,
-          title: d.title ?? 'Please fill in the following',
+          title: d.title ?? copy.fallbackTitle,
+          description: d.description ?? copy.fallbackDescription,
           fields: JSON.stringify(fields),
         })
         return {
           type: 'send_card',
           card: {
-            title: d.title ?? 'Information Required',
-            subtitle: d.description ?? `${fields.length} field${fields.length !== 1 ? 's' : ''} to fill`,
+            title: d.title ?? copy.fallbackTitle,
+            subtitle: d.description ?? copy.fallbackDescription,
             buttons: [{
               id: 'open_form',
-              label: d.title ?? 'Fill Form',
+              label: copy.openForm,
               type: 'webview',
               url: `${baseUrl}?${params.toString()}`,
             }],

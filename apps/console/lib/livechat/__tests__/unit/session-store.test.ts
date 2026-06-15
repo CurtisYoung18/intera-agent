@@ -102,6 +102,10 @@ describe('session-store', () => {
       await upsertSession({ chatId: 'chat-1', orgId: 'cust-1', userId: 'user-1', caseId: 'case-1', state: 'idle', textBuffer: '' })
       expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({
         where: { platform_externalChatId: { platform: 'livechat', externalChatId: 'chat-1' } },
+        update: expect.objectContaining({
+          status: 'active',
+          bridgeState: 'idle',
+        }),
       }))
     })
   })

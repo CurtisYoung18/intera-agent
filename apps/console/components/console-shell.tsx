@@ -17,7 +17,14 @@ interface ConsoleShellProps {
 export default function ConsoleShell({ children }: ConsoleShellProps) {
   const pathname = usePathname()
   // Auth entry pages render standalone — no sidebar / preview chrome.
-  if (pathname === '/login' || pathname === '/org-picker') return <>{children}</>
+  if (
+    pathname === '/login' ||
+    pathname === '/org-picker' ||
+    pathname.startsWith('/livechat-widget') ||
+    pathname.startsWith('/test/livechat')
+  ) {
+    return <>{children}</>
+  }
 
   return (
     <AgentProvider>

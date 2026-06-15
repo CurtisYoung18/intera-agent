@@ -148,6 +148,14 @@ async function sendFailureNotice(
   await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
 }
 
+function canResumeTransferredSession(event: IncomingEvent): boolean {
+  return event.type === 'message' ||
+    event.type === 'attachment' ||
+    event.type === 'interaction_submit' ||
+    event.type === 'form_submit' ||
+    event.type === 'postback'
+}
+
 export async function handleIncomingEvent(
   chatId: string, orgId: string, userId: string,
   event: IncomingEvent, config: LiveChatConfig,
@@ -189,10 +197,19 @@ export async function handleIncomingEvent(
     await upsertSession(session)
   }
 
-  // If session was transferred to human, don't re-enter agent loop (§3)
   if (session.state === 'transferred') {
-    console.log('[Bridge] Session transferred, skipping agent loop for chat:', chatId)
-    return
+    if (!canResumeTransferredSession(event)) {
+      console.log('[Bridge] Session transferred, skipping agent loop for chat:', chatId)
+      return
+    }
+
+    session = {
+      ...session,
+      state: 'idle',
+      textBuffer: '',
+    }
+    await upsertSession(session)
+    console.log('[Bridge] Resumed transferred session for chat:', chatId)
   }
 
   await updateSessionState(chatId, 'thinking')
