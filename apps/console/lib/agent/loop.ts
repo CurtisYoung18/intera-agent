@@ -61,6 +61,7 @@ import { ProcedureConditionCheckpoint } from './procedure-condition-checkpoint'
 import { HookContextBuilder } from './hook-context-builder'
 import { TurnExitHandler } from './turn-exit-handler'
 import { PostToolUsePhase, addHookFeedbackMessage } from './post-tool-use-phase'
+import { NoToolTurnHandler } from './no-tool-turn-handler'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -100,27 +101,6 @@ export interface LoopResult {
   reason?: string
 }
 
-function isInternalProcedureUserMessage(message: Message): boolean {
-  if (message.role !== 'user') return false
-
-  const transcriptKind = message.providerMeta?.transcriptKind
-  if (transcriptKind === 'tool_result' || transcriptKind === 'hook_feedback') {
-    return true
-  }
-
-  if (Array.isArray(message.providerContent)) {
-    if (message.providerContent.some((block: any) => block?.type === 'tool_result')) {
-      return true
-    }
-  }
-
-  if (Array.isArray(message.content)) {
-    return message.content.some((block: any) => block?.type === 'tool_result')
-  }
-
-  return false
-}
-
 // ---------------------------------------------------------------------------
 // AgentLoop
 // ---------------------------------------------------------------------------
@@ -155,6 +135,7 @@ export class AgentLoop {
   private hookContextBuilder: HookContextBuilder
   private turnExitHandler: TurnExitHandler
   private postToolUsePhase: PostToolUsePhase
+  private noToolTurnHandler: NoToolTurnHandler
 
   /** Current workflow stage — delegates to caseLoop when active. */
   private get currentStage(): string {
@@ -248,6 +229,12 @@ export class AgentLoop {
       getToolRouter: () => this.toolRouter,
       addMessage: addHookFeedbackMessage(this.messages),
       buildToolInterceptorContext: () => this.buildToolInterceptorContext(),
+    })
+    this.noToolTurnHandler = new NoToolTurnHandler({
+      traceWriter: this.traceWriter,
+      getMessages: () => this.messages,
+      addMessage: (message) => this.messages.push(message),
+      getCurrentStage: () => this.currentStage,
     })
 
     // Always initialize ConversationLoop — used in Core (discovery) mode
@@ -945,78 +932,26 @@ export class AgentLoop {
       }
 
       if (toolResults.length === 0) {
-        if (reconcileGateBlockedThisIteration && !fullText && this.nudgeCount < 3) {
-          this.nudgeCount++
-          const reconcileNudge = '[PROCEDURE RUNTIME] Your previous tool call was blocked because newer customer input arrived. ' +
-            'You MUST call reconcile_procedure_input next with the active runId and latest inputEpoch before any other tool call, finalization, or customer-visible reply.'
-          if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-          this.messages.push(makeUserMessage(reconcileNudge))
-          await this.traceWriter.write('loop_decision', 'Procedure nudge: reconcile required after blocked tool', {
-            stage: this.currentStage,
-            nudgeCount: this.nudgeCount,
-            iteration: this.iterationCount,
-          })
-          sendEvent({
-            type: 'message_stop',
-            data: { reason: 'procedure_reconcile_nudge', stage: this.currentStage },
-            timestamp: new Date().toISOString(),
-          })
-          this.iterationCount--
+        const noToolTurn = await this.noToolTurnHandler.handle({
+          reconcileGateBlockedThisIteration,
+          fullText,
+          nudgeCount: this.nudgeCount,
+          iterationCount: this.iterationCount,
+          assistantMessage,
+          assistantPushed,
+          isProcedureMode: this.caseLoop?.isProcedureMode() ?? false,
+          isConsultation,
+          stopReason,
+          usage,
+          sendEvent,
+        })
+        assistantPushed = noToolTurn.assistantPushed
+        if (noToolTurn.kind === 'continue') {
+          this.nudgeCount = noToolTurn.nudgeCount
+          this.iterationCount += noToolTurn.iterationDelta
           continue
         }
-
-        // ── Procedure mode: guard against silent end_turn after tool results ──────
-        // When the agent just received tool results (there ARE previous tool
-        // messages) but produced empty text and no new tool calls, it silently
-        // swallowed the findings. Nudge it to either tell the user or finalize.
-        if (this.caseLoop?.isProcedureMode() && !fullText) {
-          const lastFewMessages = this.messages.slice(-6)
-          const hasPendingToolResults = lastFewMessages.some(
-            (m) => isInternalProcedureUserMessage(m),
-          )
-          if (hasPendingToolResults && this.nudgeCount < 3) {
-            this.nudgeCount++
-            const procedureNudge = '[SYSTEM] You just received investigation results but produced no response. ' +
-                'You MUST now either: (1) call finalize_procedure with a conclusion, (2) call create_human_task if escalation is needed, ' +
-                'or (3) respond to the customer with findings and next steps. ' +
-                'Do not produce empty turns — act on the data you just received.'
-            if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-            this.messages.push(makeUserMessage(procedureNudge))
-            await this.traceWriter.write('loop_decision', 'Procedure nudge: empty turn after tool results', {
-              stage: this.currentStage, nudgeCount: this.nudgeCount, iteration: this.iterationCount,
-            })
-            sendEvent({
-              type: 'message_stop',
-              data: { reason: 'procedure_empty_turn_nudge', stage: this.currentStage },
-              timestamp: new Date().toISOString(),
-            })
-            // Don't count the nudge against maxIterations — the model needs
-            // one extra turn to correct its mistake (bounded by nudgeCount < 3).
-            this.iterationCount--
-            continue
-          }
-        }
-
-        // No tools called — legitimate exit, model wants user input.
-        await this.traceWriter.write('loop_decision', 'Exit: no tools called', {
-          stopReason, iteration: this.iterationCount, textLength: fullText.length,
-          stage: this.currentStage,
-        })
-        if (!assistantPushed) { this.messages.push(assistantMessage); assistantPushed = true }
-        sendEvent({
-          type: 'message_stop',
-          data: { reason: 'no_tools', stopReason, usage } as any,
-          timestamp: new Date().toISOString(),
-        })
-        return {
-          messages: this.messages,
-          // In consultation mode keep the case as waiting_human so the next request
-          // re-enters consultation mode rather than reverting to an investigation stage.
-          // Otherwise persist the current case status.
-          caseStatus: (isConsultation ? 'waiting_human' : this.currentStage) as CaseStatus,
-          transition: 'next_turn',
-          currentStage: this.currentStage,
-        }
+        return noToolTurn.result
       }
 
       const postToolUse = await this.postToolUsePhase.run({
