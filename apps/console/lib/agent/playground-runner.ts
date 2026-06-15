@@ -75,7 +75,7 @@ function classifyToolExecution(
 
   const toolCategory = definition.toolCategory
   const definitionMode = definition.mode
-  const isKnowledgeTool = toolName.startsWith('kb_search_')
+  const isKnowledgeTool = !!definition.knowledgeSourceId
 
   if (dryRun && toolCategory !== 'system_info') {
     return {
@@ -241,17 +241,24 @@ function enrichTraceRecord(
   const toolName = toolNameFromTrace(record, parsed)
   if (!toolName) return record
 
-  const executionTruth = classifyToolExecution(toolName, toolDefinitions.get(toolName), dryRun)
-  const nextPayload = { ...(parsed ?? {}), toolName, executionTruth }
+  const definition = toolDefinitions.get(toolName)
+  const executionTruth = classifyToolExecution(toolName, definition, dryRun)
+  const nextPayload = {
+    ...(parsed ?? {}),
+    toolName,
+    executionTruth,
+    knowledgeSourceId: definition?.knowledgeSourceId,
+    knowledgeSourceName: definition?.knowledgeSourceName,
+  }
   return { ...record, payload: JSON.stringify(nextPayload) }
 }
 
 function deriveApplicableStages(toolDefinitions: ToolDefinition[]): string[] {
   const applicable = new Set<string>(['Hooks', 'Model generation'])
-  if (toolDefinitions.some((definition) => definition.name.startsWith('kb_search_'))) {
+  if (toolDefinitions.some((definition) => !!definition.knowledgeSourceId)) {
     applicable.add('Knowledge retrieval')
   }
-  if (toolDefinitions.some((definition) => !definition.name.startsWith('kb_search_'))) {
+  if (toolDefinitions.some((definition) => !definition.knowledgeSourceId)) {
     applicable.add('Tools')
   }
   return ['Hooks', 'Knowledge retrieval', 'Tools', 'Procedure', 'Model generation']
@@ -380,8 +387,10 @@ export async function* runPlaygroundTurn(input: {
   let bootstrapNewCase: boolean
 
   if (inputChatId) {
+    // start_procedure mutates Case.type to the real case type, so Playground
+    // session continuity must key on chatId + tenant boundary, not type.
     const existingCase = await prisma.case.findFirst({
-      where: { orgId, chatId: inputChatId, type: 'playground', userId },
+      where: { orgId, chatId: inputChatId, userId },
       select: { id: true },
     })
     if (!existingCase) {
@@ -396,11 +405,11 @@ export async function* runPlaygroundTurn(input: {
   } else {
     // First turn — check per-account cap
     const sessionCount = await prisma.case.count({
-      where: { orgId, userId, type: 'playground' },
+      where: { orgId, userId, chatId: { startsWith: 'pg_' } },
     })
     if (sessionCount >= MAX_PLAYGROUND_SESSIONS) {
       const oldestCases = await prisma.case.findMany({
-        where: { orgId, userId, type: 'playground' },
+        where: { orgId, userId, chatId: { startsWith: 'pg_' } },
         orderBy: { createdAt: 'asc' },
         take: sessionCount - MAX_PLAYGROUND_SESSIONS + 1,
         select: { id: true },

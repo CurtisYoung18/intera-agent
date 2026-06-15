@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockGetActiveVendor: vi.fn(),
   mockCaseFindFirst: vi.fn(),
+  mockCaseDelete: vi.fn(),
   mockMessageFindMany: vi.fn(),
   mockActionTraceFindMany: vi.fn(),
   mockAgentConfigFindFirst: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock('@/lib/auth', () => ({
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg: () => ({
     raw: {
-      case: { findFirst: h.mockCaseFindFirst },
+      case: { findFirst: h.mockCaseFindFirst, delete: h.mockCaseDelete },
       message: { findMany: h.mockMessageFindMany },
       actionTrace: { findMany: h.mockActionTraceFindMany },
       agentConfig: { findFirst: h.mockAgentConfigFindFirst },
@@ -32,7 +33,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
-import { GET } from '@/app/api/admin/playground/sessions/[chatId]/route'
+import { GET, DELETE } from '@/app/api/admin/playground/sessions/[chatId]/route'
 
 function makeRequest(url = 'http://localhost/api/admin/playground/sessions/pg_agent-1_1_a?configId=agent-1') {
   return {
@@ -47,6 +48,7 @@ beforeEach(() => {
   h.mockGetSession.mockResolvedValue({ orgId: 'org-1', role: 'admin', userId: 'user-1' })
   h.mockGetActiveVendor.mockResolvedValue({ isAuthed: true, userId: 'user-1' })
   h.mockCaseFindFirst.mockResolvedValue({ id: 'case-1' })
+  h.mockCaseDelete.mockResolvedValue({})
   h.mockActionTraceFindMany.mockResolvedValue([])
   h.mockAgentConfigFindFirst.mockResolvedValue({ id: 'agent-1' })
   h.mockToolFindMany.mockResolvedValue([])
@@ -102,7 +104,6 @@ describe('GET /api/admin/playground/sessions/[chatId]', () => {
       where: {
         orgId: 'org-1',
         chatId: 'pg_agent-1_1_a',
-        type: 'playground',
         userId: 'user-1',
       },
     }))
@@ -157,5 +158,21 @@ describe('GET /api/admin/playground/sessions/[chatId]', () => {
     expect(res.status).toBe(200)
     expect(h.mockToolFindMany).not.toHaveBeenCalled()
     expect(body.data.renderHintsMap).toEqual({})
+  })
+
+  it('deletes a restored session even after the case type changed away from playground', async () => {
+    const res = await DELETE(makeRequest(), { params: Promise.resolve({ chatId: 'pg_agent-1_1_a' }) })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(h.mockCaseFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        orgId: 'org-1',
+        chatId: 'pg_agent-1_1_a',
+        userId: 'user-1',
+      },
+    }))
+    expect(h.mockCaseDelete).toHaveBeenCalledWith({ where: { id: 'case-1' } })
+    expect(body.ok).toBe(true)
   })
 })

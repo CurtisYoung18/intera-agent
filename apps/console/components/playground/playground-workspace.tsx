@@ -11,7 +11,7 @@ import {
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { AGENT_CONFIG_UPDATED_EVENT } from '@/lib/agent-config-events'
 import { apiClient } from '@/lib/api/client'
-import type { ContentBlock, LifecycleNotice } from '@intera/shared/types'
+import type { LifecycleNotice } from '@intera/shared/types'
 import { useSession } from '@/lib/hooks/use-session'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
@@ -148,18 +148,6 @@ function imagesFromContentBlocks(blocks: unknown): AttachedImage[] | undefined {
     }]
   })
   return images.length > 0 ? images : undefined
-}
-
-function imagesToContentBlocks(images: AttachedImage[] | undefined): ContentBlock[] | undefined {
-  if (!images || images.length === 0) return undefined
-  return images.map((img) => ({
-    type: 'image',
-    source: {
-      type: 'base64',
-      media_type: img.mimeType,
-      data: img.base64,
-    },
-  }))
 }
 
 function findLatestRuntimeTruth(turnTraces: Array<Array<{ runtimeTruth?: PlaygroundCapabilityTruth }>>): PlaygroundCapabilityTruth | null {
@@ -980,14 +968,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             role: m.role,
             content: m.content,
             thinking: m.thinking,
-            contentBlocks: m.images?.map((img) => ({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: img.mimeType,
-                data: img.base64,
-              },
-            })),
           })),
           traces: turnTraces,
         }),
@@ -1087,7 +1067,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             }
             else if (event.type === 'session_init') {
               const d = event.data as { chatId: string; caseId: string }
-              if (d?.chatId && !chatIdRef.current) {
+              if (d?.chatId && d.chatId !== chatIdRef.current) {
                 setChatId(d.chatId)
                 try { localStorage.setItem(lskRef.current.chatId, d.chatId) } catch {}
               }
@@ -1716,11 +1696,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     {m.role === 'user' ? (isZh ? '你' : 'You') : snapshot?.name || 'Agent'}
                   </div>
                   {m.role === 'agent' ? (
-                    <MessageContent
-                      content={m.content}
-                      contentBlocks={imagesToContentBlocks(m.images)}
-                      imagePreviewMode="auto"
-                    />
+                    <MessageContent content={m.content} />
                   ) : (
                     <>
                       {m.images && m.images.length > 0 && (

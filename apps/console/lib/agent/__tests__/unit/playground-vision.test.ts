@@ -152,7 +152,7 @@ beforeEach(() => {
     run: h.mockAgentRun,
   })
   h.mockCaseFindFirst.mockResolvedValue(null)
-  h.mockCaseFindUnique.mockResolvedValue({ orgId: 'org-1', chatId: 'pg_agent-1_default_x' })
+  h.mockCaseFindUnique.mockResolvedValue(null)
   h.mockCaseCount.mockResolvedValue(0)
   h.mockCaseFindMany.mockResolvedValue([])
   h.mockCaseDeleteMany.mockResolvedValue({ count: 0 })
@@ -258,7 +258,7 @@ describe('runPlaygroundTurn vision handling', () => {
     expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('dry_run_mixed')
   })
 
-  it('restores a provided chatId only inside the current org and user boundary', async () => {
+  it('restores a provided chatId inside the current org and user boundary even after the case type changes', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
     h.config = { ...h.config, model: 'openai/gpt-4o' }
     h.mockCaseFindFirst.mockResolvedValue({ id: 'case-existing' })
@@ -276,7 +276,6 @@ describe('runPlaygroundTurn vision handling', () => {
       where: {
         orgId: 'org-1',
         chatId: 'pg_agent-1_1_a',
-        type: 'playground',
         userId: 'user-1',
       },
       select: { id: true },
@@ -325,7 +324,7 @@ describe('runPlaygroundTurn vision handling', () => {
     })
 
     expect(h.mockCaseCount).toHaveBeenCalledWith({
-      where: { orgId: 'org-1', userId: 'user-1', type: 'playground' },
+      where: { orgId: 'org-1', userId: 'user-1', chatId: { startsWith: 'pg_' } },
     })
   })
 
