@@ -168,7 +168,7 @@ Wave-1 ownership note: `package.json` stays with CONS-M5 in this wave to avoid d
 
 ```bash
 rg "procedureVersion|isProcedureV2Definition|legacyFacts|collectedFacts|exposeConfirmedFacts" apps packages   # migration/archive hits only
-rg "confirmedFacts|requireFacts|ingestUserMessageFacts" apps packages                                          # clean
+rg "confirmedFacts|requireFacts|ingestUserMessageFacts" apps packages                                          # migration/archive hits only
 rg "seedProcedureTodos|renderProcedureSteps" apps packages                                                     # clean
 ```
 
