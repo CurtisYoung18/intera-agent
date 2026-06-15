@@ -118,6 +118,27 @@ function applyFinalizeEvent<TState extends ProcedureRunKernelState>(
   event: Extract<ProcedureRunKernelEvent, { type: 'finalize' }>,
   clock: ProcedureRunKernelClock,
 ): ProcedureRunKernelResult<TState> {
+  if (event.basedOnInputEpoch < state.inputEpoch) {
+    return {
+      state,
+      effects: [
+        {
+          type: 'timeline',
+          origin: 'system',
+          source: 'tool_result',
+          basedOnInputEpoch: event.basedOnInputEpoch,
+          summary: `Ignored stale finalize event based on inputEpoch ${event.basedOnInputEpoch}; current inputEpoch is ${state.inputEpoch}.`,
+          metadata: {
+            terminal: true,
+            evidenceState: 'stale',
+            blocked: true,
+            currentInputEpoch: state.inputEpoch,
+          },
+        },
+      ],
+    }
+  }
+
   state.status = event.status
   state.updatedAt = clock.now
 

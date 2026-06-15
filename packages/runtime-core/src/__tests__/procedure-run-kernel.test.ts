@@ -155,6 +155,39 @@ describe('procedure-run-kernel', () => {
     })
   })
 
+  it('does not advance terminal state for stale finalize events', () => {
+    for (const currentEpoch of [1, 2, 7, 42]) {
+      for (const staleEpoch of Array.from({ length: currentEpoch }, (_, index) => index)) {
+        const original = createRun({ inputEpoch: currentEpoch })
+        const result = applyProcedureRunEvent(original, {
+          type: 'finalize',
+          status: 'completed',
+          basedOnInputEpoch: staleEpoch,
+          summary: 'Stale finalize attempt',
+        }, {
+          now: NOW,
+        })
+
+        expect(result.state).toEqual(original)
+        expect(result.effects).toEqual([
+          {
+            type: 'timeline',
+            origin: 'system',
+            source: 'tool_result',
+            basedOnInputEpoch: staleEpoch,
+            summary: `Ignored stale finalize event based on inputEpoch ${staleEpoch}; current inputEpoch is ${currentEpoch}.`,
+            metadata: {
+              terminal: true,
+              evidenceState: 'stale',
+              blocked: true,
+              currentInputEpoch: currentEpoch,
+            },
+          },
+        ])
+      }
+    }
+  })
+
   it('stays free of adapter-only runtime side effects', () => {
     const source = readFileSync(new URL('../procedure-run-kernel.ts', import.meta.url), 'utf8')
 
