@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  extractSnapshotRows,
   looksLikeLegacyProcedure,
+  migrateCaseTypeRows,
   migrateLegacyProcedureToV2,
   normalizeStoredProcedure,
 } from './migrate-procedures-v1-to-v2.mjs'
@@ -188,5 +190,73 @@ describe('migrate-procedures-v1-to-v2', () => {
       ]),
     )
     expect(normalized.definition.legacy?.procedureV1?.version).toBe(1)
+  })
+
+  it('extracts case types from a production-style api envelope', () => {
+    const rows = extractSnapshotRows({
+      ok: true,
+      data: {
+        types: [
+          { id: 'ct_1', type: 'deposit_not_credited', procedure: '{"version":"v2","steps":[{"id":"step_1","title":"Ask","guidance":"Collect","actions":[]}]}' },
+        ],
+      },
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: 'ct_1', type: 'deposit_not_credited' })
+  })
+
+  it('migrates snapshot rows and preserves v2 rows while surfacing invalid ones', () => {
+    const legacyProcedure = {
+      steps: [
+        { id: 'collect', action: 'ask', target: 'member_id', guidance: 'Collect member id.', required: true },
+        { id: 'finish', action: 'finalize', guidance: 'Finish the procedure.' },
+      ],
+    }
+    const v2Procedure = {
+      version: 'v2',
+      whenToUse: 'Use for existing v2 rows',
+      overview: 'Already migrated.',
+      knowledgeGuidance: '',
+      handoffGuidance: '',
+      steps: [
+        {
+          id: 'step_1',
+          title: 'Ask for details',
+          guidance: 'Collect the required details.',
+          actions: [{ id: 'ask_member', kind: 'ask', label: 'Ask member id', fields: ['member_id'] }],
+        },
+      ],
+    }
+
+    const { summary, normalizedRows } = migrateCaseTypeRows([
+      { id: 'legacy_1', type: 'deposit_not_credited', procedure: JSON.stringify(legacyProcedure) },
+      { id: 'v2_1', type: 'withdrawal_not_credited', procedure: JSON.stringify(v2Procedure) },
+      { id: 'bad_1', type: 'broken_case', procedure: '{"wat":true}' },
+    ])
+
+    expect(summary).toMatchObject({
+      scanned: 3,
+      migrated: 1,
+      alreadyV2: 1,
+      invalid: 1,
+    })
+    expect(summary.failures).toEqual([
+      expect.objectContaining({
+        id: 'bad_1',
+        type: 'broken_case',
+      }),
+    ])
+    expect(summary.results).toEqual([
+      { id: 'legacy_1', type: 'deposit_not_credited', status: 'legacy_migrated' },
+      { id: 'v2_1', type: 'withdrawal_not_credited', status: 'v2' },
+      expect.objectContaining({ id: 'bad_1', type: 'broken_case', status: 'invalid' }),
+    ])
+
+    const migratedLegacy = JSON.parse(normalizedRows[0].procedure)
+    expect(migratedLegacy.version).toBe('v2')
+    expect(migratedLegacy.legacy?.procedureV1?.steps).toHaveLength(2)
+    expect(normalizedRows[1].procedure).toBe(JSON.stringify(v2Procedure))
+    expect(normalizedRows[2].procedure).toBe('{"wat":true}')
   })
 })

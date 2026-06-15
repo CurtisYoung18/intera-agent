@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
+import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
 const LEGACY_ACTIONS = new Set(['use', 'read', 'ask', 'decide', 'tag', 'escalate', 'finalize'])
@@ -295,9 +296,95 @@ export function normalizeStoredProcedure(rawProcedure) {
   return { status: 'invalid', reason: 'procedure is neither a v2 definition nor a recognizable legacy Procedure v1 shape' }
 }
 
-async function run() {
+function parseArgs(argv) {
+  const dryRun = argv.includes('--dry-run')
+  const inputPath = argv.find((arg) => arg.startsWith('--input='))?.slice('--input='.length)
+    ?? argv[argv.indexOf('--input') + 1]
+  const outputPath = argv.find((arg) => arg.startsWith('--output='))?.slice('--output='.length)
+    ?? argv[argv.indexOf('--output') + 1]
+  return {
+    dryRun,
+    inputPath: inputPath || null,
+    outputPath: outputPath || null,
+  }
+}
+
+export function extractSnapshotRows(snapshot) {
+  if (Array.isArray(snapshot)) return snapshot
+  if (isRecord(snapshot) && Array.isArray(snapshot.types)) return snapshot.types
+  if (isRecord(snapshot) && isRecord(snapshot.data) && Array.isArray(snapshot.data.types)) return snapshot.data.types
+  throw new Error('Snapshot input must be an array of case types or an envelope containing data.types.')
+}
+
+function serializeProcedure(definition, originalProcedure) {
+  return typeof originalProcedure === 'string' ? JSON.stringify(definition) : definition
+}
+
+export function migrateCaseTypeRows(rows) {
+  const summary = {
+    scanned: rows.length,
+    migrated: 0,
+    alreadyV2: 0,
+    invalid: 0,
+    failures: [],
+    results: [],
+  }
+
+  const normalizedRows = rows.map((row, index) => {
+    const normalized = normalizeStoredProcedure(row?.procedure)
+    const rowId = row?.id ?? `row_${index + 1}`
+    const rowType = row?.type ?? `row_${index + 1}`
+    if (normalized.status === 'v2') {
+      summary.alreadyV2 += 1
+      summary.results.push({ id: rowId, type: rowType, status: 'v2' })
+      return row
+    }
+    if (normalized.status === 'invalid') {
+      summary.invalid += 1
+      summary.failures.push({ id: rowId, type: rowType, reason: normalized.reason })
+      summary.results.push({ id: rowId, type: rowType, status: 'invalid', reason: normalized.reason })
+      return row
+    }
+
+    summary.migrated += 1
+    summary.results.push({ id: rowId, type: rowType, status: 'legacy_migrated' })
+    return {
+      ...row,
+      procedure: serializeProcedure(normalized.definition, row?.procedure),
+    }
+  })
+
+  return { summary, normalizedRows }
+}
+
+async function runSnapshotMode({ dryRun, inputPath, outputPath }) {
+  const raw = await readFile(inputPath, 'utf8')
+  const parsed = JSON.parse(raw)
+  const rows = extractSnapshotRows(parsed)
+  const { summary, normalizedRows } = migrateCaseTypeRows(rows)
+  const nextSnapshot = Array.isArray(parsed)
+    ? normalizedRows
+    : isRecord(parsed) && Array.isArray(parsed.types)
+      ? { ...parsed, types: normalizedRows }
+      : { ...parsed, data: { ...parsed.data, types: normalizedRows } }
+
+  if (outputPath) {
+    await writeFile(outputPath, JSON.stringify(nextSnapshot, null, 2))
+  }
+
+  const result = {
+    source: 'snapshot',
+    dryRun,
+    inputPath,
+    outputPath: outputPath || null,
+    ...summary,
+  }
+  console.log(JSON.stringify(result, null, 2))
+  if (summary.invalid > 0) process.exitCode = 1
+}
+
+async function runDatabaseMode({ dryRun }) {
   const prisma = new PrismaClient()
-  const dryRun = process.argv.includes('--dry-run')
   try {
     const rows = await prisma.caseType.findMany({
       where: { NOT: { procedure: null } },
@@ -305,40 +392,39 @@ async function run() {
       orderBy: { type: 'asc' },
     })
 
-    const summary = {
-      dryRun,
-      scanned: rows.length,
-      migrated: 0,
-      alreadyV2: 0,
-      invalid: 0,
-      failures: [],
-    }
+    const { summary, normalizedRows } = migrateCaseTypeRows(rows)
 
-    for (const row of rows) {
-      const normalized = normalizeStoredProcedure(row.procedure)
-      if (normalized.status === 'v2') {
-        summary.alreadyV2 += 1
-        continue
-      }
-      if (normalized.status === 'invalid') {
-        summary.invalid += 1
-        summary.failures.push({ id: row.id, type: row.type, reason: normalized.reason })
-        continue
-      }
-      summary.migrated += 1
+    for (let index = 0; index < rows.length; index += 1) {
+      const original = rows[index]
+      const next = normalizedRows[index]
+      if (original === next) continue
       if (!dryRun) {
         await prisma.caseType.update({
-          where: { id: row.id },
-          data: { procedure: JSON.stringify(normalized.definition) },
+          where: { id: original.id },
+          data: { procedure: next.procedure },
         })
       }
     }
 
-    console.log(JSON.stringify(summary, null, 2))
+    const result = {
+      source: 'database',
+      dryRun,
+      ...summary,
+    }
+    console.log(JSON.stringify(result, null, 2))
     if (summary.invalid > 0) process.exitCode = 1
   } finally {
     await prisma.$disconnect()
   }
+}
+
+async function run() {
+  const options = parseArgs(process.argv.slice(2))
+  if (options.inputPath) {
+    await runSnapshotMode(options)
+    return
+  }
+  await runDatabaseMode(options)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
