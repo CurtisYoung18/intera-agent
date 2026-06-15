@@ -13,7 +13,7 @@ import {
 } from './livechat-api'
 import { enqueueRetry } from './retry-queue'
 
-import { downloadAndEncode, isSupportedImageType } from './image-utils'
+import { downloadAndEncode, isSupportedImageType, resolveRenderableImageUrls } from './image-utils'
 import { getInternalMessagesUrl } from './internal-messages-url'
 import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
@@ -100,6 +100,40 @@ function buildMessagesBody(
       }
       return { ...base, message: text }
     }
+  }
+}
+
+async function flushBufferedTextAsMessages(
+  chatId: string,
+  rawText: string,
+  config: LiveChatConfig,
+  params: ReturnType<typeof lcParams>,
+): Promise<void> {
+  const text = rawText.trimStart()
+  if (!text.trim()) return
+
+  await sendTextMessage(
+    chatId,
+    text,
+    config.botAccessToken,
+    config.licenseId,
+    params.region,
+    params.authType,
+    params.accountId,
+  )
+
+  const imageUrls = await resolveRenderableImageUrls(text)
+  for (const imageUrl of imageUrls) {
+    await sendImage(
+      chatId,
+      imageUrl,
+      undefined,
+      config.botAccessToken,
+      config.licenseId,
+      params.region,
+      params.authType,
+      params.accountId,
+    )
   }
 }
 
@@ -284,9 +318,7 @@ export async function handleIncomingEvent(
               break
             case 'transfer_chat': {
               const pendingText = (await flushTextBuffer(chatId)).trimStart()
-              if (pendingText.trim()) {
-                await sendTextMessage(chatId, pendingText, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
-              }
+              await flushBufferedTextAsMessages(chatId, pendingText, config, p)
               const target = action.group
                 ? { type: 'group' as const, ids: [action.group] }
                 : config.transferGroupId != null
@@ -301,10 +333,8 @@ export async function handleIncomingEvent(
               await appendTextBuffer(chatId, action.delta)
               break
             case 'flush_text': {
-              const text = (await flushTextBuffer(chatId)).trimStart()
-              if (text.trim()) {
-                await sendTextMessage(chatId, text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(e => console.error('[Bridge] sendText failed:', e))
-              }
+              const text = await flushTextBuffer(chatId)
+              await flushBufferedTextAsMessages(chatId, text, config, p).catch(e => console.error('[Bridge] sendText failed:', e))
               break
             }
             case 'noop':

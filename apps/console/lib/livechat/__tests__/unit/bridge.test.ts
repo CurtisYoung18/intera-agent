@@ -22,6 +22,7 @@ const mockDeactivateChat = vi.fn()
 
 const mockEnqueueRetry = vi.fn()
 const mockFetch = vi.fn()
+const mockResolveRenderableImageUrls = vi.fn()
 
 vi.mock('../../session-store', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
@@ -52,6 +53,7 @@ vi.mock('../../retry-queue', () => ({
 vi.mock('../../image-utils', () => ({
   downloadAndEncode: vi.fn(),
   isSupportedImageType: vi.fn(() => false),
+  resolveRenderableImageUrls: (...args: unknown[]) => mockResolveRenderableImageUrls(...args),
 }))
 
 vi.mock('../../internal-messages-url', () => ({
@@ -100,9 +102,11 @@ describe('livechat bridge', () => {
     mockUpdateSessionState.mockResolvedValue(undefined)
     mockAppendTextBuffer.mockResolvedValue(undefined)
     mockSendTextMessage.mockResolvedValue(undefined)
+    mockSendImage.mockResolvedValue(undefined)
     mockSetTypingIndicator.mockResolvedValue(undefined)
     mockTransferChat.mockResolvedValue(undefined)
     mockDeactivateChat.mockResolvedValue(undefined)
+    mockResolveRenderableImageUrls.mockResolvedValue([])
     mockFetch.mockResolvedValue(makeSseResponse([]))
     vi.stubGlobal('fetch', mockFetch)
   })
@@ -164,5 +168,65 @@ describe('livechat bridge', () => {
       undefined,
     )
     expect(mockTransferChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends image events after flushing assistant text with renderable image urls', async () => {
+    mockResolveRenderableImageUrls.mockResolvedValue([
+      'https://i.postimg.cc/example/demo.jpg',
+      'https://example.com/guide.png',
+    ])
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'text_delta',
+        data: '注册指引：https://postimg.cc/abc123 查看玩家 ID：https://example.com/guide.png',
+        timestamp: '2026-06-11T09:34:43.000Z',
+      },
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+    mockFlushTextBuffer.mockResolvedValueOnce('注册指引：https://postimg.cc/abc123 查看玩家 ID：https://example.com/guide.png')
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: '有图片指引吗' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      '注册指引：https://postimg.cc/abc123 查看玩家 ID：https://example.com/guide.png',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockResolveRenderableImageUrls).toHaveBeenCalledWith(
+      '注册指引：https://postimg.cc/abc123 查看玩家 ID：https://example.com/guide.png',
+    )
+    expect(mockSendImage).toHaveBeenCalledTimes(2)
+    expect(mockSendImage).toHaveBeenNthCalledWith(
+      1,
+      'chat-1',
+      'https://i.postimg.cc/example/demo.jpg',
+      undefined,
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockSendImage).toHaveBeenNthCalledWith(
+      2,
+      'chat-1',
+      'https://example.com/guide.png',
+      undefined,
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
   })
 })

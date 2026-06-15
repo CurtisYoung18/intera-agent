@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { downloadAndEncode, isSupportedImageType } from '../../image-utils'
+import {
+  downloadAndEncode,
+  extractUrls,
+  isDirectImageUrl,
+  isResolvablePreviewPageUrl,
+  isSupportedImageType,
+  resolvePreviewPageImageUrl,
+  resolveRenderableImageUrls,
+} from '../../image-utils'
 
 describe('downloadAndEncode', () => {
   beforeEach(() => {
@@ -47,5 +55,55 @@ describe('isSupportedImageType', () => {
     expect(isSupportedImageType('application/octet-stream')).toBe(false)
     expect(isSupportedImageType(undefined)).toBe(false)
     expect(isSupportedImageType('')).toBe(false)
+  })
+})
+
+describe('image preview helpers', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('extracts deduplicated urls while trimming trailing punctuation', () => {
+    expect(
+      extractUrls('See https://postimg.cc/abc123, and https://example.com/demo.png. https://postimg.cc/abc123'),
+    ).toEqual([
+      'https://postimg.cc/abc123',
+      'https://example.com/demo.png',
+    ])
+  })
+
+  it('detects direct image urls and resolvable preview pages', () => {
+    expect(isDirectImageUrl('https://example.com/demo.png')).toBe(true)
+    expect(isDirectImageUrl('https://i.postimg.cc/abc/demo.jpg')).toBe(true)
+    expect(isDirectImageUrl('https://postimg.cc/abc123')).toBe(false)
+
+    expect(isResolvablePreviewPageUrl('https://postimg.cc/abc123')).toBe(true)
+    expect(isResolvablePreviewPageUrl('https://www.postimg.cc/abc123')).toBe(true)
+    expect(isResolvablePreviewPageUrl('https://example.com/demo.png')).toBe(false)
+  })
+
+  it('resolves preview page html to the direct image url', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '<html><head><meta property="og:image" content="https://i.postimg.cc/example/demo.jpg"></head></html>',
+    }))
+
+    await expect(resolvePreviewPageImageUrl('https://postimg.cc/abc123')).resolves.toBe(
+      'https://i.postimg.cc/example/demo.jpg',
+    )
+  })
+
+  it('returns direct images and resolved preview page images together', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => '<html><head><meta property="og:image" content="https://i.postimg.cc/example/demo.jpg"></head></html>',
+    }))
+
+    await expect(
+      resolveRenderableImageUrls('A https://postimg.cc/abc123 B https://example.com/guide.png C https://example.com/page'),
+    ).resolves.toEqual([
+      'https://i.postimg.cc/example/demo.jpg',
+      'https://example.com/guide.png',
+    ])
   })
 })
