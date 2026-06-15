@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockFindFirst = vi.fn()
 const mockAgentFindUnique = vi.fn()
+const mockAgentFindFirst = vi.fn()
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
@@ -10,6 +11,7 @@ vi.mock('@intera/shared/prisma', () => ({
     },
     agentConfig: {
       findUnique: (...args: unknown[]) => mockAgentFindUnique(...args),
+      findFirst: (...args: unknown[]) => mockAgentFindFirst(...args),
     },
   },
 }))
@@ -17,14 +19,17 @@ vi.mock('@intera/shared/prisma', () => ({
 import {
   getLiveChatConfig,
   getLiveChatConfigForFamily,
+  getLiveChatConfigForOrg,
   invalidateLiveChatConfig,
   resolveLiveChatFamilyAnchorId,
+  resolveLiveChatAgentConfigIdForOrg,
 } from '../../config-store'
 
 describe('config-store', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockAgentFindUnique.mockResolvedValue(null)
+    mockAgentFindFirst.mockResolvedValue(null)
     invalidateLiveChatConfig('cust-a')
     invalidateLiveChatConfig('cust-b')
     invalidateLiveChatConfig('cust-c')
@@ -132,6 +137,48 @@ describe('config-store', () => {
 
       const config = await getLiveChatConfigForFamily('draft-3')
       expect(config?.botAccessToken).toBe('draft-token')
+    })
+  })
+
+  describe('org-scoped fallback resolution', () => {
+    it('resolves the active livechat agent for an org', async () => {
+      mockAgentFindFirst.mockResolvedValue({ id: 'active-agent' })
+
+      await expect(resolveLiveChatAgentConfigIdForOrg('default')).resolves.toBe('active-agent')
+      expect(mockAgentFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          orgId: 'default',
+          isActive: true,
+          channelBindings: {
+            some: {
+              channel: 'livechat',
+              enabled: true,
+            },
+          },
+        }),
+      }))
+    })
+
+    it('loads the active org binding through family resolution', async () => {
+      mockAgentFindFirst.mockResolvedValue({ id: 'active-agent' })
+      mockAgentFindUnique.mockResolvedValue({ id: 'active-agent', parentId: null })
+      mockFindFirst.mockResolvedValue({
+        orgId: 'default',
+        agentConfigId: 'active-agent',
+        botAccessToken: 'active-token',
+        licenseId: 'active-license',
+        enabled: true,
+        credentials: '{}',
+      })
+
+      await expect(getLiveChatConfigForOrg('default')).resolves.toEqual({
+        agentConfigId: 'active-agent',
+        config: expect.objectContaining({
+          botAccessToken: 'active-token',
+          licenseId: 'active-license',
+          enabled: true,
+        }),
+      })
     })
   })
 })

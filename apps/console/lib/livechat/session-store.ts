@@ -13,14 +13,15 @@ export interface BridgeSessionRow {
   orgId: string
   userId: string
   caseId: string
+  agentConfigId?: string
   state: BridgeState
   textBuffer: string
 }
 
 const PLATFORM = 'livechat'
 
-function toRow(chatId: string, orgId: string, userId: string, caseId: string, state: BridgeState, textBuffer: string): BridgeSessionRow {
-  return { chatId, orgId, userId, caseId, state, textBuffer }
+function toRow(chatId: string, orgId: string, userId: string, caseId: string, agentConfigId: string | undefined, state: BridgeState, textBuffer: string): BridgeSessionRow {
+  return { chatId, orgId, userId, caseId, agentConfigId, state, textBuffer }
 }
 
 export async function getSession(chatId: string): Promise<BridgeSessionRow | null> {
@@ -34,6 +35,7 @@ export async function getSession(chatId: string): Promise<BridgeSessionRow | nul
       row.orgId,
       (row.metadata as Record<string, unknown> | null)?.userId as string ?? 'anonymous',
       row.internalCaseId ?? '',
+      (row.metadata as Record<string, unknown> | null)?.agentConfigId as string | undefined,
       (row.bridgeState as BridgeState) ?? 'idle',
       decodeLivechatTextBuffer(row.textBuffer),
     )
@@ -52,7 +54,10 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
       status: 'active',
       bridgeState: session.state,
       textBuffer: encodeLivechatTextBuffer(session.textBuffer),
-      metadata: { userId: session.userId },
+      metadata: {
+        userId: session.userId,
+        ...(session.agentConfigId ? { agentConfigId: session.agentConfigId } : {}),
+      },
     },
     create: {
       platform: PLATFORM,
@@ -62,7 +67,10 @@ export async function upsertSession(session: BridgeSessionRow): Promise<void> {
       bridgeState: session.state,
       textBuffer: encodeLivechatTextBuffer(session.textBuffer),
       status: 'active',
-      metadata: { userId: session.userId },
+      metadata: {
+        userId: session.userId,
+        ...(session.agentConfigId ? { agentConfigId: session.agentConfigId } : {}),
+      },
     },
   })
 }
