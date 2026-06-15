@@ -447,7 +447,9 @@ export async function* runPlaygroundTurn(input: {
   if (persistedCaseMemory) {
     agentLoop.loadMemory(persistedCaseMemory)
   } else {
-    const persistedChatSession = await prisma.chatSession.findUnique({ where: { chatId: effectiveChatId } }).catch(() => null)
+    const persistedChatSession = await prisma.chatSession.findUnique({
+      where: { orgId_chatId: { orgId, chatId: effectiveChatId } },
+    }).catch(() => null)
     if (persistedChatSession) {
       agentLoop.loadMemory({
         confirmedFacts: persistedChatSession.confirmedFacts,

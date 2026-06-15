@@ -25,7 +25,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
         select: { type: true, status: true, createdAt: true },
       }),
       repo.raw.message.findMany({
-        where: { caseId: params.id },
+        where: { orgId: repo.orgId, caseId: params.id },
         orderBy: { createdAt: 'asc' },
       }),
     ])

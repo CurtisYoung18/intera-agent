@@ -31,11 +31,11 @@ import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contr
 
 interface MsgItem {
   id: string; role: string; content: string; createdAt: string
-  caseId: string; caseType?: string; caseStatus?: string
+  runId?: string | null; procedureType?: string; procedureStatus?: string
 }
 
 interface CaseSummary {
-  id: string; type: string; status: string; source: string; goal: string | null
+  id: string; runId?: string | null; type: string; status: string; source: string; goal: string | null
   createdAt: string; updatedAt: string
   _count?: { messages: number }
 }
@@ -51,7 +51,7 @@ interface ChatSession {
 
 interface TraceItem {
   id: string; actionType: string; title: string; detail: string | null
-  payload: string | null; createdAt: string; caseId: string
+  payload: string | null; createdAt: string; runId?: string | null
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -75,7 +75,7 @@ function CasePill({ caseItem }: { caseItem: CaseSummary }) {
       style={{ borderColor: `${color}44`, color, background: `${color}0f` }}>
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {caseItem.type.replace(/_/g, ' ')}
-      <span className="opacity-60">#{caseItem.id.slice(0, 8)}</span>
+      {caseItem.runId ? <span className="opacity-60">#{caseItem.runId.slice(0, 8)}</span> : null}
     </span>
   )
 }
@@ -178,17 +178,17 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   )
   const { groupedCaseTraces, unassignedTraces } = useMemo(() => {
     const grouped = new Map<string, TraceItem[]>()
-    const knownCaseIds = new Set(session?.cases.map((caseItem) => caseItem.id) ?? [])
+    const knownRunIds = new Set((session?.cases.map((caseItem) => caseItem.runId).filter(Boolean) as string[]) ?? [])
     const unassigned: TraceItem[] = []
 
     for (const trace of traces) {
-      if (!trace.caseId || !knownCaseIds.has(trace.caseId)) {
+      if (!trace.runId || !knownRunIds.has(trace.runId)) {
         unassigned.push(trace)
         continue
       }
-      const existing = grouped.get(trace.caseId) ?? []
+      const existing = grouped.get(trace.runId) ?? []
       existing.push(trace)
-      grouped.set(trace.caseId, existing)
+      grouped.set(trace.runId, existing)
     }
 
     return { groupedCaseTraces: grouped, unassignedTraces: unassigned }
@@ -208,19 +208,10 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
         setTraces(tracesResult.data.traces ?? [])
 
-        const msgArrays = await Promise.all(
-          found.cases.map(async (c) => {
-            try {
-              const r = await apiClient<{ messages: { id: string; role: string; content: string; createdAt: string }[] }>(
-                `/api/cases/${c.id}/messages?limit=200`,
-              )
-              return r.data.messages.map((m) => ({ ...m, caseId: c.id, caseType: c.type, caseStatus: c.status }))
-            } catch {
-              return []
-            }
-          }),
+        const msgResult = await apiClient<{ messages: MsgItem[] }>(
+          `/api/chats/${encodeURIComponent(decodedChatId)}/messages?limit=500`,
         )
-        setMessages(msgArrays.flat().sort((a, b) =>
+        setMessages((msgResult.data.messages ?? []).sort((a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
       } catch (e) { console.error('Chat load failed:', e) }
       finally { setLoading(false) }
@@ -230,12 +221,13 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
   type Row = { type: 'msg'; msg: MsgItem } | { type: 'case_banner'; c: CaseSummary }
   const rows: Row[] = []
-  let lastCaseId = ''
+  let lastRunId = ''
   for (const msg of messages) {
-    if (msg.caseId !== lastCaseId) {
-      const c = session?.cases.find((x) => x.id === msg.caseId)
+    const runId = msg.runId ?? ''
+    if (runId !== lastRunId) {
+      const c = session?.cases.find((x) => x.runId === runId)
       if (c) rows.push({ type: 'case_banner', c })
-      lastCaseId = msg.caseId
+      lastRunId = runId
     }
     rows.push({ type: 'msg', msg })
   }
@@ -321,9 +313,11 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
               {session.cases.map((caseItem) => (
                 <div key={caseItem.id} className="flex items-center gap-1.5">
                   <CasePill caseItem={caseItem} />
-                  <Link
-                    href={`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
-                    className="console-btn-icon-square h-8 w-8"
+	                  <Link
+	                    href={caseItem.runId
+	                      ? `/operate/conversations/runs/${encodeURIComponent(caseItem.runId)}`
+	                      : `/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
+	                    className="console-btn-icon-square h-8 w-8"
                     title={isZh ? '查看 ProcedureRun 详情' : 'View ProcedureRun details'}
                   >
                     <BarChart3 className="h-3.5 w-3.5" />
@@ -402,11 +396,11 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
               <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">{isZh ? '按 ProcedureRun 汇总' : 'Per-ProcedureRun Summary'}</h4>
               <div className="space-y-1.5">
                 {session.cases.map((c) => {
-                  const caseTraces = traces.filter((t) => t.caseId === c.id)
+                  const caseTraces = traces.filter((t) => t.runId && t.runId === c.runId)
                   const caseTools = caseTraces.filter((t) => normalizeTraceActionType(t.actionType) === 'tool_call').length
                   return (
                     <div key={c.id} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-16 text-[var(--fog)]/50">{c.id.slice(0, 8)}</span>
+                      <span className="w-16 text-[var(--fog)]/50">{c.runId ? c.runId.slice(0, 8) : 'chat'}</span>
                       <span className="text-[var(--mist)]">{c.type.replace(/_/g, ' ')}</span>
                       <span className="text-[var(--fog)]/50">· {caseTraces.length} {isZh ? '条轨迹' : 'traces'} · {caseTools} {isZh ? '个工具' : 'tools'}</span>
                     </div>
@@ -477,9 +471,9 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           ) : memoryData ? (
             <>
               {/* Per-ProcedureRun working memory */}
-              {memoryData.memories?.map((mem: any) => (
-                <div key={mem.caseId} className="rounded-xl border border-black/[0.04] bg-white/40 p-3">
-                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">ProcedureRun {mem.caseId.slice(0, 8)}</p>
+              {memoryData.memories?.map((mem: any, index: number) => (
+                <div key={mem.runId ?? `chat-memory-${index}`} className="rounded-xl border border-black/[0.04] bg-white/40 p-3">
+                  <p className="text-[10px] text-[var(--fog)]/50 mb-2">{mem.runId ? `ProcedureRun ${mem.runId.slice(0, 8)}` : 'Chat memory'}</p>
                   {mem.summary ? (
                     <div className="text-[11px] text-[var(--mist)] leading-relaxed max-h-[240px] overflow-auto">
                       <MessageContent content={mem.summary.slice(0, 3000)} />
@@ -547,7 +541,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
           ) : null}
 
           {session?.cases.map((caseItem) => {
-            const caseTraces = groupedCaseTraces.get(caseItem.id) ?? []
+            const caseTraces = caseItem.runId ? (groupedCaseTraces.get(caseItem.runId) ?? []) : []
             const caseSourceTruth = getRuntimeSourceTruth({ source: caseItem.source, userId: session.userId })
 
             return (

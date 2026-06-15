@@ -99,6 +99,9 @@ export const POST = defineRoute({
       await repo.raw.message.create({
         data: {
           caseId: newCase.id,
+          orgId: repo.orgId,
+          chatId,
+          runId: null,
           role: msg.role,
           content: msg.content,
         },
@@ -112,7 +115,9 @@ export const POST = defineRoute({
           await repo.raw.actionTrace.create({
             data: {
               caseId: newCase.id,
+              orgId: repo.orgId,
               chatId,
+              runId: null,
               actionType: traceRow.actionType,
               title: traceRow.title || traceRow.actionType,
               detail: traceRow.detail ?? null,

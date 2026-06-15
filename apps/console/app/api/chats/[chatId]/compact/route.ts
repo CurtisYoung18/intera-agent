@@ -19,7 +19,7 @@ export const POST = defineRoute<void, { chatId: string }>({
   requireRole: ['admin', 'owner'],
   async handler({ params, repo }) {
     const cases = await repo.raw.case.findMany({
-      where: { chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId },
       select: { id: true, userId: true, orgId: true },
     })
     if (cases.length === 0) throw new RouteError('not_found', 'No cases found for this chat')
@@ -27,7 +27,7 @@ export const POST = defineRoute<void, { chatId: string }>({
     const caseIds = cases.map(c => c.id)
 
     const messages = await repo.raw.message.findMany({
-      where: { caseId: { in: caseIds } },
+      where: { orgId: repo.orgId, chatId: params.chatId },
       orderBy: { createdAt: 'asc' },
       take: 100,
     })
@@ -54,12 +54,33 @@ export const POST = defineRoute<void, { chatId: string }>({
     }
 
     const summary = result.summary
+    const activeRuns = await repo.raw.procedureRun.findMany({
+      where: { orgId: repo.orgId, chatId: params.chatId, caseId: { in: caseIds }, status: { in: ['active', 'paused'] } },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, caseId: true },
+    })
+    const runByCase = new Map<string, string>()
+    for (const run of activeRuns) {
+      if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
+    }
     await Promise.allSettled(
       caseIds.map(caseId =>
         repo.raw.chatMemory.upsert({
           where: { caseId },
-          create: { caseId, summary, confirmedFacts: '{}', missingFacts: '[]', toolsCalled: '[]', toolResults: '{}', keyEvents: '[]', humanTaskStatus: 'none' },
-          update: { summary },
+          create: {
+            caseId,
+            orgId: repo.orgId,
+            chatId: params.chatId,
+            runId: runByCase.get(caseId) ?? null,
+            summary,
+            confirmedFacts: '{}',
+            missingFacts: '[]',
+            toolsCalled: '[]',
+            toolResults: '{}',
+            keyEvents: '[]',
+            humanTaskStatus: 'none',
+          },
+          update: { orgId: repo.orgId, chatId: params.chatId, runId: runByCase.get(caseId) ?? null, summary },
         }),
       ),
     )

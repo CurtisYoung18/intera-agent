@@ -34,25 +34,31 @@ function stripInternalKeysFromValue(value: unknown): unknown {
 export const GET = defineRoute<void, { id: string }>({
   method: 'GET',
   async handler({ params, repo }) {
-    const [caseData, messages, traces, humanTasks, memory] = await Promise.all([
-      repo.case.findUnique({ where: { id: params.id } }),
-      repo.raw.message.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'asc' } }),
-      repo.raw.actionTrace.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'asc' } }),
-      repo.raw.humanTask.findMany({ where: { caseId: params.id }, orderBy: { createdAt: 'asc' } }),
-      repo.raw.chatMemory.findUnique({ where: { caseId: params.id } }),
-    ])
-
+    const caseData = await repo.case.findUnique({ where: { id: params.id } })
     if (!caseData) throw new NotFoundError('ProcedureRun not found')
+
+    const [run, messages, traces, humanTasks, memory] = await Promise.all([
+      repo.raw.procedureRun.findFirst({
+        where: { orgId: repo.orgId, caseId: params.id },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      }),
+      repo.raw.message.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'asc' } }),
+      repo.raw.actionTrace.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'asc' } }),
+      repo.raw.humanTask.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'asc' } }),
+      repo.raw.chatMemory.findFirst({ where: { orgId: repo.orgId, caseId: params.id } }),
+    ])
 
     const agentConfig = await repo.agentConfig.findFirst({ where: { isActive: true } })
 
     const sections: string[] = []
-    sections.push(`# Intera ProcedureRun Export — ${params.id}`)
+    const displayRunId = run?.id ?? params.id
+    sections.push(`# Intera ProcedureRun Export — ${displayRunId}`)
     sections.push(`Exported at: ${new Date().toISOString()}`)
     sections.push('')
 
     sections.push('## ProcedureRun Metadata')
-    sections.push(`- **ID**: ${caseData.id}`)
+    sections.push(`- **Run ID**: ${displayRunId}`)
     sections.push(`- **Type**: ${caseData.type}`)
     sections.push(`- **Status**: ${caseData.status}`)
     sections.push(`- **Source**: ${caseData.source ?? 'live'}`)
@@ -150,7 +156,7 @@ export const GET = defineRoute<void, { id: string }>({
     return new NextResponse(markdown, {
       headers: {
         'Content-Type': 'text/markdown; charset=utf-8',
-        'Content-Disposition': `attachment; filename="case-${params.id.slice(0, 8)}-export.md"`,
+        'Content-Disposition': `attachment; filename="run-${displayRunId.slice(0, 8)}-export.md"`,
       },
     })
   },

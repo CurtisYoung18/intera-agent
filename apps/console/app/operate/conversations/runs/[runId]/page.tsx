@@ -3,8 +3,8 @@ import ProcedureRunDetailWorkspace from '@/components/operate/procedure-run-deta
 export default async function OperateProcedureRunDetailPage({
   params,
 }: {
-  params: Promise<{ caseId: string }>
+  params: Promise<{ runId: string }>
 }) {
-  const { caseId } = await params
-  return <ProcedureRunDetailWorkspace caseId={caseId} />
+  const { runId } = await params
+  return <ProcedureRunDetailWorkspace runId={runId} />
 }

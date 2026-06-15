@@ -4,11 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mocks — hoisted so vi.mock can reference them
 // ---------------------------------------------------------------------------
 
-const { mockCase, mockMessage, mockAgentConfig, mockChatMemory, mockCompactConversation } = vi.hoisted(() => ({
+const { mockCase, mockMessage, mockAgentConfig, mockChatMemory, mockProcedureRun, mockCompactConversation } = vi.hoisted(() => ({
   mockCase: { findMany: vi.fn(), findFirst: vi.fn() },
   mockMessage: { findMany: vi.fn() },
   mockAgentConfig: { findFirst: vi.fn() },
   mockChatMemory: { upsert: vi.fn() },
+  mockProcedureRun: { findMany: vi.fn() },
   mockCompactConversation: vi.fn(),
 }))
 
@@ -18,9 +19,10 @@ vi.mock('@intera/shared/prisma', () => ({
   prisma: new Proxy({
     case: mockCase,
     message: mockMessage,
-    agentConfig: mockAgentConfig,
-    chatMemory: mockChatMemory,
-  }, {
+	    agentConfig: mockAgentConfig,
+	    chatMemory: mockChatMemory,
+	    procedureRun: mockProcedureRun,
+	  }, {
     get(target, prop) {
       if (typeof prop === 'symbol') return undefined
       return (target as any)[prop] ?? {}
@@ -52,6 +54,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
+    mockProcedureRun.findMany.mockResolvedValue([])
   })
 
   it('returns 404 when no cases are found for the chat', async () => {
@@ -94,6 +97,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
     mockMessage.findMany.mockResolvedValue(messages)
     mockAgentConfig.findFirst.mockResolvedValue(null)
     mockChatMemory.upsert.mockResolvedValue({})
+    mockProcedureRun.findMany.mockResolvedValue([{ id: 'run-a', caseId: 'case-a' }])
 
     mockCompactConversation.mockResolvedValue({
       summary: 'User reported a deposit issue with transaction ID TX-12345.',
@@ -156,6 +160,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
     mockMessage.findMany.mockResolvedValue(messages)
     mockAgentConfig.findFirst.mockResolvedValue(null)
     mockChatMemory.upsert.mockResolvedValue({})
+    mockProcedureRun.findMany.mockResolvedValue([{ id: 'run-a', caseId: 'case-a' }])
 
     mockCompactConversation.mockResolvedValue({
       summary: 'A brief summary.',
@@ -170,7 +175,10 @@ describe('POST /api/chats/[chatId]/compact', () => {
 
     expect(mockChatMemory.upsert).toHaveBeenCalledTimes(2)
     expect(mockChatMemory.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { caseId: 'case-a' } }),
+      expect.objectContaining({
+        where: { caseId: 'case-a' },
+        create: expect.objectContaining({ orgId: 'acme', chatId: 'chat-multi', runId: 'run-a' }),
+      }),
     )
     expect(mockChatMemory.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { caseId: 'case-b' } }),

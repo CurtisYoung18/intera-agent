@@ -24,6 +24,7 @@ import type { HandoffMetrics, HandoffMetricsResponse } from '@intera/shared/cont
 
 interface HandoffCaseSummary {
   id: string
+  runId?: string | null
   chatId?: string
   type: string
   status: string
@@ -45,6 +46,7 @@ interface HandoffTask {
 
 interface HandoffCaseDetail {
   id: string
+  runId?: string | null
   userId: string
   chatId: string
   type: string
@@ -97,7 +99,7 @@ export default function HumanHandoffPage() {
   const isZh = locale === 'zh'
   const [cases, setCases] = useState<HandoffCaseSummary[]>([])
   const [metrics, setMetrics] = useState<HandoffMetrics | null>(null)
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [detail, setDetail] = useState<HandoffCaseDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -118,16 +120,16 @@ export default function HumanHandoffPage() {
         const nextCases = result.data.cases as HandoffCaseSummary[]
         setCases(nextCases)
         setMetrics(metricsResult.data.metrics)
-        setSelectedCaseId((prev) => {
-          if (prev && nextCases.some((item) => item.id === prev)) return prev
-          return nextCases[0]?.id ?? null
+        setSelectedRunId((prev) => {
+          if (prev && nextCases.some((item) => item.runId === prev)) return prev
+          return nextCases[0]?.runId ?? null
         })
       } catch (err) {
         if (!active) return
         setError(err instanceof ApiClientError ? err.envelope.error.message : (isZh ? '加载人工接管列表失败' : 'Failed to load handoff list'))
         setCases([])
         setMetrics(null)
-        setSelectedCaseId(null)
+        setSelectedRunId(null)
       } finally {
         if (active) setLoading(false)
       }
@@ -140,18 +142,18 @@ export default function HumanHandoffPage() {
   }, [])
 
   useEffect(() => {
-    if (!selectedCaseId) {
+    if (!selectedRunId) {
       setDetail(null)
       return
     }
-    const caseId = selectedCaseId
+    const runId = selectedRunId
 
     let active = true
 
     async function loadDetail() {
       setDetailLoading(true)
       try {
-        const result = await apiClient<CaseDetailResponse>(`/api/cases/${encodeURIComponent(caseId)}`)
+        const result = await apiClient<CaseDetailResponse>(`/api/runs/${encodeURIComponent(runId)}`)
         if (!active) return
         setDetail(result.data.case as HandoffCaseDetail)
       } catch (err) {
@@ -167,7 +169,7 @@ export default function HumanHandoffPage() {
     return () => {
       active = false
     }
-  }, [selectedCaseId])
+  }, [selectedRunId])
 
   const handoffListCount = cases.length
   const activeHandoffProcedureRuns = metrics?.activeHandoffProcedureRuns ?? handoffListCount
@@ -333,12 +335,12 @@ export default function HumanHandoffPage() {
 
             <div className="min-w-0 space-y-3">
               {cases.map((item) => {
-                const selected = item.id === selectedCaseId
+                const selected = item.runId === selectedRunId
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setSelectedCaseId(item.id)}
+                    onClick={() => item.runId ? setSelectedRunId(item.runId) : undefined}
                     className={`min-w-0 w-full rounded-2xl border px-4 py-3 text-left transition-[border-color,transform,box-shadow] ${
                       selected
                         ? 'border-indigo/30 bg-indigo/[0.06] shadow-[0_10px_25px_-18px_rgba(79,70,229,0.6)]'
@@ -355,7 +357,7 @@ export default function HumanHandoffPage() {
                       </span>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-[var(--fog)]">
-                      <span className="rounded-full bg-black/[0.04] px-2 py-1">{item.id.slice(0, 8)}</span>
+                      {item.runId ? <span className="rounded-full bg-black/[0.04] px-2 py-1">{item.runId.slice(0, 8)}</span> : null}
                       <span className="rounded-full bg-black/[0.04] px-2 py-1">{item.messageCount ?? '0'} {isZh ? '条消息' : 'msgs'}</span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-black/[0.04] px-2 py-1">
                         <Clock3 className="h-3 w-3" />
@@ -393,7 +395,7 @@ export default function HumanHandoffPage() {
                       {isZh ? '打开会话' : 'Open conversation'}
                     </Link>
                     <Link
-                      href={`/operate/conversations/cases/${encodeURIComponent(detail.id)}`}
+                      href={`/operate/conversations/runs/${encodeURIComponent(detail.runId ?? '')}`}
                       className="inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-[12px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo"
                     >
                       {isZh ? '打开 ProcedureRun 详情' : 'Open ProcedureRun detail'}

@@ -5,12 +5,13 @@ const h = vi.hoisted(() => {
   const repo = {
     case: { findUnique: vi.fn() },
     agentConfig: { findFirst: vi.fn() },
-    raw: {
-      message: { findMany: vi.fn() },
-      actionTrace: { findMany: vi.fn() },
-      humanTask: { findMany: vi.fn() },
-      chatMemory: { findUnique: vi.fn() },
-    },
+	    raw: {
+	      procedureRun: { findFirst: vi.fn() },
+	      message: { findMany: vi.fn() },
+	      actionTrace: { findMany: vi.fn() },
+	      humanTask: { findMany: vi.fn() },
+	      chatMemory: { findFirst: vi.fn() },
+	    },
   }
   return {
     repo,
@@ -55,10 +56,11 @@ beforeEach(() => {
     maxIterations: 1,
     extendedThinking: false,
   })
-  h.repo.raw.message.findMany.mockResolvedValue([])
-  h.repo.raw.actionTrace.findMany.mockResolvedValue([])
-  h.repo.raw.humanTask.findMany.mockResolvedValue([])
-  h.repo.raw.chatMemory.findUnique.mockResolvedValue({
+	  h.repo.raw.message.findMany.mockResolvedValue([])
+	  h.repo.raw.actionTrace.findMany.mockResolvedValue([])
+	  h.repo.raw.humanTask.findMany.mockResolvedValue([])
+	  h.repo.raw.procedureRun.findFirst.mockResolvedValue({ id: 'run-export' })
+	  h.repo.raw.chatMemory.findFirst.mockResolvedValue({
     confirmedFacts: JSON.stringify({
       memberId: 'M123',
       __intera_procedure_runtime: { runId: 'runtime-secret' },

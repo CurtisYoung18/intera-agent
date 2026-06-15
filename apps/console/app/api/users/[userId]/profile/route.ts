@@ -5,20 +5,27 @@ import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
+function caseWhereForProfileKey(profileKey: string, orgId: string): Record<string, unknown> {
+  if (profileKey.startsWith('chat:')) return { orgId, chatId: profileKey.slice(5) }
+  if (profileKey.startsWith('user:')) return { orgId, userId: profileKey.slice(5) }
+  return { orgId, userId: profileKey }
+}
+
 export const GET = defineRoute<void, { userId: string }>({
   method: 'GET',
   async handler({ params, repo }) {
     const decoded = decodeURIComponent(params.userId)
+    const caseWhere = caseWhereForProfileKey(decoded, repo.orgId)
 
     const [cases, profile, chats] = await Promise.all([
       repo.raw.case.findMany({
-        where: { userId: decoded },
+        where: caseWhere,
         select: { status: true, type: true, updatedAt: true, createdAt: true },
         orderBy: { updatedAt: 'desc' },
       }),
-      repo.raw.userProfile.findUnique({ where: { userId: decoded } }),
+      repo.raw.userProfile.findUnique({ where: { orgId_userId: { orgId: repo.orgId, userId: decoded } } }),
       repo.raw.case.findMany({
-        where: { userId: decoded },
+        where: caseWhere,
         select: { chatId: true },
         orderBy: { createdAt: 'desc' },
         take: 200,
@@ -62,8 +69,8 @@ export const PUT = defineRoute<z.infer<typeof putSchema>, { userId: string }>({
   async handler({ input, params, repo }) {
     const decoded = decodeURIComponent(params.userId)
     const profile = await repo.raw.userProfile.upsert({
-      where: { userId: decoded },
-      create: { userId: decoded, profile: input.profile },
+      where: { orgId_userId: { orgId: repo.orgId, userId: decoded } },
+      create: { userId: decoded, orgId: repo.orgId, profile: input.profile },
       update: { profile: input.profile },
     })
     return apiOk({ profile })
@@ -75,12 +82,13 @@ export const DELETE = defineRoute<void, { userId: string }>({
   requireRole: ['admin', 'owner'],
   async handler({ params, repo }) {
     const decoded = decodeURIComponent(params.userId)
-    const caseIds = (await repo.raw.case.findMany({ where: { userId: decoded }, select: { id: true } })).map(c => c.id)
+    const caseWhere = caseWhereForProfileKey(decoded, repo.orgId)
+    const caseIds = (await repo.raw.case.findMany({ where: caseWhere, select: { id: true } })).map(c => c.id)
 
     await Promise.all([
-      repo.raw.case.deleteMany({ where: { userId: decoded } }),
-      caseIds.length > 0 ? repo.raw.externalConversation.deleteMany({ where: { internalCaseId: { in: caseIds } } }) : Promise.resolve(),
-      repo.raw.userProfile.deleteMany({ where: { userId: decoded } }),
+      repo.raw.case.deleteMany({ where: caseWhere }),
+      caseIds.length > 0 ? repo.raw.externalConversation.deleteMany({ where: { orgId: repo.orgId, internalCaseId: { in: caseIds } } }) : Promise.resolve(),
+      repo.raw.userProfile.deleteMany({ where: { orgId: repo.orgId, userId: decoded } }),
     ])
 
     return apiOk({ ok: true, deleted: decoded })

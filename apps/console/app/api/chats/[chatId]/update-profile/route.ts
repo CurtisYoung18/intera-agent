@@ -21,19 +21,15 @@ export const POST = defineRoute<void, { chatId: string }>({
   requireRole: ['admin', 'owner'],
   async handler({ params, repo }) {
     const sampleCase = await repo.raw.case.findFirst({
-      where: { chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId },
       select: { userId: true, orgId: true },
     })
 
     const key = profileKey(sampleCase?.userId, params.chatId)
     if (!key) throw new RouteError('validation', 'No stable user identity for this chat — cannot update User Profile.', undefined, 422)
 
-    const caseIds = await repo.raw.case.findMany({
-      where: { chatId: params.chatId },
-      select: { id: true },
-    })
     const memories = await repo.raw.chatMemory.findMany({
-      where: { caseId: { in: caseIds.map(c => c.id) }, summary: { not: null } },
+      where: { orgId: repo.orgId, chatId: params.chatId, summary: { not: null } },
       select: { summary: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
     })
@@ -46,13 +42,16 @@ export const POST = defineRoute<void, { chatId: string }>({
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 
-    const existing = await repo.raw.userProfile.findUnique({ where: { userId: key }, select: { profile: true } }).catch(() => null)
+    const existing = await repo.raw.userProfile.findUnique({
+      where: { orgId_userId: { orgId: repo.orgId, userId: key } },
+      select: { profile: true },
+    }).catch(() => null)
     const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', combinedSummary, maxTokens)
-    const stats = await recomputeProfileStats(repo.raw, key)
+    const stats = await recomputeProfileStats(repo.raw, key, repo.orgId)
 
     await repo.raw.userProfile.upsert({
-      where: { userId: key },
-      create: { userId: key, profile: merged, sections, ...stats },
+      where: { orgId_userId: { orgId: repo.orgId, userId: key } },
+      create: { userId: key, orgId: repo.orgId, profile: merged, sections, ...stats },
       update: { profile: merged, sections, ...stats },
     })
 

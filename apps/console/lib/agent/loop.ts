@@ -1405,7 +1405,7 @@ export class AgentLoop {
       }
     }
     const row = await prisma.userProfile.findUnique({
-      where: { userId: key },
+      where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
       select: {
         profile: true,
         sections: true,
@@ -1505,14 +1505,14 @@ export class AgentLoop {
     const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
     if (this.shouldPersistRuntimeMemory()) {
       const existing = await prisma.userProfile.findUnique({
-        where: { userId: profileKeyValue },
+        where: { orgId_userId: { orgId: this.deps.orgId, userId: profileKeyValue } },
         select: { profile: true },
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const merged = mergeProfile(existing?.profile ?? '', incoming, maxTokens)
-      const stats = await recomputeProfileStats(prisma, profileKeyValue)
+      const stats = await recomputeProfileStats(prisma, profileKeyValue, this.deps.orgId)
       await prisma.userProfile.upsert({
-        where: { userId: profileKeyValue },
+        where: { orgId_userId: { orgId: this.deps.orgId, userId: profileKeyValue } },
         create: { userId: profileKeyValue, orgId: this.deps.orgId, profile: merged.profile, sections: merged.sections, ...stats },
         update: { profile: merged.profile, sections: merged.sections, ...stats },
       }).catch((err: unknown) => {
@@ -1952,7 +1952,7 @@ export class AgentLoop {
     if (!this.shouldPersistRuntimeMemory()) return
     try {
       await prisma.chatSession.upsert({
-        where: { chatId: this.deps.chatId },
+        where: { orgId_chatId: { orgId: this.deps.orgId, chatId: this.deps.chatId } },
         update: {
           confirmedFacts: JSON.stringify(this.chatMemory.getConfirmedFacts()),
           keyEvents: JSON.stringify(this.chatMemory.getSummary().keyEvents),
@@ -1984,16 +1984,16 @@ export class AgentLoop {
       if (!summary) return
 
       const existing = await prisma.userProfile.findUnique({
-        where: { userId: key },
+        where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
         select: { profile: true },
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', summary, maxTokens)
-      const stats = await recomputeProfileStats(prisma, key)
+      const stats = await recomputeProfileStats(prisma, key, this.deps.orgId)
 
       await prisma.userProfile.upsert({
-        where: { userId: key },
-        create: { userId: key, profile: merged, sections, ...stats },
+        where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
+        create: { userId: key, orgId: this.deps.orgId, profile: merged, sections, ...stats },
         update: { profile: merged, sections, ...stats },
       })
     } catch (err) {

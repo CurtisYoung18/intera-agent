@@ -30,10 +30,24 @@ export const createHumanTaskTool: Tool<Input, Output> = {
 
   async call(input: Input, ctx: ToolContext): Promise<Output> {
     const { prisma } = await import('@intera/shared/prisma')
+    const [caseRow, activeRun] = await Promise.all([
+      prisma.case.findUnique({
+        where: { id: ctx.caseId },
+        select: { orgId: true, chatId: true },
+      }).catch(() => null),
+      prisma.procedureRun.findFirst({
+        where: { caseId: ctx.caseId, status: { in: ['active', 'paused'] } },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      }).catch(() => null),
+    ])
 
     const task = await prisma.humanTask.create({
       data: {
         caseId: ctx.caseId,
+        orgId: ctx.orgId || caseRow?.orgId || 'default',
+        chatId: caseRow?.chatId || ctx.caseId,
+        runId: activeRun?.id ?? null,
         queue: input.queue,
         question: input.question,
         status: 'pending',

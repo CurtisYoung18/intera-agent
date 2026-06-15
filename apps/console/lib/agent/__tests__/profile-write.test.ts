@@ -21,22 +21,24 @@ const h = vi.hoisted(() => {
 // ── Mock prisma ──
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
-    userProfile: {
-      findUnique: vi.fn(async ({ where }: { where: { userId: string } }) =>
-        h.existingProfiles[where.userId] ?? null,
-      ),
-      upsert: vi.fn(async (args: {
-        where: { userId: string }
-        create: { userId: string; profile: string; sections?: string }
-        update: { profile: string; sections?: string }
-      }) => {
-        const data = {
-          profile: args.create.profile || args.update.profile,
-          sections: args.create.sections || args.update.sections || '{}',
-        }
-        h.persistedProfiles[args.where.userId] = data
-        return data
-      }),
+	    userProfile: {
+	      findUnique: vi.fn(async ({ where }: { where: { userId?: string; orgId_userId?: { userId: string } } }) => {
+	        const key = where.orgId_userId?.userId ?? where.userId ?? ''
+	        return h.existingProfiles[key] ?? null
+	      }),
+	      upsert: vi.fn(async (args: {
+	        where: { userId?: string; orgId_userId?: { userId: string } }
+	        create: { userId: string; profile: string; sections?: string }
+	        update: { profile: string; sections?: string }
+	      }) => {
+	        const key = args.where.orgId_userId?.userId ?? args.where.userId ?? args.create.userId
+	        const data = {
+	          profile: args.create.profile || args.update.profile,
+	          sections: args.create.sections || args.update.sections || '{}',
+	        }
+	        h.persistedProfiles[key] = data
+	        return data
+	      }),
     },
   },
 }))

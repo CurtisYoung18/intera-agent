@@ -16,6 +16,9 @@ export interface CaseRecord {
 
 export interface MemoryRecord {
   caseId: string
+  orgId?: string
+  chatId?: string
+  runId?: string | null
   confirmedFacts?: string
   missingFacts?: string
   toolsCalled?: string
@@ -29,6 +32,9 @@ export interface MemoryRecord {
 export interface MessageRecord {
   id: string
   caseId: string
+  orgId?: string
+  chatId?: string
+  runId?: string | null
   role: string
   content: string
   createdAt?: Date
@@ -41,7 +47,9 @@ export interface MessageRecord {
 export interface TraceRecord {
   id?: string
   caseId: string
+  orgId?: string
   chatId?: string | null
+  runId?: string | null
   actionType: string
   title: string
   detail?: string | null
@@ -66,6 +74,9 @@ export interface PersistencePort {
   createHumanTask(record: {
     id?: string
     caseId: string
+    orgId?: string
+    chatId?: string
+    runId?: string | null
     queue: string
     question: string
     fields?: string | null
@@ -76,8 +87,46 @@ export interface PersistencePort {
   flush(): Promise<void>
 }
 
+interface CaseOwnership {
+  orgId: string
+  chatId: string
+  runId?: string | null
+}
+
+function caseOwnershipCacheKey(caseId: string) {
+  return caseId
+}
+
 /** Factory: return the production Prisma-backed persistence port. */
 export function createPrismaPersistence(): PersistencePort {
+  const ownershipCache = new Map<string, CaseOwnership>()
+
+  async function resolveOwnership(caseId: string): Promise<CaseOwnership> {
+    const key = caseOwnershipCacheKey(caseId)
+    const cached = ownershipCache.get(key)
+    if (cached?.runId) return cached
+
+    const [caseRow, activeRun] = await Promise.all([
+      prisma.case.findUnique({
+        where: { id: caseId },
+        select: { orgId: true, chatId: true },
+      }),
+      prisma.procedureRun.findFirst({
+        where: { caseId, status: { in: ['active', 'paused'] } },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true },
+      }).catch(() => null),
+    ])
+
+    const ownership: CaseOwnership = {
+      orgId: cached?.orgId ?? caseRow?.orgId ?? 'default',
+      chatId: cached?.chatId ?? caseRow?.chatId ?? caseId,
+      runId: activeRun?.id ?? null,
+    }
+    ownershipCache.set(key, ownership)
+    return ownership
+  }
+
   return {
     async ensureCase(record: CaseRecord) {
       await prisma.case.upsert({
@@ -91,12 +140,24 @@ export function createPrismaPersistence(): PersistencePort {
         },
         create: record,
       })
+      ownershipCache.set(caseOwnershipCacheKey(record.id), {
+        orgId: record.orgId,
+        chatId: record.chatId,
+        runId: null,
+      })
     },
 
     async saveMemory(caseId: string, record: MemoryRecord) {
+      const ownership = await resolveOwnership(caseId)
+      const orgId = record.orgId ?? ownership.orgId
+      const chatId = record.chatId ?? ownership.chatId
+      const runId = record.runId ?? ownership.runId ?? null
       await prisma.chatMemory.upsert({
         where: { caseId },
         update: {
+          orgId,
+          chatId,
+          runId,
           confirmedFacts: record.confirmedFacts,
           missingFacts: record.missingFacts,
           toolsCalled: record.toolsCalled,
@@ -108,6 +169,9 @@ export function createPrismaPersistence(): PersistencePort {
         },
         create: {
           caseId,
+          orgId,
+          chatId,
+          runId,
           confirmedFacts: record.confirmedFacts,
           missingFacts: record.missingFacts,
           toolsCalled: record.toolsCalled,
@@ -122,11 +186,27 @@ export function createPrismaPersistence(): PersistencePort {
 
     async saveMessages(messages: MessageRecord[]) {
       if (messages.length === 0) return
+      const ownershipByCase = new Map<string, CaseOwnership>()
+      for (const caseId of new Set(messages.map((msg) => msg.caseId))) {
+        ownershipByCase.set(caseId, await resolveOwnership(caseId))
+      }
+      const enrichedMessages = messages.map((msg) => {
+        const ownership = ownershipByCase.get(msg.caseId)
+        return {
+          ...msg,
+          orgId: msg.orgId ?? ownership?.orgId ?? 'default',
+          chatId: msg.chatId ?? ownership?.chatId ?? msg.caseId,
+          runId: msg.runId ?? ownership?.runId ?? null,
+        }
+      })
       await prisma.$transaction(
-        messages.map((msg) =>
+        enrichedMessages.map((msg) =>
           prisma.message.upsert({
             where: { id: msg.id },
             update: {
+              orgId: msg.orgId,
+              chatId: msg.chatId,
+              runId: msg.runId,
               content: msg.content,
               contentBlocks: msg.contentBlocks ?? undefined,
               providerContent: msg.providerContent ?? undefined,
@@ -140,11 +220,14 @@ export function createPrismaPersistence(): PersistencePort {
     },
 
     async saveTrace(record: TraceRecord) {
+      const ownership = await resolveOwnership(record.caseId)
       await prisma.actionTrace.create({
         data: {
           id: record.id,
           caseId: record.caseId,
-          chatId: record.chatId ?? null,
+          orgId: record.orgId ?? ownership.orgId,
+          chatId: record.chatId ?? ownership.chatId,
+          runId: record.runId ?? ownership.runId ?? null,
           actionType: record.actionType,
           title: record.title,
           detail: record.detail ?? null,
@@ -154,10 +237,14 @@ export function createPrismaPersistence(): PersistencePort {
     },
 
     async createHumanTask(record) {
+      const ownership = await resolveOwnership(record.caseId)
       const task = await prisma.humanTask.create({
         data: {
           id: record.id,
           caseId: record.caseId,
+          orgId: record.orgId ?? ownership.orgId,
+          chatId: record.chatId ?? ownership.chatId,
+          runId: record.runId ?? ownership.runId ?? null,
           queue: record.queue,
           question: record.question,
           fields: record.fields ?? null,
@@ -180,13 +267,13 @@ export function createMemoryPersistence(): {
   memories: MemoryRecord[]
   messages: MessageRecord[]
   traces: TraceRecord[]
-  humanTasks: { id: string; caseId: string; queue: string; question: string; fields?: string | null; status?: string }[]
+  humanTasks: { id: string; caseId: string; orgId?: string; chatId?: string; runId?: string | null; queue: string; question: string; fields?: string | null; status?: string }[]
 } {
   const cases: CaseRecord[] = []
   const memories: MemoryRecord[] = []
   const messages: MessageRecord[] = []
   const traces: TraceRecord[] = []
-  const humanTasks: { id: string; caseId: string; queue: string; question: string; fields?: string | null; status?: string }[] = []
+  const humanTasks: { id: string; caseId: string; orgId?: string; chatId?: string; runId?: string | null; queue: string; question: string; fields?: string | null; status?: string }[] = []
 
   const port: PersistencePort = {
     async ensureCase(record: CaseRecord) {

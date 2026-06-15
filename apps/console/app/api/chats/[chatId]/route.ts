@@ -14,22 +14,17 @@ export const DELETE = defineRoute<void, { chatId: string }>({
       select: { id: true },
     })
 
-    const caseIds: string[] =
-      cases.length > 0
-        ? cases.map((c: { id: string }) => c.id)
-        : await repo.case
-            .findFirst({ where: { id: decoded }, select: { id: true } })
-            .then((c: { id: string } | null) => (c ? [c.id] : []))
+    const caseIds: string[] = cases.map((c: { id: string }) => c.id)
 
     if (caseIds.length === 0) {
       throw new NotFoundError('Chat not found')
     }
 
     // Clean up dependents via raw prisma (belt-and-suspenders with onDelete: Cascade)
-    await repo.raw.humanTask.deleteMany({ where: { caseId: { in: caseIds } } })
-    await repo.raw.actionTrace.deleteMany({ where: { caseId: { in: caseIds } } })
-    await repo.raw.message.deleteMany({ where: { caseId: { in: caseIds } } })
-    await repo.raw.chatMemory.deleteMany({ where: { caseId: { in: caseIds } } })
+    await repo.raw.humanTask.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
+    await repo.raw.actionTrace.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
+    await repo.raw.message.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
+    await repo.raw.chatMemory.deleteMany({ where: { orgId: repo.orgId, chatId: decoded } })
     await repo.case.deleteMany({ where: { id: { in: caseIds } } })
 
     await audit({

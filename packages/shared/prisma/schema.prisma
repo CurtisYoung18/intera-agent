@@ -264,6 +264,8 @@ model Case {
 model ProcedureRun {
   id               String   @id
   caseId           String
+  orgId            String   @default("default") @map("org_id")
+  chatId           String   @default("")
   agentConfigId    String
   procedureId      String
   procedureVersion String   @default("v2")
@@ -277,6 +279,7 @@ model ProcedureRun {
   updatedAt        DateTime @updatedAt
 
   @@index([caseId, status])
+  @@index([orgId, chatId, status])
   @@index([agentConfigId, procedureId, status])
 }
 
@@ -287,6 +290,9 @@ model ProcedureRun {
 model ChatMemory {
   id     String @id @default(cuid())
   caseId String @unique
+  orgId  String @default("default") @map("org_id")
+  chatId String @default("")
+  runId  String? @map("run_id")
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   confirmedFacts  String  @default("{}") // JSON
@@ -302,6 +308,8 @@ model ChatMemory {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([orgId, chatId])
+  @@index([orgId, runId])
   @@map("chat_memories")
 }
 
@@ -310,7 +318,7 @@ model ChatMemory {
 // ============================================
 model UserProfile {
   id     String @id @default(cuid())
-  userId String @unique
+  userId String
   orgId  String @default("default")
 
   /// Free-form Markdown maintained by the compact engine and operators
@@ -330,6 +338,8 @@ model UserProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([orgId, userId])
+  @@index([userId])
   @@map("user_profiles")
 }
 
@@ -339,6 +349,9 @@ model UserProfile {
 model Message {
   id     String @id @default(cuid())
   caseId String
+  orgId  String @default("default") @map("org_id")
+  chatId String @default("")
+  runId  String? @map("run_id")
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   role          String
@@ -352,6 +365,8 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([caseId])
+  @@index([orgId, chatId])
+  @@index([orgId, runId])
   @@map("messages")
 }
 
@@ -361,8 +376,10 @@ model Message {
 model ActionTrace {
   id     String  @id @default(cuid())
   caseId String
+  orgId  String  @default("default") @map("org_id")
   case   Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
   chatId String?
+  runId  String? @map("run_id")
 
   actionType String
   title      String
@@ -373,6 +390,8 @@ model ActionTrace {
 
   @@index([caseId])
   @@index([chatId])
+  @@index([orgId, chatId])
+  @@index([orgId, runId])
   @@map("action_traces")
 }
 
@@ -437,6 +456,9 @@ model ExternalConversation {
 model HumanTask {
   id     String @id @default(cuid())
   caseId String
+  orgId  String @default("default") @map("org_id")
+  chatId String @default("")
+  runId  String? @map("run_id")
   case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   queue  String
@@ -456,6 +478,8 @@ model HumanTask {
   notifiedAt DateTime?
 
   @@index([caseId])
+  @@index([orgId, chatId])
+  @@index([orgId, runId])
   @@map("human_tasks")
 }
 
@@ -493,7 +517,7 @@ model LiveChatPendingEvent {
 // ============================================
 model ChatSession {
   id             String   @id @default(cuid())
-  chatId         String   @unique
+  chatId         String
   orgId          String   @default("default") @map("org_id")
   confirmedFacts String   @default("{}")
   summary        String?
@@ -501,6 +525,7 @@ model ChatSession {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  @@unique([orgId, chatId])
   @@map("chat_sessions")
 }
 

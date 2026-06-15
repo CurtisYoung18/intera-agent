@@ -2,7 +2,7 @@
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
 import { z } from 'zod'
-import { defineRoute } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 const querySchema = z.object({
@@ -19,7 +19,13 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
     const limit = Math.min(parseInt(input.limit), 500)
     const offset = parseInt(input.offset)
 
-    const where: Record<string, unknown> = { caseId: params.id }
+    const caseData = await repo.case.findFirst({
+      where: { id: params.id },
+      select: { id: true },
+    })
+    if (!caseData) throw new NotFoundError('ProcedureRun not found')
+
+    const where: Record<string, unknown> = { orgId: repo.orgId, caseId: params.id }
     if (input.actionType) where.actionType = input.actionType
 
     const [traces, total] = await Promise.all([

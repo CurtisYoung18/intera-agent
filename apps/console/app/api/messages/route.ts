@@ -15,6 +15,7 @@ import {
   bindProcedureRuntimeAgentConfig,
   enqueueMessageOrCreate,
   flushProcedureRunPersistence,
+  getActiveProcedureRun,
   getOrCreateSession,
   hasSession,
   hydrateProcedureRuntime,
@@ -112,7 +113,9 @@ function deriveCaseStatusFromRuntimeProcedure(
 
 async function writeProviderTranscriptPersistedTrace(
   caseId: string,
-  chatId: string | undefined,
+  orgId: string,
+  chatId: string,
+  runId: string | null | undefined,
   messages: MessagePersistenceRecord[],
 ): Promise<void> {
   const receipt = providerTranscriptPersistenceReceipt(messages)
@@ -121,7 +124,9 @@ async function writeProviderTranscriptPersistedTrace(
     await prisma.actionTrace.create({
       data: {
         caseId,
+        orgId,
         chatId,
+        runId,
         actionType: 'provider_transcript_persisted',
         title: 'Provider transcript persisted',
         detail: `${receipt.providerTranscriptMessageCount} provider transcript message(s) persisted`,
@@ -293,6 +298,10 @@ export async function POST(request: NextRequest) {
           return
         }
         let resolvedUserId = userId || 'anonymous'
+        let resolvedChatId =
+          typeof chatId === 'string' && chatId.trim().length > 0
+            ? chatId.trim()
+            : resolvedCaseId
         let createdCaseForIntent = false
         const emittedCaseCreated = new Set<string>()
         let runtimeInputSource: RuntimeEventSource = 'customer_message'
@@ -304,7 +313,16 @@ export async function POST(request: NextRequest) {
         let clientCaseIsNew = false
         if (clientProvidedCaseId) {
           try {
-            const existing = await prisma.case.findUnique({ where: { id: resolvedCaseId } })
+            const existing = await prisma.case.findUnique({
+              where: { id: resolvedCaseId },
+              select: { orgId: true, chatId: true },
+            })
+            if (existing && existing.orgId !== resolvedOrgId) {
+              sendEvent({ type: 'error', data: 'Case not found for this organization', timestamp: new Date().toISOString() })
+              closeStream()
+              return
+            }
+            if (existing?.chatId) resolvedChatId = existing.chatId
             clientCaseIsNew = !existing
           } catch { /* noop */ }
         }
@@ -372,6 +390,7 @@ export async function POST(request: NextRequest) {
             resolvedCaseId = task.caseId
             resolvedOrgId = task.case.orgId
             resolvedUserId = task.case.userId
+            resolvedChatId = task.case.chatId || resolvedChatId
 
             const resumeTmpl =
               (await loadAgentConfig(resolvedAgentConfigId)).resumePrompt || HARNESS_DEFAULT_RESUME_PROMPT_APPEND
@@ -409,6 +428,19 @@ export async function POST(request: NextRequest) {
           return
         }
 
+        try {
+          const claimedCase = await prisma.case.findUnique({
+            where: { id: resolvedCaseId },
+            select: { orgId: true, chatId: true },
+          })
+          if (claimedCase && claimedCase.orgId !== resolvedOrgId) {
+            sendEvent({ type: 'error', data: 'Case not found for this organization', timestamp: new Date().toISOString() })
+            closeStream()
+            return
+          }
+          if (claimedCase?.chatId) resolvedChatId = claimedCase.chatId
+        } catch { /* non-critical; the upsert path below will still enforce FK/DB constraints */ }
+
         // ── System prompts (Core + Case) ──
         // Unified assembly via buildModePrompt — single source of truth
         // shared with playground-runner.ts. Eliminates dual-path drift.
@@ -434,6 +466,7 @@ export async function POST(request: NextRequest) {
               where: {
                 orgId: resolvedOrgId,
                 userId: resolvedUserId,
+                chatId: resolvedChatId,
                 status: { notIn: ['resolved'] },
               },
               orderBy: { updatedAt: 'desc' },
@@ -445,6 +478,8 @@ export async function POST(request: NextRequest) {
               // Check for pending interactions first
               const pendingTask = await prisma.humanTask.findFirst({
                 where: {
+                  orgId: resolvedOrgId,
+                  chatId: resolvedChatId,
                   caseId: { in: activeCases.map((c: { id: string }) => c.id) },
                   status: 'pending',
                 },
@@ -483,7 +518,7 @@ export async function POST(request: NextRequest) {
                 userId: resolvedUserId,
                 type: bodyCaseType,
                 status: 'created',
-                chatId,
+                chatId: resolvedChatId,
               },
             })
             resolvedCaseId = newCase.id
@@ -561,22 +596,25 @@ export async function POST(request: NextRequest) {
         let existingMemory: unknown = null
         let caseSchema: CaseSchemaConfig | null = null
         let existingCaseStatus: string | null = null
-        let runtimeProcedure: { procedureId: string; status: string } | null = null
+        let runtimeProcedure: { id: string; procedureId: string; status: string } | null = null
         try {
-          const existingCase = await prisma.case.findUnique({
-            where: { id: resolvedCaseId },
+          const existingCase = await prisma.case.findFirst({
+            where: { id: resolvedCaseId, orgId: resolvedOrgId },
             include: { memory: true },
           })
           if (existingCase) {
             existingCaseStatus = existingCase.status
+            resolvedChatId = existingCase.chatId || resolvedChatId
             try {
               const activeOrPausedRun = await prisma.procedureRun.findFirst({
                 where: {
                   caseId: resolvedCaseId,
+                  orgId: resolvedOrgId,
+                  chatId: resolvedChatId,
                   status: { in: ['active', 'paused'] },
                 },
                 orderBy: { updatedAt: 'desc' },
-                select: { procedureId: true, status: true },
+                select: { id: true, procedureId: true, status: true },
               })
               if (activeOrPausedRun) {
                 runtimeProcedure = activeOrPausedRun
@@ -666,7 +704,7 @@ export async function POST(request: NextRequest) {
               userId: resolvedUserId,
               type: inferredCaseTypeForRecord,
               status: inferredCaseStatusForRecord,
-              chatId,
+              chatId: resolvedChatId,
               ...(inferredCaseStatusForRecord === 'investigating' ? { blocker: null } : {}),
             },
           })
@@ -822,7 +860,7 @@ export async function POST(request: NextRequest) {
           systemPrompt,
           coreSystemPrompt,
           caseSchema,
-          chatId,
+          chatId: resolvedChatId,
           bootstrapNewCase,
         })
 
@@ -843,7 +881,7 @@ export async function POST(request: NextRequest) {
         // Restore prior-turn messages so the agent has conversation context
         try {
           const priorMessages = await prisma.message.findMany({
-            where: { caseId: resolvedCaseId },
+            where: { orgId: resolvedOrgId, caseId: resolvedCaseId },
             orderBy: { createdAt: 'asc' },
             take: 40,
           })
@@ -870,13 +908,13 @@ export async function POST(request: NextRequest) {
             systemPrompt,
             coreSystemPrompt,
             caseSchema,
-            chatId,
+            chatId: resolvedChatId,
             bootstrapNewCase: false,
           })
           // Re-load prior-turn messages for the follow-up loop
           try {
             const priorMsgs = await prisma.message.findMany({
-              where: { caseId: resolvedCaseId },
+              where: { orgId: resolvedOrgId, caseId: resolvedCaseId },
               orderBy: { createdAt: 'asc' },
               take: 50,
             })
@@ -896,23 +934,27 @@ export async function POST(request: NextRequest) {
                 next.source === 'human_task_result' && result.caseStatus !== 'waiting_human'
               await prisma.case.upsert({
                 where: { id: resolvedCaseId },
-                update: {
-                  ...(caseTypeForUpsert !== 'general' ? { type: caseTypeForUpsert } : {}),
-                  status: result.caseStatus,
-                  ...(shouldClearFollowupBlocker ? { blocker: null } : {}),
-                },
+                        update: {
+                          ...(caseTypeForUpsert !== 'general' ? { type: caseTypeForUpsert } : {}),
+                          status: result.caseStatus,
+                          ...(shouldClearFollowupBlocker ? { blocker: null } : {}),
+                        },
                 create: {
                   id: resolvedCaseId, orgId: resolvedOrgId, userId: resolvedUserId,
                   type: caseTypeForUpsert,
                   status: result.caseStatus,
-                  chatId,
+                  chatId: resolvedChatId,
                   ...(shouldClearFollowupBlocker ? { blocker: null } : {}),
                 },
               })
+              const runId = getActiveProcedureRun(resolvedCaseId)?.runId ?? runtimeProcedure?.id ?? null
               const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : followupMem.confirmedFacts
               await prisma.chatMemory.upsert({
                 where: { caseId: resolvedCaseId },
                 update: {
+                  orgId: resolvedOrgId,
+                  chatId: resolvedChatId,
+                  runId,
                   confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
                   toolsCalled: JSON.stringify(followupMem.toolsCalled),
@@ -923,6 +965,9 @@ export async function POST(request: NextRequest) {
                 },
                 create: {
                   caseId: resolvedCaseId,
+                  orgId: resolvedOrgId,
+                  chatId: resolvedChatId,
+                  runId,
                   confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                   missingFacts: JSON.stringify(followupMem.missingFacts),
                   toolsCalled: JSON.stringify(followupMem.toolsCalled),
@@ -934,13 +979,21 @@ export async function POST(request: NextRequest) {
               })
               const msgsToPersist = result.messages
                 .filter((m) => hasProviderOrDisplayContent(m))
-                .map((m) => serializeMessageForPersistence(m, resolvedCaseId))
+                .map((m) => ({
+                  ...serializeMessageForPersistence(m, resolvedCaseId),
+                  orgId: resolvedOrgId,
+                  chatId: resolvedChatId,
+                  runId,
+                }))
               if (msgsToPersist.length > 0) {
                 await prisma.$transaction(
                   msgsToPersist.map((msg) =>
                     prisma.message.upsert({
                       where: { id: msg.id },
                       update: {
+                        orgId: resolvedOrgId,
+                        chatId: resolvedChatId,
+                        runId,
                         content: msg.content,
                         contentBlocks: msg.contentBlocks ?? undefined,
                         providerContent: (msg.providerContent ?? undefined) as any,
@@ -953,7 +1006,9 @@ export async function POST(request: NextRequest) {
                 )
                 await writeProviderTranscriptPersistedTrace(
                   resolvedCaseId,
-                  typeof chatId === 'string' ? chatId : undefined,
+                  resolvedOrgId,
+                  resolvedChatId,
+                  runId,
                   msgsToPersist,
                 )
               }
@@ -991,18 +1046,22 @@ export async function POST(request: NextRequest) {
               create: {
                 id: resolvedCaseId,
                 orgId: resolvedOrgId,
-                userId: resolvedUserId,
-                type: caseTypeForUpsert,
-                status: result.caseStatus,
-                chatId,
-                ...(shouldClearCaseBlocker ? { blocker: null } : {}),
-              },
-            })
-            const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : mem.confirmedFacts
-            await prisma.chatMemory.upsert({
-              where: { caseId: resolvedCaseId },
-              update: {
-                confirmedFacts: JSON.stringify(persistedConfirmedFacts),
+                        userId: resolvedUserId,
+                        type: caseTypeForUpsert,
+                        status: result.caseStatus,
+                        chatId: resolvedChatId,
+                        ...(shouldClearCaseBlocker ? { blocker: null } : {}),
+                      },
+                    })
+                    const runId = getActiveProcedureRun(resolvedCaseId)?.runId ?? runtimeProcedure?.id ?? null
+                    const persistedConfirmedFacts = activeProcedureV2 ? existingConfirmedFacts : mem.confirmedFacts
+                    await prisma.chatMemory.upsert({
+                      where: { caseId: resolvedCaseId },
+                      update: {
+                        orgId: resolvedOrgId,
+                        chatId: resolvedChatId,
+                        runId,
+                        confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                 missingFacts: JSON.stringify(mem.missingFacts),
                 toolsCalled: JSON.stringify(mem.toolsCalled),
                 toolResults: JSON.stringify(mem.toolResults),
@@ -1010,9 +1069,12 @@ export async function POST(request: NextRequest) {
                 summary: mem.summary || undefined,
                 todos: mem.todos ? JSON.stringify(mem.todos) : null,
               },
-              create: {
-                caseId: resolvedCaseId,
-                confirmedFacts: JSON.stringify(persistedConfirmedFacts),
+                      create: {
+                        caseId: resolvedCaseId,
+                        orgId: resolvedOrgId,
+                        chatId: resolvedChatId,
+                        runId,
+                        confirmedFacts: JSON.stringify(persistedConfirmedFacts),
                 missingFacts: JSON.stringify(mem.missingFacts),
                 toolsCalled: JSON.stringify(mem.toolsCalled),
                 toolResults: JSON.stringify(mem.toolResults),
@@ -1028,18 +1090,27 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Persist messages to DB (always, even for casual chat) ──
-        try {
-          const messagesToPersist = result.messages
-            .filter((m) => hasProviderOrDisplayContent(m))
-            .map((m) => serializeMessageForPersistence(m, resolvedCaseId))
+                try {
+                  const runId = getActiveProcedureRun(resolvedCaseId)?.runId ?? runtimeProcedure?.id ?? null
+                  const messagesToPersist = result.messages
+                    .filter((m) => hasProviderOrDisplayContent(m))
+                    .map((m) => ({
+                      ...serializeMessageForPersistence(m, resolvedCaseId),
+                      orgId: resolvedOrgId,
+                      chatId: resolvedChatId,
+                      runId,
+                    }))
 
           if (messagesToPersist.length > 0) {
             await prisma.$transaction(
               messagesToPersist.map((msg) =>
                 prisma.message.upsert({
                   where: { id: msg.id },
-                  update: {
-                    content: msg.content,
+                          update: {
+                            orgId: resolvedOrgId,
+                            chatId: resolvedChatId,
+                            runId,
+                            content: msg.content,
                     contentBlocks: msg.contentBlocks ?? undefined,
                     providerContent: (msg.providerContent ?? undefined) as any,
                     providerMeta: (msg.providerMeta ?? undefined) as any,
@@ -1049,11 +1120,13 @@ export async function POST(request: NextRequest) {
                 }),
               ),
             )
-            await writeProviderTranscriptPersistedTrace(
-              resolvedCaseId,
-              typeof chatId === 'string' ? chatId : undefined,
-              messagesToPersist,
-            )
+                    await writeProviderTranscriptPersistedTrace(
+                      resolvedCaseId,
+                      resolvedOrgId,
+                      resolvedChatId,
+                      runId,
+                      messagesToPersist,
+                    )
           }
         } catch (err) {
           console.error('[Intera] Failed to persist messages:', err)

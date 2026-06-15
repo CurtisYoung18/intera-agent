@@ -24,6 +24,15 @@ export const GET = defineRoute({
         _count: { select: { messages: true } },
       },
     })
+    const activeRuns = await repo.raw.procedureRun.findMany({
+      where: { orgId: repo.orgId, caseId: { in: cases.map((c) => c.id) } },
+      orderBy: { updatedAt: 'desc' as const },
+      select: { id: true, caseId: true },
+    })
+    const runByCase = new Map<string, string>()
+    for (const run of activeRuns) {
+      if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
+    }
 
     // Group into sessions by chatId.
     const sessionMap = new Map<string, ChatSession>()
@@ -41,8 +50,10 @@ export const GET = defineRoute({
         })
       }
       const session = sessionMap.get(key)!
+      const runId = runByCase.get(c.id) ?? null
       session.cases.push({
-        id: c.id,
+        id: runId ?? c.id,
+        runId,
         type: c.type,
         status: c.status,
         source: c.source,

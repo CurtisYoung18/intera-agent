@@ -329,6 +329,8 @@ const SESSION_TTL_MS = 30 * 60 * 1000
 interface PersistedProcedureRunRecord {
   id: string
   caseId: string
+  orgId?: string
+  chatId?: string
   agentConfigId: string
   procedureId: string
   procedureVersion: string
@@ -366,7 +368,7 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
     const [caseRow, runs] = await Promise.all([
       prisma.case.findUnique({
         where: { id: caseId },
-        select: { runtimeInputEpoch: true },
+        select: { runtimeInputEpoch: true, orgId: true, chatId: true },
       }),
       prisma.procedureRun.findMany({
         where: {
@@ -381,6 +383,8 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
       runs: runs.map((run) => ({
         id: run.id,
         caseId: run.caseId,
+        orgId: (run as { orgId?: string }).orgId ?? caseRow?.orgId,
+        chatId: (run as { chatId?: string }).chatId ?? caseRow?.chatId,
         agentConfigId: run.agentConfigId,
         procedureId: run.procedureId,
         procedureVersion: run.procedureVersion,
@@ -396,10 +400,18 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
     }
   },
   async saveProcedureRun(record) {
+    const caseRow = await prisma.case.findUnique({
+      where: { id: record.caseId },
+      select: { orgId: true, chatId: true },
+    }).catch(() => null)
+    const orgId = record.orgId ?? caseRow?.orgId ?? 'default'
+    const chatId = record.chatId ?? caseRow?.chatId ?? record.caseId
     await prisma.procedureRun.upsert({
       where: { id: record.id },
       update: {
         caseId: record.caseId,
+        orgId,
+        chatId,
         agentConfigId: record.agentConfigId,
         procedureId: record.procedureId,
         procedureVersion: record.procedureVersion,
@@ -413,6 +425,8 @@ const prismaProcedureRunPersistence: ProcedureRunPersistenceAdapter = {
       create: {
         id: record.id,
         caseId: record.caseId,
+        orgId,
+        chatId,
         agentConfigId: record.agentConfigId,
         procedureId: record.procedureId,
         procedureVersion: record.procedureVersion,

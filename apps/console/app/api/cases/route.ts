@@ -32,7 +32,34 @@ export const GET = defineRoute({
       }),
       repo.case.count({ where }),
     ])
+    const activeRuns = await repo.raw.procedureRun.findMany({
+      where: { orgId: repo.orgId, caseId: { in: cases.map((caseRow) => caseRow.id) } },
+      orderBy: { updatedAt: 'desc' as const },
+      select: { id: true, caseId: true },
+    })
+    const runByCase = new Map<string, string>()
+    for (const run of activeRuns) {
+      if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
+    }
+    const summaries: CaseSummary[] = cases.map((caseRow) => {
+      const runId = runByCase.get(caseRow.id) ?? null
+      return {
+        id: runId ?? caseRow.id,
+        runId,
+        type: caseRow.type,
+        status: caseRow.status,
+        source: caseRow.source,
+        goal: caseRow.goal,
+        createdAt: caseRow.createdAt.toISOString(),
+        updatedAt: caseRow.updatedAt.toISOString(),
+        summary: caseRow.memory?.summary ?? null,
+        toolsCalled: (() => {
+          try { return JSON.parse(caseRow.memory?.toolsCalled ?? '[]') as unknown[] } catch { return [] }
+        })(),
+        messageCount: caseRow._count?.messages ?? 0,
+      }
+    })
 
-    return apiOk({ cases, total })
+    return apiOk({ cases: summaries, total })
   },
 })

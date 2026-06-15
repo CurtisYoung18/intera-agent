@@ -22,6 +22,7 @@ export interface ProfileStats {
 export async function recomputeProfileStats(
   prisma: PrismaClient,
   profileKeyStr: string,
+  orgId?: string,
 ): Promise<ProfileStats> {
   const empty: ProfileStats = {
     totalChats: 0, totalCases: 0, resolvedCases: 0, escalatedCases: 0,
@@ -35,7 +36,10 @@ export async function recomputeProfileStats(
 
     if (!isUser && !isChat) return empty
 
-    const where = isUser ? { userId: rawId } : { chatId: rawId }
+    const where = {
+      ...(isUser ? { userId: rawId } : { chatId: rawId }),
+      ...(orgId ? { orgId } : {}),
+    }
 
     const cases = await (prisma as any).case.findMany({
       where,

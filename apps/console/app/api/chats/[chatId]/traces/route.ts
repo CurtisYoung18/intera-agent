@@ -20,12 +20,13 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     const offset = parseInt(input.offset)
 
     const linkedCases = await repo.raw.case.findMany({
-      where: { chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId },
       select: { id: true },
     })
     const caseIds = linkedCases.map(c => c.id)
 
     const where: Record<string, unknown> = {
+      orgId: repo.orgId,
       OR: [
         { chatId: params.chatId },
         ...(caseIds.length > 0 ? [{ caseId: { in: caseIds } }] : []),
@@ -38,6 +39,9 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
       repo.raw.actionTrace.count({ where }),
     ])
 
-    return apiOk({ traces: traces.slice(0, limit), total })
+    return apiOk({
+      traces: traces.slice(0, limit).map(({ caseId: _caseId, ...trace }) => trace),
+      total,
+    })
   },
 })

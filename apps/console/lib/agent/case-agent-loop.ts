@@ -14,7 +14,7 @@ import type { ToolRouter } from './tools'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
-import { recordProcedureToolResult } from './session-store'
+import { getActiveProcedureRun, recordProcedureToolResult } from './session-store'
 
 export interface CaseLoopServices {
   caseId: string
@@ -184,7 +184,8 @@ export class CaseAgentLoop {
     const question = String(toolInput.question || 'Human task requested')
     const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
-    const { caseId, orgId, userId, chatId } = this.services
+    const { caseId, orgId, userId } = this.services
+    const chatId = this.services.chatId ?? caseId
     let taskId: string | null = null
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -205,22 +206,26 @@ export class CaseAgentLoop {
             type: this.caseSchema.type || 'general',
             status: 'waiting_human',
             blocker: `Waiting for ${queue}`,
-            chatId: chatId ?? caseId,
+            chatId,
           },
         })
 
         this.services.chatMemory.setCaseStatus('waiting_human')
         this.syncStage()
+        const runId = getActiveProcedureRun(caseId)?.runId ?? null
 
         await prisma.chatMemory.upsert({
           where: { caseId },
-          update: { ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
-          create: { caseId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
+          update: { orgId, chatId, runId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
+          create: { caseId, orgId, chatId, runId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
         })
 
         const task = await prisma.humanTask.create({
           data: {
             caseId,
+            orgId,
+            chatId,
+            runId,
             queue,
             question,
             fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,

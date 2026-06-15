@@ -9,26 +9,27 @@ export const GET = defineRoute<void, { chatId: string }>({
   method: 'GET',
   async handler({ params, repo }) {
     const chatCases = await repo.raw.case.findMany({
-      where: { chatId: params.chatId },
-      select: { id: true, userId: true },
+      where: { orgId: repo.orgId, chatId: params.chatId },
+      select: { userId: true },
     })
     const userId = chatCases[0]?.userId
-    const caseIds = chatCases.map(c => c.id)
 
     const memories = await repo.raw.chatMemory.findMany({
-      where: { caseId: { in: caseIds } },
+      where: { orgId: repo.orgId, chatId: params.chatId },
       orderBy: { updatedAt: 'desc' },
     })
 
     const key = profileKey(userId ?? undefined, params.chatId)
     const profile = key
-      ? await repo.raw.userProfile.findUnique({ where: { userId: key } }).catch(() => null)
+      ? await repo.raw.userProfile.findUnique({
+          where: { orgId_userId: { orgId: repo.orgId, userId: key } },
+        }).catch(() => null)
       : null
 
     return apiOk({
       userId,
       memories: memories.map(m => ({
-        caseId: m.caseId,
+        runId: m.runId,
         summary: m.summary,
         confirmedFacts: (() => { try { return JSON.parse(m.confirmedFacts) } catch { return {} } })(),
         toolsCalled: (() => { try { return JSON.parse(m.toolsCalled) } catch { return [] } })(),

@@ -14,7 +14,7 @@ import { getRuntimeSourceTruth, summarizeToolPairing } from '@/lib/operate/runti
 import type { CaseDetailResponse } from '@intera/shared/contracts/cases'
 
 interface CaseData {
-  id: string; userId?: string; type: string; status: string; goal: string | null; source?: string
+  id: string; runId?: string | null; userId?: string; type: string; status: string; goal: string | null; source?: string
   createdAt: string; updatedAt: string; chatId?: string | null
   _count?: { messages: number; traces: number }
   memory?: {
@@ -62,7 +62,7 @@ function fmtTokens(n: number): string {
   return String(n)
 }
 
-export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string }) {
+export default function ProcedureRunDetailWorkspace({ runId }: { runId: string }) {
   const router = useRouter()
   const { t, locale } = useConsoleLocale()
   const isZh = locale === 'zh'
@@ -78,10 +78,11 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
     async function load() {
       setLoading(true)
       try {
+        const basePath = `/api/runs/${encodeURIComponent(runId)}`
         const [caseResult, tracesResult, msgsResult] = await Promise.all([
-          apiClient<CaseDetailResponse>(`/api/cases/${encodeURIComponent(caseId)}`),
-          apiClient<{ traces: TraceRow[] }>(`/api/cases/${encodeURIComponent(caseId)}/traces?limit=500`),
-          apiClient<{ messages: MsgItem[] }>(`/api/cases/${encodeURIComponent(caseId)}/messages?limit=200`),
+          apiClient<CaseDetailResponse>(basePath),
+          apiClient<{ traces: TraceRow[] }>(`${basePath}/traces?limit=500`),
+          apiClient<{ messages: MsgItem[] }>(`${basePath}/messages?limit=200`),
         ])
         setCaseData(caseResult.data.case as unknown as CaseData)
         setTraces(tracesResult.data.traces ?? [])
@@ -90,7 +91,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
       finally { setLoading(false) }
     }
     load()
-  }, [caseId])
+  }, [runId])
 
   // ── Metrics from traces ──
   const metrics = useMemo(() => {
@@ -215,7 +216,7 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
                 {sourceTruth ? <SourceTruthPill truth={sourceTruth} /> : null}
               </div>
               <p className="mt-1 text-[12px] text-[var(--fog)]/78">
-                {caseData.id} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
+                {caseData.runId ?? runId ?? ''} · {t('caseDetail.statsMsgs', { n: caseData._count?.messages ?? messages.length })} · {t('caseDetail.statsTraces', { n: caseData._count?.traces ?? traces.length })}
               </p>
             </div>
           </div>
@@ -230,9 +231,14 @@ export default function ProcedureRunDetailWorkspace({ caseId }: { caseId: string
               </button>
             ) : null}
           <a
-            href={`/api/cases/${encodeURIComponent(caseData.id)}/export`}
+            href={`/api/${caseData.runId ? 'runs' : 'cases'}/${encodeURIComponent(caseData.runId ?? caseData.id)}/export`}
             className="whitespace-nowrap rounded-[14px] border border-[var(--border-subtle)] px-3 py-2 text-[12px] text-[var(--fog)] transition-colors hover:bg-black/[0.03] hover:text-[var(--mist)]"
-            onClick={(e) => { e.preventDefault(); window.open(`/api/cases/${encodeURIComponent(caseData.id)}/export`, '_blank') }}
+            onClick={(e) => {
+              e.preventDefault()
+              const exportKind = caseData.runId ? 'runs' : 'cases'
+              const exportId = caseData.runId ?? caseData.id
+              window.open(`/api/${exportKind}/${encodeURIComponent(exportId)}/export`, '_blank')
+            }}
           >
             {isZh ? '导出 .md' : 'Export .md'}
           </a>
