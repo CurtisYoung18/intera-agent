@@ -17,6 +17,7 @@ import {
   recordProcedureTextReply,
   filterRuntimeAuthorityKeys,
   finalizeProcedureRun,
+  confirmProcedureHumanHandoff,
 } from '../../session-store'
 
 describe('hasSession', () => {
@@ -658,7 +659,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('pauses the ProcedureRun after persisted handoff and clears stale blockers from prior empty knowledge results', () => {
+  it('pauses the ProcedureRun after persisted handoff and only finalizes after channel transfer confirmation', async () => {
     const caseId = 'r3-v2-handoff-terminal'
     recordInitialInputEvent(caseId, { content: 'Where do I find the deposit receipt page?' })
     const started = startProcedureRun(caseId, {
@@ -755,6 +756,18 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(getActiveProcedureRun(caseId)).toBeUndefined()
+    expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(1)
+    const paused = getProcedureRuntime(caseId).pausedProcedureRuns[0]
+    expect(paused).toMatchObject({
+      runId: started.run.runId,
+      status: 'paused',
+      reason: 'Human handoff task task-1 persisted; awaiting channel transfer.',
+      blockers: [],
+    })
+    expect(persistedHandoff.run?.status).toBe('paused')
+
+    const confirmed = await confirmProcedureHumanHandoff(caseId, { taskId: 'task-1', queue: 'general' })
+    expect(confirmed.ok).toBe(true)
     expect(getProcedureRuntime(caseId).pausedProcedureRuns).toHaveLength(0)
     const completed = getProcedureRuntime(caseId).completedProcedureRuns[0]
     expect(completed).toMatchObject({
@@ -783,8 +796,8 @@ describe('R3 runtime event protocol', () => {
       outcome: 'succeeded',
       output: expect.objectContaining({ persisted: true }),
     })
-    expect(persistedHandoff.run?.status).toBe('completed')
-    expect(persistedHandoff.run?.blockers).toEqual([])
+    expect(confirmed.run?.status).toBe('completed')
+    expect(confirmed.run?.blockers).toEqual([])
     closeSession(caseId)
   })
 

@@ -54,6 +54,16 @@ function ensureBlocks(prompt: string, blocks: Record<string, string>): string {
   return result
 }
 
+function buildResponseFocusBlock(): string {
+  return [
+    '## Response Focus',
+    '- Answer the latest customer message first.',
+    '- Do not revive an older deposit, withdrawal, or promotion topic unless the customer explicitly asks to continue it.',
+    '- If the customer clearly starts a new issue, route or open a fresh case instead of reusing stale facts.',
+    '- When quoting money, currency, status, or payment channel, repeat the exact values returned by tools. Do not translate or invent RMB/CNY unless the evidence explicitly says so.',
+  ].join('\n')
+}
+
 /**
  * Assemble the final system prompt for core (discovery) or case (execution) mode.
  *
@@ -76,6 +86,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
   let prompt = resolvePrompt(baseRaw, baseCtx)
   prompt = stripPlaceholders(prompt)
   prompt = ensureBlocks(prompt, {
+    responseFocus: buildResponseFocusBlock(),
     tools: resolvePrompt('{{available_tools}}', baseCtx),
     caseTypes: resolvePrompt('{{case_types}}', baseCtx),
     sessionBinding: resolvePrompt('{{session_binding}}', baseCtx),

@@ -2,8 +2,9 @@
 // Orchestrates: LiveChat webhook → /api/messages SSE → LiveChat API calls.
 
 import type { LiveChatConfig, IncomingEvent, ContentBlock } from './types'
-import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, closeSession, type BridgeSessionRow } from './session-store'
+import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, closeSession, rotateSessionCase, type BridgeSessionRow } from './session-store'
 import { LiveChatRenderer } from '@/channels/livechat/renderer'
+import { confirmProcedureHumanHandoff } from '@/lib/agent/session-store'
 import type { RenderContext } from '@intera/shared/channels/renderer'
 import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 import {
@@ -71,14 +72,14 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncGenerator
 function buildMessagesBody(
   event: IncomingEvent,
   session: BridgeSessionRow,
-  options?: { pinCaseToSession?: boolean },
+  options?: { pinCaseToSession?: boolean; disableCaseRouting?: boolean },
 ): Record<string, unknown> {
   const base = {
     orgId: session.orgId,
     userId: session.userId,
     chatId: session.chatId,
     caseId: session.caseId,
-    disableCaseRouting: true,
+    ...(options?.disableCaseRouting ? { disableCaseRouting: true } : {}),
     ...(options?.pinCaseToSession ? { sessionCasePinned: true } : {}),
   }
 
@@ -108,6 +109,37 @@ function buildMessagesBody(
       }
       return { ...base, message: text }
     }
+  }
+}
+
+function isTransferGroupUnavailableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /Cannot assign any agent from requested groups/i.test(message)
+}
+
+async function transferChatWithFallback(
+  chatId: string,
+  target: { type: 'group'; ids: number[] } | { type: 'agent'; ids: string[] } | { type: 'queue' },
+  config: LiveChatConfig,
+  params: ReturnType<typeof lcParams>,
+): Promise<void> {
+  try {
+    await transferChat(chatId, target, config.botAccessToken, config.licenseId, params.region, params.authType, params.accountId)
+    return
+  } catch (error) {
+    if (target.type === 'group' && isTransferGroupUnavailableError(error)) {
+      await transferChat(
+        chatId,
+        { type: 'queue' },
+        config.botAccessToken,
+        config.licenseId,
+        params.region,
+        params.authType,
+        params.accountId,
+      )
+      return
+    }
+    throw error
   }
 }
 
@@ -207,11 +239,16 @@ export async function handleIncomingEvent(
   const resolvedAgentConfigId = session.agentConfigId ?? agentConfigId
 
   let resumedTransferredSession = false
+  const sessionStateBeforeEvent = session.state
   const shouldPinCaseToSession =
     event.type === 'form_submit' ||
     event.type === 'interaction_submit' ||
     event.type === 'postback' ||
-    event.type === 'attachment'
+    event.type === 'attachment' ||
+    (sessionStateBeforeEvent === 'thinking' && event.type === 'message')
+  const shouldDisableCaseRouting =
+    event.type !== 'message' ||
+    (sessionStateBeforeEvent === 'thinking' && event.type === 'message')
 
   if (event.type === 'form_submit' && event.form?.caseId) {
     session = { ...session, caseId: event.form.caseId }
@@ -250,6 +287,7 @@ export async function handleIncomingEvent(
 
   const body = buildMessagesBody(event, session, {
     pinCaseToSession: shouldPinCaseToSession || resumedTransferredSession,
+    disableCaseRouting: shouldDisableCaseRouting,
   })
 
   // Empty message from non-action events (e.g. incoming_chat) → skip agent loop
@@ -331,8 +369,17 @@ export async function handleIncomingEvent(
 
   let streamTruncated = true
   let transferredToHuman = false
+  let sentActionFailureNotice = false
+  let pendingHumanHandoff: { taskId?: string; queue?: string } | null = null
   try {
     for await (const sseEvent of parseSSEStream(response.body)) {
+      if (sseEvent.type === 'human_task_created' && typeof sseEvent.data === 'object' && sseEvent.data) {
+        const payload = sseEvent.data as { taskId?: string; queue?: string }
+        pendingHumanHandoff = {
+          taskId: typeof payload.taskId === 'string' ? payload.taskId : undefined,
+          queue: typeof payload.queue === 'string' ? payload.queue : undefined,
+        }
+      }
       const actions = livechatRenderer.render(sseEvent, renderCtx)
 
       for (const action of actions) {
@@ -372,7 +419,16 @@ export async function handleIncomingEvent(
                 : config.transferGroupId != null
                   ? { type: 'group' as const, ids: [config.transferGroupId] }
                   : { type: 'queue' as const }
-              await transferChat(chatId, target, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await transferChatWithFallback(chatId, target, config, p)
+              if (pendingHumanHandoff) {
+                await confirmProcedureHumanHandoff(session.caseId, {
+                  agentConfigId: session.agentConfigId,
+                  taskId: pendingHumanHandoff.taskId,
+                  queue: pendingHumanHandoff.queue,
+                }).catch((err) => {
+                  console.error('[Bridge] Failed to confirm ProcedureRun human handoff:', err)
+                })
+              }
               transferredToHuman = true
               await updateSessionState(chatId, 'transferred')
               break
@@ -405,6 +461,15 @@ export async function handleIncomingEvent(
             return // breaks out of the SSE loop
           }
           console.error('[Bridge] action failed:', action.type, err)
+          if (!sentActionFailureNotice) {
+            sentActionFailureNotice = true
+            await sendFailureNotice(chatId, config, 'action_failed')
+          }
+          if (action.type === 'transfer_chat') {
+            await rotateSessionCase(chatId, generateCaseId()).catch((rotateErr) => {
+              console.error('[Bridge] Failed to rotate session after transfer failure:', rotateErr)
+            })
+          }
         }
       }
     }

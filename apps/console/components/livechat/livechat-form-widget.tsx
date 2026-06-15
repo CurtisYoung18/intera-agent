@@ -1,9 +1,10 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { WidgetFormField, WidgetLocale } from '@/lib/livechat/form-widget'
 import { getWidgetCopy } from '@/lib/livechat/form-widget'
+import { closeMomentIfPossible, ensureMomentsSdk } from '@/lib/livechat/moments-sdk'
 
 type LiveChatFormWidgetProps = {
   title: string
@@ -41,6 +42,11 @@ export default function LiveChatFormWidget({
 
   const hasFileField = fields.some((field) => field.type === 'file')
   const canSubmit = preview || Boolean(chatId)
+
+  useEffect(() => {
+    if (preview) return
+    void ensureMomentsSdk({ title }).catch(() => null)
+  }, [preview, title])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -91,6 +97,9 @@ export default function LiveChatFormWidget({
         throw new Error(message)
       }
       setSubmitState({ kind: 'submitted' })
+      if (!preview) {
+        void closeMomentIfPossible({ title }).catch(() => null)
+      }
     } catch (error) {
       setSubmitState({ kind: 'error', message: readErrorMessage(error, copy.submitFailed) })
     }

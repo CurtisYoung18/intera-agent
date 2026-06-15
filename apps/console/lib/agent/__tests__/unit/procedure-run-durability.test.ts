@@ -17,6 +17,7 @@ import {
   recordProcedureTextReply,
   recordProcedureToolCall,
   recordProcedureToolResult,
+  confirmProcedureHumanHandoff,
   setProcedureRunPersistenceForTest,
   sessionCount,
   startProcedureRun,
@@ -299,6 +300,7 @@ describe('ProcedureRun durability', () => {
       basedOnInputEpoch: 1,
       toolOutput: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
     })
+    await confirmProcedureHumanHandoff(caseId, { taskId: 'task-1', queue: 'general' })
     await flushProcedureRunPersistence(caseId)
 
     const completedBeforeRestart = getProcedureRuntime(caseId).completedProcedureRuns[0]

@@ -15,6 +15,7 @@ import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streamin
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
 import { getActiveProcedureRun, recordProcedureToolResult } from './session-store'
+import { buildHumanHandoffQuestion } from './human-handoff'
 
 export interface CaseLoopServices {
   caseId: string
@@ -36,6 +37,15 @@ export type CaseToolResult =
   | { type: 'none' }
   | { type: 'continue' }
   | { type: 'terminal'; result: LoopResult }
+
+function latestCustomerMessage(messages: Message[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role !== 'user') continue
+    if (typeof message.content === 'string' && message.content.trim()) return message.content.trim()
+  }
+  return undefined
+}
 
 export class CaseAgentLoop {
   private procedureExecutor: ProcedureExecutor | null = null
@@ -181,7 +191,12 @@ export class CaseAgentLoop {
   ): Promise<CaseToolResult> {
     const toolInput = humanTaskResult.toolUse?.input || {}
     const queue = String(toolInput.queue || 'general')
-    const question = String(toolInput.question || 'Human task requested')
+    const question = buildHumanHandoffQuestion({
+      baseQuestion: String(toolInput.question || 'Human task requested'),
+      caseType: this.caseSchema.type,
+      latestCustomerMessage: latestCustomerMessage(this.services.getMessages()),
+      confirmedFacts: this.services.chatMemory.getConfirmedFacts(),
+    })
     const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
 
     const { caseId, orgId, userId } = this.services
@@ -283,7 +298,7 @@ export class CaseAgentLoop {
 
         sendEvent({
           type: 'human_task_created',
-          data: { taskId: task.id, queue, status: 'pending' },
+          data: { taskId: task.id, queue, question, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
         await this.services.traceWriter.writeEscalated('human_task_created', { taskId: task.id, queue })

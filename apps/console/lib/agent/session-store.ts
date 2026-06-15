@@ -1100,6 +1100,43 @@ export function finalizeProcedureRun(caseId: string, input: {
   return { ok: true, stale: false, run: cloneRun(run) }
 }
 
+export async function confirmProcedureHumanHandoff(caseId: string, input?: {
+  agentConfigId?: string
+  taskId?: string
+  queue?: string
+}): Promise<{ ok: boolean; run?: ProcedureRunState; error?: string }> {
+  let session = sessions.get(caseId)
+  if (!session) {
+    await hydrateProcedureRuntime(caseId, { agentConfigId: input?.agentConfigId })
+    session = sessions.get(caseId)
+  }
+  if (!session) return { ok: false, error: 'No ProcedureRun session found.' }
+
+  const candidates = [
+    ...(session.procedureRuntime.activeProcedureRun ? [session.procedureRuntime.activeProcedureRun] : []),
+    ...session.procedureRuntime.pausedProcedureRuns,
+  ]
+  const run = candidates
+    .filter((candidate) => candidate.outcome !== 'human_handoff')
+    .find((candidate) => findLatestPersistedHandoffEvidence(candidate, input?.taskId))
+
+  if (!run) return { ok: false, error: 'No pending human handoff ProcedureRun found.' }
+
+  const evidence = findLatestPersistedHandoffEvidence(run, input?.taskId)
+  const match = evidence ? findHandoffMatch(run, evidence) : null
+  const persistedOutput = isRecord(evidence?.metadata?.output) ? evidence.metadata.output : {}
+  const createdAt = new Date().toISOString()
+
+  finalizeRunForHumanHandoff(session, run, match, createdAt, {
+    ...persistedOutput,
+    ...(input?.taskId ? { taskId: input.taskId } : {}),
+    ...(input?.queue ? { queue: input.queue } : {}),
+    persisted: true,
+  })
+  scheduleRunPersist(session, run)
+  return { ok: true, run: cloneRun(run) }
+}
+
 export function procedureRunPromptTail(caseId: string): string {
   const state = sessions.get(caseId)?.procedureRuntime
   if (!state?.activeProcedureRun && !state?.pausedProcedureRuns.length) return ''
@@ -2407,8 +2444,82 @@ function applyToolEvidenceToRun(
     clearProcedureSignal(run, 'explicit_human_request')
     clearProcedureSignal(run, 'no_progress_loop')
     clearProcedureSignal(run, 'knowledge_gap')
-    finalizeRunForHumanHandoff(session, run, match, createdAt, input.toolOutput)
+    syncCurrentStepAfterProgress(run, createdAt)
+    pauseRunForHumanHandoff(session, run, createdAt, input.toolOutput)
   }
+}
+
+function pauseRunForHumanHandoff(
+  session: CaseSession,
+  run: ProcedureRunState,
+  createdAt: string,
+  toolOutput?: unknown,
+): void {
+  const taskId = isRecord(toolOutput) && typeof toolOutput.taskId === 'string'
+    ? toolOutput.taskId
+    : undefined
+  const queue = isRecord(toolOutput) && typeof toolOutput.queue === 'string'
+    ? toolOutput.queue
+    : undefined
+
+  run.blockers = []
+  run.status = 'paused'
+  run.reason = taskId
+    ? `Human handoff task ${taskId} persisted; awaiting channel transfer.`
+    : 'Human handoff persisted; awaiting channel transfer.'
+  run.updatedAt = createdAt
+
+  if (session.procedureRuntime.activeProcedureRun?.runId === run.runId) {
+    session.procedureRuntime.activeProcedureRun = undefined
+  }
+  if (!session.procedureRuntime.pausedProcedureRuns.some((candidate) => candidate.runId === run.runId)) {
+    session.procedureRuntime.pausedProcedureRuns.push(run)
+  }
+
+  appendProcedureTimeline(session, run, {
+    origin: 'system',
+    source: 'control',
+    basedOnInputEpoch: run.inputEpoch,
+    summary: taskId
+      ? `ProcedureRun paused after human handoff task ${taskId}`
+      : 'ProcedureRun paused after human handoff',
+    metadata: {
+      waitingHuman: true,
+      handoffPending: true,
+      taskId,
+      queue,
+      persisted: true,
+    },
+  })
+}
+
+function findLatestPersistedHandoffEvidence(
+  run: ProcedureRunState,
+  taskId?: string,
+): ProcedureRunEvidenceState | undefined {
+  return [...run.evidence]
+    .filter((entry) => {
+      if (entry.toolName !== 'create_human_task') return false
+      const output = isRecord(entry.metadata?.output) ? entry.metadata.output : null
+      if (!output || output.persisted !== true) return false
+      if (!taskId) return true
+      return output.taskId === taskId
+    })
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
+}
+
+function findHandoffMatch(
+  run: ProcedureRunState,
+  evidence: ProcedureRunEvidenceState,
+): { step: ProcedureRunStepState; action?: ProcedureRunActionState } | null {
+  const step = evidence.stepId
+    ? run.steps.find((candidate) => candidate.id === evidence.stepId)
+    : undefined
+  if (!step) return null
+  const action = evidence.actionId
+    ? step.actions?.find((candidate) => candidate.id === evidence.actionId)
+    : undefined
+  return { step, action }
 }
 
 function finalizeRunForHumanHandoff(

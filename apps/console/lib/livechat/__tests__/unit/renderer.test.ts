@@ -167,13 +167,20 @@ describe('LiveChatRenderer', () => {
   describe('human_task_created', () => {
     it('returns a handoff confirmation card', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('human_task_created', {}), makeCtx())
+      const actions = r.render(makeEvent('human_task_created', {
+        question: '客户反馈存款未到账，需要人工跟进。',
+      }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_card')
-      const card = (a as { type: 'send_card'; card: { title: string; subtitle?: string; buttons: unknown[] } }).card
-      expect(card.title).toBe('Human support requested')
-      expect(card.subtitle).toContain('specialist')
-      expect(card.buttons).toEqual([])
+      const card = (a as { type: 'send_card'; card: { title: string; subtitle?: string; buttons: Array<{ label: string; type?: string }> } }).card
+      expect(card.title).toBe('已转交人工客服')
+      expect(card.subtitle).toContain('存款未到账')
+      expect(card.buttons).toEqual([
+        expect.objectContaining({
+          label: '补充订单号或截图',
+          type: 'message',
+        }),
+      ])
     })
   })
 

@@ -4,9 +4,20 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import LiveChatFormWidget from '../livechat-form-widget'
 
+const { mockEnsureMomentsSdk, mockCloseMomentIfPossible } = vi.hoisted(() => ({
+  mockEnsureMomentsSdk: vi.fn(async () => null),
+  mockCloseMomentIfPossible: vi.fn(async () => false),
+}))
+
+vi.mock('@/lib/livechat/moments-sdk', () => ({
+  ensureMomentsSdk: mockEnsureMomentsSdk,
+  closeMomentIfPossible: mockCloseMomentIfPossible,
+}))
+
 describe('LiveChatFormWidget', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.clearAllMocks()
   })
 
   it('submits normalized answers back to the livechat form endpoint', async () => {
@@ -54,6 +65,9 @@ describe('LiveChatFormWidget', () => {
     }))
 
     expect(await screen.findByText('Submitted')).toBeDefined()
+    await waitFor(() => {
+      expect(mockCloseMomentIfPossible).toHaveBeenCalledWith({ title: 'Deposit details' })
+    })
   })
 
   it('shows preview output without calling the API', async () => {

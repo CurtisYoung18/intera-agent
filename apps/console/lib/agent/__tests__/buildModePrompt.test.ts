@@ -48,6 +48,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
   it('produces blocks identical to token-based resolution for standard prompt', async () => {
     const result = await buildModePrompt(baseInput)
     // All canonical blocks must be present
+    expect(result.prompt).toContain('## Response Focus')
     expect(result.prompt).toContain('## Available Tools')
     expect(result.prompt).toContain('## Available Procedures')
     expect(result.prompt).toContain('## Current User')
@@ -62,6 +63,7 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
       // coreSystemPrompt without any {{...}} tokens
       coreSystemPrompt: 'You are a helpful assistant. Be concise.',
     })
+    expect(result.prompt).toContain('## Response Focus')
     expect(result.prompt).toContain('## Available Tools')
     expect(result.prompt).toContain('## Available Procedures')
     expect(result.prompt).toContain('## Current User')
