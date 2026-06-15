@@ -17,9 +17,10 @@
     "db:push": "npm run db:push -w packages/shared",
     "db:studio": "npm run db:studio -w packages/shared",
     "db:seed": "npm run db:seed -w packages/shared",
+    "check:migration-prefixes": "node scripts/check-migration-prefixes.mjs",
     "check:isolation-seam": "node scripts/check-isolation-seam.mjs",
     "check:runtime-core-boundary": "node scripts/check-runtime-core-boundary.mjs",
-    "test": "npm run check:isolation-seam && npm run check:runtime-core-boundary && npx vitest run",
+    "test": "npm run check:migration-prefixes && npm run check:isolation-seam && npm run check:runtime-core-boundary && npx vitest run",
     "test:watch": "npx vitest",
     "test:coverage": "npx vitest run --coverage"
   },

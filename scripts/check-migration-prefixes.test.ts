@@ -1,6 +1,9 @@
 /**
  * Vitest guard: fails CI if two migration directories share the same
- * 14-digit timestamp prefix (which would break prisma migrate deploy).
+ * numeric timestamp prefix (which would break prisma migrate deploy).
+ *
+ * The repo currently has both 14-digit and legacy 12-digit prefixes; both are
+ * real Prisma migrations and must be checked.
  *
  * Known benign collision: 20260603000008 (two dirs share this prefix).
  * Future collisions are fatal.
@@ -18,6 +21,10 @@ const MIGRATIONS_DIR = resolve(
 
 const KNOWN_COLLISIONS = new Set(['20260603000008'])
 
+function migrationPrefix(dir: string): string | null {
+  return /^(\d{12,14})(?=_)/.exec(dir)?.[1] ?? null
+}
+
 describe('migration prefix collision guard', () => {
   it('has no duplicate timestamp prefixes in migration directories', () => {
     const entries = readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
@@ -25,8 +32,8 @@ describe('migration prefix collision guard', () => {
 
     const prefixMap = new Map<string, string[]>()
     for (const dir of dirs) {
-      const prefix = dir.slice(0, 14)
-      if (prefix.length < 14 || !/^\d{14}$/.test(prefix)) continue
+      const prefix = migrationPrefix(dir)
+      if (!prefix) continue
       const group = prefixMap.get(prefix) ?? []
       group.push(dir)
       prefixMap.set(prefix, group)

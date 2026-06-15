@@ -1,10 +1,11 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env node
 /**
- * check-migration-prefixes.ts
+ * check-migration-prefixes.mjs
  *
  * Guards against colliding migration directory prefixes.
- * Prisma generates migrations with a 14-digit timestamp prefix (YYYYMMDDHHMMSS).
- * Two directories with the same prefix will fail `prisma migrate deploy`.
+ * Prisma migration names in this repo use either a 14-digit timestamp prefix
+ * (YYYYMMDDHHMMSS) or a legacy 12-digit prefix. Two directories with the same
+ * numeric prefix will fail `prisma migrate deploy`.
  *
  * Known benign collision: 20260603000008 (two directories share this prefix).
  * This guard ensures no future collisions are introduced.
@@ -22,7 +23,11 @@ const MIGRATIONS_DIR = resolve(
 // Known benign collision — will not fail CI but will log a warning.
 const KNOWN_COLLISIONS = new Set(['20260603000008'])
 
-function main(): void {
+function migrationPrefix(dir) {
+  return /^(\d{12,14})(?=_)/.exec(dir)?.[1] ?? null
+}
+
+function main() {
   if (!existsSync(MIGRATIONS_DIR)) {
     console.error(`Migrations directory not found: ${MIGRATIONS_DIR}`)
     process.exit(1)
@@ -31,11 +36,12 @@ function main(): void {
   const entries = readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
   const dirs = entries.filter((e) => e.isDirectory()).map((e) => e.name)
 
-  // Group by 14-char timestamp prefix
-  const prefixMap = new Map<string, string[]>()
+  // Group by timestamp prefix. Keep the legacy 12-digit prefix covered so the
+  // consolidation ProcedureRun migration cannot be skipped by this guard.
+  const prefixMap = new Map()
   for (const dir of dirs) {
-    const prefix = dir.slice(0, 14)
-    if (prefix.length < 14 || !/^\d{14}$/.test(prefix)) {
+    const prefix = migrationPrefix(dir)
+    if (!prefix) {
       console.warn(`Skipping non-migration directory: ${dir}`)
       continue
     }
