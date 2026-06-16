@@ -11,10 +11,10 @@ import type { TraceWriter } from './trace'
 
 export interface ToolCompletionPhaseDeps {
   caseId: string
-  agentConfigId: string
   orgId: string
   userId: string
   chatId?: string | null
+  configId: string
   config: AgentConfigData
   getCaseSchema: () => CaseSchemaConfig | null | undefined
   getMessages: () => Message[]
@@ -45,10 +45,10 @@ export class ToolCompletionPhase {
     const toolResults = await input.toolExecutor.waitForAll()
     const runtimeToolResolution = await new RuntimeManagedToolResolver({
       caseId: this.deps.caseId,
-      agentConfigId: this.deps.agentConfigId,
       orgId: this.deps.orgId,
       userId: this.deps.userId,
       chatId: this.deps.chatId,
+      configId: this.deps.configId,
       config: this.deps.config,
       caseSchema: this.deps.getCaseSchema(),
       messages: this.deps.getMessages(),

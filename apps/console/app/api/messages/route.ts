@@ -36,6 +36,7 @@ import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
+import { LOOP_HISTORY_REPLAY_LIMIT } from '@/lib/agent/history-window'
 
 // Verify env vars at module load (logged once per cold start)
 const AUTH_SET = !!process.env.ANTHROPIC_AUTH_TOKEN
@@ -939,7 +940,7 @@ export async function POST(request: NextRequest) {
           const priorMessages = await prisma.message.findMany({
             where: { orgId: resolvedOrgId, caseId: resolvedCaseId },
             orderBy: { createdAt: 'asc' },
-            take: 40,
+            take: LOOP_HISTORY_REPLAY_LIMIT,
           })
           if (priorMessages.length > 0) {
             agentLoop.loadMessages(
@@ -972,7 +973,7 @@ export async function POST(request: NextRequest) {
             const priorMsgs = await prisma.message.findMany({
               where: { orgId: resolvedOrgId, caseId: resolvedCaseId },
               orderBy: { createdAt: 'asc' },
-              take: 50,
+              take: LOOP_HISTORY_REPLAY_LIMIT,
             })
             if (priorMsgs.length > 0) {
               followup.loadMessages(priorMsgs.map((m) => hydrateMessageFromDb(m as any)))

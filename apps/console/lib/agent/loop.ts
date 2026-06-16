@@ -136,7 +136,7 @@ export class AgentLoop {
     this.dryRun = deps.dryRun ?? false
     this.memoryLifecycle = new RuntimeMemoryLifecycle({
       config: deps.config,
-      agentConfigId: deps.configId,
+      configId: deps.configId,
       caseId: deps.caseId,
       orgId: deps.orgId,
       userId: deps.userId,
@@ -220,10 +220,10 @@ export class AgentLoop {
     })
     this.toolCompletionPhase = new ToolCompletionPhase({
       caseId: deps.caseId,
-      agentConfigId: deps.configId,
       orgId: deps.orgId,
       userId: deps.userId,
       chatId: deps.chatId,
+      configId: deps.configId,
       config: deps.config,
       getCaseSchema: () => this.deps.caseSchema,
       getMessages: () => this.messages,
@@ -490,8 +490,8 @@ export class AgentLoop {
         if (textReplyRuntime.blockedReason) {
           discardVisibleText()
           assistantMessage.content = ''
-          this.messages.push(makeUserMessage(`[PROCEDURE RUNTIME] A customer-facing reply was withheld: ${textReplyRuntime.blockedReason} Complete the required runtime action first, then reply using only the evidence produced by that action.`))
-          await this.traceWriter.write('loop_decision', 'Unsafe ProcedureRun text reply withheld', {
+          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-facing human-handoff promise was withheld because no persisted create_human_task evidence exists yet. Call create_human_task first or revise the reply so it does not claim that handoff is already arranged.'))
+          await this.traceWriter.write('loop_decision', 'Unsafe human-handoff promise withheld', {
             basedOnInputEpoch: iterationBasedOnInputEpoch,
             latestInputEpoch: latestInputEpoch(this.deps.caseId),
             runId: textReplyRuntime.run?.runId,
@@ -543,7 +543,7 @@ export class AgentLoop {
               stopReason = null
               continue
             }
-            this.persistTurnMemory()
+            await this.persistTurnMemory()
             return stopAction.result
           }
 
@@ -586,6 +586,7 @@ export class AgentLoop {
           error: streamFatalError, iteration: this.iterationCount,
         })
         sendEvent({ type: 'error', data: `Stream error: ${streamFatalError}`, timestamp: new Date().toISOString() })
+        await this.persistTurnMemory()
         return {
           messages: this.messages,
           caseStatus: 'escalated',
@@ -637,6 +638,7 @@ export class AgentLoop {
           this.iterationCount += noToolTurn.iterationDelta
           continue
         }
+        await this.persistTurnMemory()
         return noToolTurn.result
       }
 
@@ -663,7 +665,7 @@ export class AgentLoop {
       )
       if (interceptorResult.action.kind === 'continue') continue
       if (interceptorResult.action.kind === 'return') {
-        this.persistTurnMemory()
+        await this.persistTurnMemory()
         return interceptorResult.action.result
       }
 
@@ -679,7 +681,7 @@ export class AgentLoop {
         )
         this.nudgeCount = nudgeBox.value
         if (caseToolResult.type === 'terminal') {
-          this.persistTurnMemory()
+          await this.persistTurnMemory()
           return caseToolResult.result
         }
         if (caseToolResult.type === 'continue') continue
@@ -689,7 +691,7 @@ export class AgentLoop {
         const pending = this.pendingHumanTaskEscalation
         this.pendingHumanTaskEscalation = null
         const handoffResult = await this.humanTaskHandoffHandler.complete(pending, fullText, sendEvent)
-        this.persistTurnMemory()
+        await this.persistTurnMemory()
         return handoffResult
       }
 
@@ -698,7 +700,7 @@ export class AgentLoop {
         stopReason,
       }, sendEvent)
       if (turnExit.kind === 'terminal') {
-        this.persistTurnMemory()
+        await this.persistTurnMemory()
         return turnExit.result
       }
     } while (
@@ -707,6 +709,7 @@ export class AgentLoop {
       stopReason !== 'max_tokens'
     )
 
+    await this.persistTurnMemory()
     return this.turnExitHandler.maxIterations(stopReason, sendEvent)
   }
 
@@ -755,9 +758,12 @@ export class AgentLoop {
     return this.deps.caseSchema?.type || 'general'
   }
 
-  private persistTurnMemory(): void {
+  private async persistTurnMemory(): Promise<void> {
     this.memoryLifecycle.compactUserProfile().catch(() => {})
-    this.memoryLifecycle.persistChatSession().catch(() => {})
+    await Promise.allSettled([
+      this.memoryLifecycle.persistChatMemory(),
+      this.memoryLifecycle.persistChatSession(),
+    ])
   }
 
   private async checkAndCompact(): Promise<{ shouldCompact: boolean; reason?: string }> { return this.memoryLifecycle.checkAndCompact() }

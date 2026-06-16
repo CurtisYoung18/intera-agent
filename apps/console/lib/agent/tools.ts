@@ -420,37 +420,6 @@ export class ToolRouter {
         })
       }
 
-      // ── Dynamic tool descriptions: inject agent config's case types into tool descriptions ──
-      const hasDbOverride = (name: string) => !LOCKED_SYSTEM_TOOL_NAMES.has(name) && dbTools.some((t: { name: string }) => t.name === name)
-
-      if (!hasDbOverride('start_procedure')) {
-        try {
-          const caseTypes = await prisma.caseType.findMany({
-            where: { agentConfigId, enabled: true },
-            select: { type: true, displayName: true, description: true, icon: true },
-          })
-
-          if (caseTypes.length > 0) {
-            const caseTypeList = caseTypes
-              .map((ct: { type: string; icon?: string | null; displayName: string; description?: string | null }) => `- **${ct.type}** (${ct.icon} ${ct.displayName}): ${ct.description || 'No description'}`)
-              .join('\n')
-
-            if (!hasDbOverride('start_procedure')) {
-              const existingStartTool = router.tools.get('start_procedure')
-              if (existingStartTool) {
-                existingStartTool.description =
-                  'Start or select a runtime ProcedureRun for one clear customer issue. The stable Core Agent remains active; runtime appends ProcedureRun context at the prompt tail and no background agent is spawned.\n\n' +
-                  '## Procedure Catalog\n' +
-                  caseTypeList +
-                  '\n\nUse procedureId. If another ProcedureRun is active, pause it by default unless the user or runtime context says otherwise.'
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('[ToolRouter] Failed to load case types for tool descriptions:', err)
-        }
-      }
-
       // Load knowledge sources and inject each as a kb_search_<name> tool.
       const knowledgeSources = await prisma.knowledgeSource.findMany({
         where: { agentConfigId, enabled: true },

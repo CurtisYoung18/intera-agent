@@ -20,6 +20,7 @@ import { getProcedureRuntime, recordInitialInputEvent } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
+import { LOOP_HISTORY_REPLAY_LIMIT } from './history-window'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 import {
@@ -541,7 +542,7 @@ export async function* runPlaygroundTurn(input: {
   const priorMessages = await prisma.message.findMany({
     where: { caseId },
     orderBy: { createdAt: 'asc' },
-    take: 40,
+    take: LOOP_HISTORY_REPLAY_LIMIT,
   })
   if (priorMessages.length > 0) {
     agentLoop.loadMessages(

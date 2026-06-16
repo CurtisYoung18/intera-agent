@@ -2,6 +2,7 @@ import { prisma } from '@intera/shared/prisma'
 import type { AgentConfigData, CaseSchemaConfig, Message } from '@intera/shared/types'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
+import { readUserProfile, upsertUserProfile } from '@/lib/db/user-profiles'
 import { ChatMemoryManager } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
@@ -15,6 +16,7 @@ import {
   finalizeProcedureRun,
   latestInputEpoch,
   reconcileProcedureInput,
+  recordProcedureToolResult,
 } from './session-store'
 
 export interface PendingHumanTaskEscalation {
@@ -25,10 +27,10 @@ export interface PendingHumanTaskEscalation {
 
 export interface RuntimeManagedToolResolverDeps {
   caseId: string
-  agentConfigId: string
   orgId: string
   userId: string
   chatId?: string | null
+  configId: string
   config: AgentConfigData
   caseSchema?: CaseSchemaConfig | null
   messages: Message[]
@@ -101,6 +103,18 @@ export class RuntimeManagedToolResolver {
       }
 
       if (result.name === 'finalize_procedure') {
+        // Record the end-step evidence before asking SessionStore to finalize.
+        // Procedure v2 completion gates treat the active `end` action like any
+        // other required action, so the step must observe this tool call first.
+        recordProcedureToolResult(this.deps.caseId, {
+          toolName: result.name,
+          toolUseId: result.toolUse?.id,
+          basedOnInputEpoch,
+          toolOutput: {
+            status: input.status === 'cancelled' ? 'cancelled' : 'completed',
+            conclusion: typeof input.conclusion === 'string' ? input.conclusion : undefined,
+          },
+        })
         const final = finalizeProcedureRun(this.deps.caseId, {
           runId: typeof input.runId === 'string' ? input.runId : undefined,
           status: input.status === 'cancelled' ? 'cancelled' : 'completed',
@@ -225,19 +239,10 @@ export class RuntimeManagedToolResolver {
         stats: {},
       }
     }
-    const row = await prisma.userProfile.findUnique({
-      where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: key } },
-      select: {
-        profile: true,
-        sections: true,
-        totalChats: true,
-        totalCases: true,
-        resolvedCases: true,
-        escalatedCases: true,
-        lastCaseType: true,
-        firstSeenAt: true,
-        lastSeenAt: true,
-      },
+    const row = await readUserProfile(prisma as any, {
+      orgId: this.deps.orgId,
+      userId: key,
+      agentConfigId: this.deps.configId,
     }).catch(() => null)
     return {
       scope: 'user',
@@ -301,17 +306,19 @@ export class RuntimeManagedToolResolver {
     }
     const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
     if (this.shouldPersistRuntimeMemory()) {
-      const existing = await prisma.userProfile.findUnique({
-        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: profileKeyValue } },
-        select: { profile: true },
+      const existing = await readUserProfile(prisma as any, {
+        orgId: this.deps.orgId,
+        userId: profileKeyValue,
+        agentConfigId: this.deps.configId,
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const merged = mergeProfile(existing?.profile ?? '', incoming, maxTokens)
-      const stats = await recomputeProfileStats(prisma, profileKeyValue, this.deps.orgId, this.deps.agentConfigId)
-      await prisma.userProfile.upsert({
-        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: profileKeyValue } },
-        create: { userId: profileKeyValue, orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, profile: merged.profile, sections: merged.sections, ...stats },
-        update: { profile: merged.profile, sections: merged.sections, ...stats },
+      const stats = await recomputeProfileStats(prisma, profileKeyValue, this.deps.orgId)
+      await upsertUserProfile(prisma as any, {
+        orgId: this.deps.orgId,
+        userId: profileKeyValue,
+        agentConfigId: this.deps.configId,
+        patch: { profile: merged.profile, sections: merged.sections, ...stats },
       }).catch((err: unknown) => {
         console.warn('[AgentLoop] remember(scope="user") failed:', err)
       })

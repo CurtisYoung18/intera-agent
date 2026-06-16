@@ -617,6 +617,7 @@ export class ChatMemoryManager {
     toolsCalled: string
     toolResults: string
     keyEvents: string
+    summary?: string
     todos: string | null
   } {
     return {
@@ -625,6 +626,7 @@ export class ChatMemoryManager {
       toolsCalled: JSON.stringify(this.toolsCalled),
       toolResults: JSON.stringify(this.toolResults),
       keyEvents: JSON.stringify(this.keyEvents),
+      summary: this.summary ?? undefined,
       todos: this.todos.length > 0 ? JSON.stringify(this.todos) : null,
     }
   }
