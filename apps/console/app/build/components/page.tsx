@@ -29,7 +29,7 @@ const COMPONENTS_PAGE_COPY = {
     insideWorkspace: 'Inside Components workspace',
     descriptions: {
       'sidebar.brain': 'Configure the agent persona, model, memory strategy, and global prompt.',
-      'sidebar.procedures': 'Define the steps, branches, and escalation rules the agent follows for each case type.',
+      'sidebar.procedures': 'Define the steps, branches, and escalation rules the agent follows for each customer issue.',
       'sidebar.tools': 'Manage the tools the agent can call, with their parameters and call rules.',
       'sidebar.hooks': 'Insert checks, blocks, and human escalation before or after tool calls and before replies.',
       'sidebar.knowledge': 'Maintain the knowledge base content and retrieval the agent cites when answering.',

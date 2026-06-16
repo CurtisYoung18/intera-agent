@@ -39,17 +39,17 @@ Use this format for each new item:
 
 ## Open Items
 
-### 2026-06-12 - CONS-M2 Production Restart Receipt Still Pending After Local Migration Proof
+### 2026-06-12 - CONS-M2 Production Restart Receipt Proved Durable Resume
 
 - Area: Consolidation M2 / ProcedureRun durability / migration verification
-- Status: open
+- Status: closed
 - Severity: P0
-- Uncertainty: CONS-M2's local durability and migration proof is now complete, but the required production restart/resume receipt on `https://demo.anytrans.ai` still has not been executed from this lane.
-- Default action taken: Started the existing local Homebrew Postgres 16 cluster on port `5434`, created the expected `intera` role/database, reran `prisma migrate deploy` against `postgresql://intera:intera@localhost:5434/intera`, and confirmed the new `202606120001_add_procedure_run` migration applied cleanly. The lane's remaining blocker is now only the production `intera-console.service` restart/resume proof.
-- Why this default: The local proof can and should be completed automatically once safe local Postgres exists, but the lane still must not claim production durability proof without the actual mid-run restart/resume evidence on `demo.anytrans.ai`.
-- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m2/receipt.md`; local command output from `pg_ctl ... -o "-p 5434" start`, role/database creation on `localhost:5434`, and successful `npx prisma migrate deploy --schema=packages/shared/prisma/schema.prisma`; rework tests in `apps/console/lib/agent/__tests__/unit/procedure-run-durability.test.ts`.
-- Production URL / screenshot / receipt: Pending. Required target remains `https://demo.anytrans.ai` with `intera-console.service` restarted mid-run and ProcedureRun timeline continuity captured.
-- Owner decision needed: Provide the production restart/testing path for the second-phase receipt, or surface the SSH credential in the active secure session so the architect can execute the restart proof directly.
+- Uncertainty: Historical. CONS-M2 originally had local durability proof but was missing the required production restart/resume receipt. That proof now exists and shows a paused production ProcedureRun surviving `intera-console` restart, then resuming through `resumeTrigger` with the same durable `ProcedureRun` identity and `inputEpoch=3`.
+- Default action taken: Kept the local Postgres/migration proof, then accepted the later production proof bundle as the authority. The first proof exposed top-level Case truth drift; follow-up hotfix proof confirmed the same durability behavior with Case type/status aligned after resume.
+- Why this default: M2's acceptance bar is not merely that the schema exists; it requires production continuity across a real restart. The final hotfix proof closes both durable ProcedureRun continuity and the related Case truth drift.
+- Evidence: `.artifacts/delivery-audit/2026-06-12/cons-m2/receipt.md`; local durability tests in `apps/console/lib/agent/__tests__/unit/procedure-run-durability.test.ts`; production summary `.artifacts/delivery-audit/2026-06-12/cons-m2/summary.json`; final hotfix DB proof `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/db-after-resume.json` shows Case `type=deposit_not_credited`, `status=investigating`, `runtimeInputEpoch=3`, and ProcedureRun `id=proc_1781258104780_52012f0c`, `status=active`, `inputEpoch=3`.
+- Production URL / screenshot / receipt: `https://demo.anytrans.ai`; screenshots `.artifacts/delivery-audit/2026-06-12/cons-m2/screenshots/production-case-resume.png`, `.artifacts/delivery-audit/2026-06-12/cons-m2/screenshots/production-case-resume-focused.png`, and `.artifacts/delivery-audit/2026-06-12/cons-m2/truth-drift-hotfix/20260612T175502/production-case-resume-hotfix.png`.
+- Owner decision needed: None.
 - Follow-up owner: delivery lead / infrastructure owner
 
 ### 2026-06-12 - CONS-M5 Raw-Access Guard Uses Reviewed Allowlist For Out-Of-Lane Admin Routes
@@ -420,30 +420,30 @@ Use this format for each new item:
 - Owner decision needed: Decide whether to open a dedicated deploy/standalone tracing repair lane, or leave this as monitor-only unless the warning becomes user-visible or blocks a future deploy.
 - Follow-up owner: architect / release lane owner
 
-### 2026-06-16 - CONS-M6 Procedure Metrics Are Local-PASS But Not Production-Accepted
+### 2026-06-16 - CONS-M6 Standalone Procedure Metrics Surface Retired By Owner Decision
 
 - Area: Operate / ProcedureRun metrics / outcome taxonomy
-- Status: open
+- Status: closed
 - Severity: P1
-- Uncertainty: `codex/cons-m6-operate-feedback` now records canonical ProcedureRun outcomes locally (`resolved_by_agent`, `handed_off`, `abandoned`) and adds `/api/operate/procedures/metrics` plus `/operate/procedures`, but this lane has not been deployed or verified on `https://demo.anytrans.ai`.
-- Default action taken: Treated the lane as local merge candidate only. The metrics API uses org-scoped `repo.procedureRun`; UI shows aggregate rates, recent runs, top blockers, run detail links, and Open playbook CTA; unknown terminal rows remain explicit instead of being counted as resolved.
-- Why this default: It gives operators the feedback loop required for handoff-rate tracking without pretending local build/test proof is production acceptance.
-- Evidence: Local gates passed on 2026-06-16 for commit `1fb558121e34dc7ce9a4787496b60929ee226d48`: focused Vitest (`3` files / `15` tests), sidebar/metrics focused Vitest (`2` files / `6` tests), `npx tsc --noEmit -p apps/console/tsconfig.json`, `npm test` (`144` passed / `5` skipped files, `998` passed / `28` skipped tests), `npm run build:console`, and `git diff --check`.
-- Production URL / screenshot / receipt: Not yet available. Required production proof after cherry-pick/deploy: authenticated `https://demo.anytrans.ai/operate/procedures` screenshot, `GET /api/operate/procedures/metrics` response shape proof with secrets/state redacted, navigation proof from sidebar, at least one recent-run detail link proof, and confirmation that rates match known seeded ProcedureRun outcomes.
-- Owner decision needed: After the hotfix lane lands, cherry-pick/deploy this commit and run the production proof loop before marking CONS-M6 accepted.
+- Uncertainty: Historical. The original M6 lane proposed a standalone `/operate/procedures` page and `/api/operate/procedures/metrics`, but owner decision on 2026-06-16 removed that surface from the active product bar.
+- Default action taken: Kept canonical ProcedureRun outcome recording (`resolved_by_agent`, `handed_off`, `abandoned`) in the runtime path for downstream feedback loops, but did not reintroduce the retired route/API/sidebar surface.
+- Why this default: Operator feedback remains important, but the accepted product direction is to avoid another standalone Procedure metrics surface until a new product decision reopens it.
+- Evidence: `doc/to-do/2026-06-12-consolidation-m1-m7-execution-plan.md` now states that `/operate/procedures` and `/api/operate/procedures/metrics` are removed by owner decision and are no longer part of the active delivery bar. Current code search shows no active `/operate/procedures` page/API route; ProcedureRun outcomes remain in runtime-core and session-store tests.
+- Production URL / screenshot / receipt: Not applicable for the retired standalone surface. Existing production acceptance is covered by handoff metrics and the J1B/LiveChat runtime receipts.
+- Owner decision needed: None unless product explicitly reopens a standalone Procedure metrics page.
 - Follow-up owner: architect / delivery lead
 
-### 2026-06-16 - CONS-M7C Local Split Passed But Full `npm test` Is Baseline-Blocked On `origin/main`
+### 2026-06-16 - CONS-M7C Split Full `npm test` Baseline Is Green On Current Main
 
 - Area: i18n governance / dictionaries split / consolidation M7C
-- Status: open
+- Status: closed
 - Severity: P2
-- Uncertainty: The M7C branch was created from `origin/main` (`77ebc272`) and mechanically split `apps/console/lib/i18n/dictionaries.ts` into per-locale, per-surface modules. The M7C-specific snapshot tests, route invariant tests, typecheck, and build passed, but full `npm test` on this base failed 7 tests unrelated to i18n splitting.
-- Default action taken: Treated M7C as local lane-pass but not full integration-pass. Did not widen the i18n lane into runtime/test-harness repair. Logged the baseline failures for the integration owner to rerun after M1/M3A/M6 consolidation branches are stacked or cherry-picked.
-- Why this default: The failing tests cover `/api/messages` route mocks, an older handoff paused expectation, and a missing `LocaleProvider` test harness in `ModelWorkspace`; none are touched by the dictionary relocation. Expanding this lane would violate the pure-relocation scope and risk mixing runtime semantics into an i18n governance commit.
-- Evidence: `.artifacts/delivery-audit/2026-06-16/cons-m7c/summary.md`; local commands passed: focused i18n Vitest (`1` file / `3` tests), sidebar/native-route/i18n focused Vitest (`3` files / `10` tests), `npm run db:generate && npx tsc --noEmit -p apps/console/tsconfig.json`, `npm run build:console`, `git diff --check`; local screenshot `login-local-after-split.png`.
-- Production URL / screenshot / receipt: Not yet available. Required after integration: authenticated production smoke on `https://demo.anytrans.ai` plus full test rerun on the stacked integration branch.
-- Owner decision needed: None now. Integration owner should rerun full `npm test` after stacking with the current consolidation branches rather than treating this `origin/main` baseline failure as an M7C blocker.
+- Uncertainty: Historical. M7C originally passed focused i18n/split gates but full `npm test` was baseline-blocked on an older `origin/main`. After stacking the consolidation commits and fixing one remaining visible stale terminology string (`case type` -> `customer issue`) in `apps/console/app/build/components/page.tsx`, the current main baseline is green.
+- Default action taken: Kept M7C as a pure i18n/governance relocation and fixed only the surfaced stale product terminology on the Components hub copy.
+- Why this default: The invariant test is protecting the current product vocabulary; changing the visible copy is aligned with the M7C governance contract and does not alter runtime behavior.
+- Evidence: Current main `npm test` passed on 2026-06-16: migration-prefix guard passed with known benign collision warning only; isolation seam guard passed (`25` raw-access admin files checked, `14` reviewed allowlist entries); runtime-core boundary guard passed (`30` files checked); Vitest passed (`153` files passed / `5` skipped, `1062` tests passed / `28` skipped).
+- Production URL / screenshot / receipt: Current `origin/main`/`deploy/main` already deployed after docs/artifacts receipt commits and `https://demo.anytrans.ai/api/health` returned `status=ok`, `db=connected`.
+- Owner decision needed: None.
 - Follow-up owner: architect / integration owner
 
 ### 2026-06-16 - CONS Full Integration Production Evidence Is Green On 7d41e7d9
@@ -472,17 +472,17 @@ Use this format for each new item:
 - Owner decision needed: Runtime service enablement is no longer the current decision blocker. The remaining implementation decision is whether the next M3B step should move the current `/api/messages` handler wholesale into a shared runtime handler first, or continue decomposing it phase-by-phase into runtime-core adapters.
 - Follow-up owner: architect / runtime lane owner
 
-### 2026-06-16 - CONS Full Integration Production Audit Still Reports Next-Bundled PostCSS Moderate
+### 2026-06-16 - Next-Bundled PostCSS Moderate Accepted For Pilot With Monitoring
 
 - Area: Security / dependency audit / customer-ready production baseline
-- Status: open
-- Severity: P1
+- Status: owner-deferred
+- Severity: P2
 - Uncertainty: While stacking M3B onto the M1/M3A/M6/M7C integration branch, `npm audit --omit=dev --json` showed production dependency advisories against `next@15.5.15`, including high-severity Next advisories and a moderate PostCSS advisory through Next's bundled `postcss@8.4.31`.
 - Default action taken: Upgraded Console's direct Next dependency to `next@15.5.18`, which removed the production high-severity Next advisories. Attempted npm `overrides` for the nested Next -> PostCSS dependency, but npm 11 kept `node_modules/next/node_modules/postcss@8.4.31` because the current published Next 15/16 packages still declare `postcss: 8.4.31`. Removed the ineffective override rather than leaving fake security posture in `package.json`.
 - Why this default: Shipping with known high-severity framework advisories is not acceptable for real customers; a patch-level Next upgrade is low-risk and verifiable. Forcing a nested framework dependency beyond what Next publishes is higher risk and did not produce a truthful lockfile change in this repo.
-- Evidence: On branch `codex/cons-integration-m1-m7-full`, `npm audit --omit=dev --json` after the Next patch reports `high: 0`, `critical: 0`, `moderate: 2`, with the remaining issue isolated to Next's bundled PostCSS. Rechecked on 2026-06-16: `npm view next@latest version dependencies.postcss --json` returns `16.2.9` with `postcss: 8.4.31`; `npm view next@canary version dependencies.postcss --json` returns `16.3.0-canary.51` with `postcss: 8.5.10`, which is not a stable release path. `npm explain postcss` shows root `postcss@8.5.15` already installed for dev tooling, while `node_modules/next/node_modules/postcss` remains `8.4.31`. Tested `overrides.next.postcss=8.5.15` and root `overrides.postcss=8.5.15`; after `npm install --package-lock-only --ignore-scripts`, Next's nested PostCSS stayed `8.4.31` and production audit stayed `moderate: 2`, so the overrides were removed.
-- Production URL / screenshot / receipt: Production dependency audit was rerun as part of the `7d41e7d9` host-local strict readiness proof and still reports high=0, critical=0, moderate=2. Receipt: `.artifacts/production-readiness/2026-06-16/latest-7d41e7d9-host/summary.md`. Required before declaring the security item closed: either prove npm/Next has a stable safe patch path that clears the PostCSS moderate or record an owner-approved risk acceptance with compensating controls.
-- Owner decision needed: Decide whether moderate Next-bundled PostCSS advisory is acceptable for the pilot launch if high/critical advisories remain zero, or whether to pause launch until Next publishes a patched PostCSS dependency.
+- Evidence: On current main after `npm install`, `npm audit --omit=dev --json` reports `high: 0`, `critical: 0`, `moderate: 2`; both remaining advisories are Next's bundled `postcss@8.4.31`. Rechecked on 2026-06-16: `npm view next@latest version dependencies.postcss --json` returns `16.2.9` with `postcss: 8.4.31`; `npm view next@canary version dependencies.postcss --json` returns `16.3.0-canary.52` with `postcss: 8.5.10`, which is not a stable release path. `npm audit` still proposes `next@9.3.3` as the only fix path, which is a destructive major downgrade and not acceptable for this product.
+- Production URL / screenshot / receipt: Production dependency audit was rerun as part of the `7d41e7d9` host-local strict readiness proof and still reports high=0, critical=0, moderate=2. Receipt: `.artifacts/production-readiness/2026-06-16/latest-7d41e7d9-host/summary.md`. Compensating controls for pilot: keep public `/internal/*` blocked, keep high/critical at zero as a release gate, avoid canary Next in production, monitor stable Next for a PostCSS-patched release, and rerun `npm audit --omit=dev` before every customer-facing deploy.
+- Owner decision needed: None for pilot continuation. Reopen as P1 only if high/critical advisories reappear, a stable Next patch path exists and is not applied, or customer security policy forbids moderate framework advisories.
 - Follow-up owner: architect / delivery lead
 
 ### 2026-06-16 - Deterministic J1B Runtime Router Was Stripped And Full Matrix Passed
