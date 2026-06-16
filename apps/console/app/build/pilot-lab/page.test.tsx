@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PilotSessionSnapshot, PilotTodoItemStatus } from '@intera/shared/contracts/pilot'
 import type { ScenarioReceipt, ScenarioValidationSummary, SavedScenario } from '@intera/shared/contracts/scenarios'
@@ -574,6 +574,14 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     expect(mockApiClient.mock.calls[0][0]).toBe('/api/admin/config-pilot/context?agentConfigId=agent-1')
   }, 10000)
 
+  it('preserves the selected agent id in Pilot tab links', async () => {
+    await renderPage()
+
+    const tabs = within(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).getAllByRole('link')
+    expect(tabs[0]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1')
+    expect(tabs[1]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1&tab=playground')
+  }, 10000)
+
   it('shows durable Pilot session artifacts and manual compact state', async () => {
     await renderPage()
 
@@ -618,6 +626,9 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     expect(screen.getByText('Native Playground')).toBeTruthy()
     expect(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).toBeTruthy()
     expect(screen.getByRole('link', { name: /Playground/ }).getAttribute('aria-current')).toBe('page')
+    const tabs = within(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).getAllByRole('link')
+    expect(tabs[0]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1')
+    expect(tabs[1]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1&tab=playground')
     expect(screen.queryByText('Playground compatibility surface')).toBeNull()
     expect(screen.queryByText(/Compatibility route only/i)).toBeNull()
     expect(screen.queryByText('U-Pilot Chat Cockpit')).toBeNull()

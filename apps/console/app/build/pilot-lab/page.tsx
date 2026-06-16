@@ -768,7 +768,7 @@ export default function PilotLabPage() {
       <div className="intera-q2-page flex h-full min-h-0 flex-col overflow-hidden px-3 py-3 text-[var(--color-text-primary)] sm:px-4 lg:px-5">
         <div className="mx-auto flex min-h-0 w-full max-w-[1540px] flex-1 flex-col gap-3">
           <VersionContextBar />
-          <PilotLabTabs activeTab="playground" t={t} />
+          <PilotLabTabs activeTab="playground" t={t} agentConfigId={agentConfigId} />
           <div className="min-h-0 flex-1 overflow-hidden">
             <PlaygroundWorkspace surface="pilot-lab" />
           </div>
@@ -782,7 +782,7 @@ export default function PilotLabPage() {
       <div className="mx-auto flex min-h-0 w-full max-w-[1540px] flex-1 flex-col gap-3">
         <VersionContextBar />
 
-        <PilotLabTabs activeTab="pilot" t={t} />
+        <PilotLabTabs activeTab="pilot" t={t} agentConfigId={agentConfigId} />
 
         {(error || notice) && (
           <div className="grid gap-2">
@@ -915,10 +915,28 @@ export default function PilotLabPage() {
   )
 }
 
-function PilotLabTabs({ activeTab, t, compact = false }: { activeTab: 'pilot' | 'playground'; t: (key: string) => string; compact?: boolean }) {
+function PilotLabTabs({
+  activeTab,
+  t,
+  compact = false,
+  agentConfigId,
+}: {
+  activeTab: 'pilot' | 'playground'
+  t: (key: string) => string
+  compact?: boolean
+  agentConfigId?: string | null
+}) {
+  const buildHref = (tab: 'pilot' | 'playground') => {
+    const query = new URLSearchParams()
+    if (agentConfigId) query.set('agentId', agentConfigId)
+    if (tab === 'playground') query.set('tab', 'playground')
+    const queryString = query.toString()
+    return queryString ? `/build/pilot-lab?${queryString}` : '/build/pilot-lab'
+  }
+
   const tabs = [
-    { id: 'pilot' as const, href: '/build/pilot-lab', label: t('pilotLab.tabs.pilot'), description: t('pilotLab.tabs.pilotDesc') },
-    { id: 'playground' as const, href: '/build/pilot-lab?tab=playground', label: t('pilotLab.tabs.playground'), description: t('pilotLab.tabs.playgroundDesc') },
+    { id: 'pilot' as const, href: buildHref('pilot'), label: t('pilotLab.tabs.pilot'), description: t('pilotLab.tabs.pilotDesc') },
+    { id: 'playground' as const, href: buildHref('playground'), label: t('pilotLab.tabs.playground'), description: t('pilotLab.tabs.playgroundDesc') },
   ]
 
   return (
