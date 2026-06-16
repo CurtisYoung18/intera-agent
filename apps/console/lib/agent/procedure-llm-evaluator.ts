@@ -34,6 +34,50 @@ function sanitizeEvaluationReason(reason: string): string {
   return `${trimmed.slice(0, 237)}...`
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function summarizePromptValue(value: unknown, limit = 320): string {
+  const raw = typeof value === 'string' ? value : JSON.stringify(value)
+  if (!raw) return ''
+  const compact = raw.replace(/\s+/g, ' ').trim()
+  if (compact.length <= limit) return compact
+  return `${compact.slice(0, Math.max(0, limit - 3))}...`
+}
+
+function summarizeEvidenceForPrompt(
+  entry: PendingProcedureLlmEvaluation['recentEvidence'][number],
+): string {
+  const summaryParts = [`- ${entry.kind}`]
+  if (entry.stepId) summaryParts.push(`step=${entry.stepId}`)
+  if (entry.actionId) summaryParts.push(`action=${entry.actionId}`)
+  if (entry.branchId) summaryParts.push(`branch=${entry.branchId}`)
+  if (entry.toolName) summaryParts.push(`toolName=${entry.toolName}`)
+  if (typeof entry.basedOnInputEpoch === 'number') summaryParts.push(`epoch=${entry.basedOnInputEpoch}`)
+  summaryParts.push(`state=${entry.state}`)
+
+  const metadata = isRecord(entry.metadata) ? entry.metadata : null
+  if (typeof metadata?.outcome === 'string') summaryParts.push(`outcome=${metadata.outcome}`)
+  if (typeof metadata?.field === 'string') summaryParts.push(`field=${metadata.field}`)
+  if ('value' in (metadata ?? {})) {
+    const valueSummary = summarizePromptValue(metadata?.value, 160)
+    if (valueSummary) summaryParts.push(`value=${valueSummary}`)
+  }
+  if ('output' in (metadata ?? {})) {
+    const outputSummary = summarizePromptValue(metadata?.output, 480)
+    if (outputSummary) summaryParts.push(`output=${outputSummary}`)
+  }
+  if (typeof metadata?.error === 'string' && metadata.error.trim().length > 0) {
+    summaryParts.push(`error=${summarizePromptValue(metadata.error, 200)}`)
+  }
+  if (typeof metadata?.reason === 'string' && metadata.reason.trim().length > 0) {
+    summaryParts.push(`reason=${summarizePromptValue(metadata.reason, 200)}`)
+  }
+
+  return `${summaryParts.join(' ')}: ${entry.label}`
+}
+
 function buildEvaluationMetadata(
   task: PendingProcedureLlmEvaluation,
   prompt: string,
@@ -90,10 +134,7 @@ export async function evaluateProcedureLlmCondition(
     }),
     '',
     'Recent runtime evidence:',
-    ...task.recentEvidence.map((entry) => {
-      const outcome = typeof entry.metadata?.outcome === 'string' ? ` outcome=${entry.metadata.outcome}` : ''
-      return `- ${entry.kind}${outcome}: ${entry.label}`
-    }),
+    ...task.recentEvidence.map((entry) => summarizeEvidenceForPrompt(entry)),
     '',
     'Rules:',
     '- Use only the structured inputs and runtime evidence provided here.',

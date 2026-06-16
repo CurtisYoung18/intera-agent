@@ -867,6 +867,132 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('blocks a deposit-not-credited reply until transaction history runs after an inconsistency llm_eval match', () => {
+    const caseId = 'r3-deposit-conflict-history-gate'
+    recordInitialInputEvent(caseId, { content: 'My deposit has not arrived yet.' })
+    const started = startProcedureRun(caseId, {
+      procedureId: 'deposit_not_credited',
+      displayName: 'Deposit not credited',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'collect_deposit_details',
+            title: 'Collect deposit details',
+            guidance: 'Collect member id, amount, channel, and deposit time.',
+            actions: [
+              {
+                id: 'ask_deposit_details',
+                kind: 'ask',
+                label: 'Ask for deposit details',
+                fields: ['member_id', 'amount', 'payment_channel', 'deposit_time'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'lookup_latest_deposit',
+            title: 'Lookup latest deposit',
+            guidance: 'Check the newest deposit record for this member.',
+            actions: [
+              {
+                id: 'lookup_latest_deposit_tool',
+                kind: 'call_tool',
+                label: 'Run get_latest_deposit',
+                toolName: 'get_latest_deposit',
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'review_recent_transactions',
+            title: 'Review recent transactions',
+            guidance: 'Review recent transaction context when the latest deposit alone is not enough.',
+            actions: [],
+            branches: [
+              {
+                id: 'review_recent_transactions_when',
+                kind: 'if',
+                condition: {
+                  id: 'deposit_conflict_eval',
+                  kind: 'llm_eval',
+                  prompt: 'Use when the deposit result is missing, stale, or inconsistent.',
+                },
+                actions: [
+                  {
+                    id: 'review_recent_transactions_tool_conditional',
+                    kind: 'call_tool',
+                    label: 'Run get_transaction_history',
+                    toolName: 'get_transaction_history',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Tool ask_user_questions result: {"member_id":"JAYA113C88F","amount":"200","payment_channel":"USDT","deposit_time":"2026-06-16"}',
+      source: 'customer_form_result',
+      origin: 'customer',
+      formAnswers: {
+        member_id: 'JAYA113C88F',
+        amount: '200',
+        payment_channel: 'USDT',
+        deposit_time: '2026-06-16',
+      },
+    })
+    reconcileProcedureInput(caseId, {
+      runId: started.run.runId,
+      upToInputEpoch: 2,
+      decision: 'continue',
+      summary: 'Reviewed the customer-submitted deposit details.',
+    })
+    recordProcedureToolResult(caseId, {
+      toolName: 'get_latest_deposit',
+      toolUseId: 'tool-lookup-1',
+      basedOnInputEpoch: 2,
+      toolOutput: {
+        order_no: '3142251',
+        amount: '200',
+        status: 'approved',
+        created_at: '2026-06-12 20:02:17',
+        channel: 'USDT',
+      },
+    })
+
+    const pending = getPendingProcedureLlmEvaluations(caseId)
+    expect(pending).toHaveLength(1)
+    expect(pending[0]).toMatchObject({
+      branchId: 'review_recent_transactions_when',
+      conditionId: 'deposit_conflict_eval',
+    })
+
+    const receipt = recordProcedureConditionEvaluation(caseId, {
+      runId: started.run.runId,
+      branchId: 'review_recent_transactions_when',
+      conditionId: 'deposit_conflict_eval',
+      label: 'deposit conflict history review',
+      decision: 'matched',
+      reason: 'The customer reported a newer deposit time than the latest deposit record, so recent history review is required.',
+      basedOnInputEpoch: 2,
+      model: 'test-evaluator',
+    })
+    expect(receipt.ok).toBe(true)
+
+    const reply = recordProcedureTextReply(caseId, {
+      text: '根据系统记录，您最近一次存款200 USDT已于2026年6月12日成功到账。',
+      basedOnInputEpoch: 2,
+    })
+
+    expect(reply.stale).toBe(false)
+    expect(reply.blockedReason).toContain('requires get_transaction_history before replying')
+    closeSession(caseId)
+  })
+
   it('captures v2 form answers as runtime inputs and evidence without writing legacy facts', () => {
     const caseId = 'r3-v2-form-runtime-truth'
     recordInitialInputEvent(caseId, { content: 'I can send the member id.' })
