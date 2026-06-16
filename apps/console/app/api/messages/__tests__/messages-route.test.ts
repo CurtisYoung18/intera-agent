@@ -402,6 +402,68 @@ describe('POST /api/messages runtime session guards', () => {
     }))
   })
 
+  it('routes explicit withdrawal follow-up text to the withdrawal case before LLM routing', async () => {
+    mockExistingCase({ id: 'case-deposit', status: 'investigating' })
+    h.prisma.case.findMany.mockResolvedValue([
+      { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
+      { id: 'case-withdrawal', type: 'withdrawal_not_credited', status: 'investigating' },
+    ])
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+    h.createAgentClient.mockClear()
+
+    const res = await POST(makeRequest({
+      message: '我提了800元一直没到账，帮我查一下',
+      caseId: 'case-deposit',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-withdrawal',
+      chatId: 'chat-1',
+      userId: 'user-1',
+    }))
+  })
+
+  it('starts a fresh case when explicit withdrawal text is not covered by active cases', async () => {
+    mockExistingCase({ id: 'case-deposit', status: 'investigating' })
+    h.prisma.case.findMany.mockResolvedValue([
+      { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
+    ])
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+    h.createAgentClient.mockClear()
+
+    const res = await POST(makeRequest({
+      message: '提现500还没到账',
+      caseId: 'case-deposit',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.prisma.case.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orgId: 'org-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        type: 'general',
+        status: 'created',
+      }),
+    })
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      caseId: 'case-created',
+      chatId: 'chat-1',
+      userId: 'user-1',
+    }))
+  })
+
   it('hydrates persisted provider transcript before a follow-up HTTP turn runs', async () => {
     const priorCreatedAt = new Date('2026-06-12T00:00:00Z')
     mockExistingCase({ id: 'case-provider-reload', status: 'open' })

@@ -209,4 +209,112 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     }))
     expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
   })
+
+  it('corrects explicit withdrawal messages when the model selects a deposit procedure', async () => {
+    h.prisma.caseType.findUnique.mockImplementation(async ({ where }: any) => {
+      const type = where.agentConfigId_type.type
+      if (type === 'withdrawal_not_credited') {
+        return {
+          type: 'withdrawal_not_credited',
+          displayName: 'Withdrawal not credited',
+          description: 'Investigate a withdrawal that did not reach the customer.',
+          icon: 'W',
+          requiredFacts: '["memberId","amount"]',
+          defaultGoal: 'Resolve the withdrawal-not-credited issue.',
+          escalateOn: '[]',
+          autoCloseConditions: null,
+          maxAutoTurns: 3,
+          procedure: JSON.stringify({
+            version: 'v2',
+            whenToUse: 'Use for withdrawal issues',
+            steps: [{
+              id: 'collect_withdrawal',
+              title: 'Collect withdrawal details',
+              guidance: 'Ask for withdrawal proof.',
+              actions: [{ id: 'ask_withdrawal', kind: 'ask', label: 'Ask for withdrawal details', fields: ['amount'] }],
+              branches: [],
+            }],
+          }),
+        }
+      }
+      return null
+    })
+    h.startProcedureRun.mockReturnValue({
+      run: {
+        runId: 'run-withdrawal',
+        procedureId: 'withdrawal_not_credited',
+        currentStepId: 'collect_withdrawal',
+        inputEpoch: 1,
+        needsReconcile: false,
+      },
+      pausedRun: null,
+      idempotent: false,
+    })
+    const activateProcedureContext = vi.fn(async () => {})
+    const setCaseStatus = vi.fn()
+    const sendEvent = vi.fn()
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-withdrawal',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus,
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [{ role: 'user', content: '我提了800元一直没到账，帮我查一下' }] as any,
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext,
+      },
+      [{
+        name: 'start_procedure',
+        output: { ok: true },
+        toolUse: {
+          id: 'toolu_start_wrong_money_direction',
+          input: {
+            procedureId: 'deposit_not_credited',
+            reason: 'Customer reports funds not credited.',
+          },
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(h.prisma.caseType.findUnique).toHaveBeenCalledWith({
+      where: { agentConfigId_type: { agentConfigId: 'agent-a', type: 'withdrawal_not_credited' } },
+    })
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-withdrawal', expect.objectContaining({
+      procedureId: 'withdrawal_not_credited',
+      reason: expect.stringContaining('Runtime routing correction'),
+    }))
+    expect(activateProcedureContext).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'withdrawal_not_credited',
+      displayName: 'Withdrawal not credited',
+    }))
+    expect(result.toolResults[0]?.output).toMatchObject({
+      ok: true,
+      mode: 'inline_procedure',
+      requestedProcedureId: 'deposit_not_credited',
+      routingCorrection: {
+        from: 'deposit_not_credited',
+        to: 'withdrawal_not_credited',
+      },
+      procedureId: 'withdrawal_not_credited',
+      caseType: 'withdrawal_not_credited',
+      runId: 'run-withdrawal',
+    })
+  })
 })

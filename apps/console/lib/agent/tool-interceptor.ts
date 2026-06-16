@@ -20,6 +20,7 @@ import type { CaseAgentLoop } from './case-agent-loop'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
+import { retargetMoneyMovementProcedureId } from './money-movement-routing'
 import { startProcedureRun } from './session-store'
 
 // ---------------------------------------------------------------------------
@@ -115,8 +116,9 @@ async function handleStartProcedure(
   sendEvent: (event: SSEEvent) => void,
 ): Promise<InterceptAction> {
   const toolInput = result.toolUse?.input || {}
-  const procedureId = String(toolInput.procedureId || toolInput.caseType || '')
-  const reason = String(toolInput.reason || 'The customer raised an issue that matches this procedure.')
+  const requestedProcedureId = String(toolInput.procedureId || toolInput.caseType || '')
+  let procedureId = requestedProcedureId
+  let reason = String(toolInput.reason || 'The customer raised an issue that matches this procedure.')
   const confidence = typeof toolInput.confidence === 'number' ? toolInput.confidence : undefined
   const requestedCurrentAction = normalizeCurrentProcedureAction(toolInput.currentProcedureAction)
 
@@ -125,9 +127,28 @@ async function handleStartProcedure(
   }
 
   try {
-    const ctRow = await prisma.caseType.findUnique({
-      where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: procedureId } },
-    })
+    const customerText = latestUserText(ctx.messages)
+    const correctedProcedureId = retargetMoneyMovementProcedureId(requestedProcedureId, customerText)
+    let routingCorrection: { from: string; to: string; reason: string } | null = null
+    let ctRow = correctedProcedureId && isInvestigableCaseType(correctedProcedureId)
+      ? await prisma.caseType.findUnique({
+          where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: correctedProcedureId } },
+        })
+      : null
+
+    if (ctRow) {
+      procedureId = ctRow.type
+      routingCorrection = {
+        from: requestedProcedureId,
+        to: ctRow.type,
+        reason: 'Customer message explicitly names the opposite money movement direction.',
+      }
+      reason = `${reason} Runtime routing correction: ${requestedProcedureId} -> ${ctRow.type}.`
+    } else {
+      ctRow = await prisma.caseType.findUnique({
+        where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: procedureId } },
+      })
+    }
     if (!ctRow) return { kind: 'pass' }
 
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
@@ -185,6 +206,8 @@ async function handleStartProcedure(
       mode: 'inline_procedure',
       caseId: ctx.caseId,
       durableCaseCreated: false,
+      requestedProcedureId,
+      routingCorrection,
       procedureId: ctRow.type,
       caseType: ctRow.type,
       displayName: ctRow.displayName,
