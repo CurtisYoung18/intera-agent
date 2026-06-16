@@ -8,7 +8,7 @@ restart_unit() {
   local old_pid new_pid active
 
   old_pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
-  if systemctl restart "$unit" 2>/tmp/intera-systemctl-restart.err; then
+  if systemctl --no-ask-password restart "$unit" 2>/tmp/intera-systemctl-restart.err; then
     echo "$unit restarted via systemctl"
   else
     cat /tmp/intera-systemctl-restart.err >&2 || true
