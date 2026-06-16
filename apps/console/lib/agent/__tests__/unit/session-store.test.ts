@@ -925,6 +925,73 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('unblocks synthetic ask buckets when a structured form submission arrives', () => {
+    const caseId = 'r3-v2-synthetic-ask-bucket'
+    recordInitialInputEvent(caseId, { content: 'My deposit has not arrived yet.' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [
+          {
+            id: 'collect_deposit_details',
+            title: 'Collect deposit details',
+            guidance: 'Ask for the deposit details bundle.',
+            actions: [
+              {
+                id: 'ask_deposit_details',
+                kind: 'ask',
+                label: 'Ask for deposit details',
+                fields: ['deposit_details'],
+              },
+            ],
+            branches: [],
+          },
+          {
+            id: 'lookup_latest_deposit',
+            title: 'Lookup latest deposit',
+            guidance: 'Check the newest deposit.',
+            actions: [
+              {
+                id: 'lookup_latest_deposit_tool',
+                kind: 'call_tool',
+                label: 'Run get_latest_deposit',
+                toolName: 'get_latest_deposit',
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Tool ask_user_questions result: {"member_id":"JAYA113C88F","deposit_amount":"200","payment_channel":"USDT","deposit_time":"2026-06-16"}',
+      source: 'customer_form_result',
+      origin: 'customer',
+      formAnswers: {
+        member_id: 'JAYA113C88F',
+        deposit_amount: '200',
+        payment_channel: 'USDT',
+        deposit_time: '2026-06-16',
+      },
+    })
+
+    const active = getActiveProcedureRun(caseId)
+    expect(active?.steps.find((step) => step.id === 'collect_deposit_details')).toMatchObject({
+      status: 'completed',
+    })
+    expect(active?.currentStepId).toBe('lookup_latest_deposit')
+    expect(active?.blockers).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Waiting for the customer to submit the requested form fields.'),
+      ]),
+    )
+    closeSession(caseId)
+  })
+
   it('blocks v2 steps on empty knowledge results instead of treating them as success', () => {
     const caseId = 'r3-empty-kb'
     recordInitialInputEvent(caseId, { content: 'Where do I find the statement page?' })

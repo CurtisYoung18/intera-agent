@@ -1405,7 +1405,7 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
     const fields = action.target?.split(',').map((field) => field.trim()).filter(Boolean) ?? []
     const hasAnswer = fields.length === 0
       ? Object.keys(formAnswers).length > 0
-      : fields.some((field) => field in formAnswers)
+      : formAnswersSatisfyAskTarget(formAnswers, fields)
     if (!hasAnswer) continue
     action.status = 'completed'
     clearRunBlocker(run, `action:${action.id}`)
@@ -1422,6 +1422,31 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
     if (current.status === 'blocked') current.status = 'active'
     refreshStepBranchStates(run, current)
   }
+}
+
+function formAnswersSatisfyAskTarget(
+  formAnswers: Record<string, string>,
+  fields: string[],
+): boolean {
+  const answerKeys = Object.keys(formAnswers)
+  if (answerKeys.length === 0) return false
+  if (fields.some(isSyntheticAskBucketField)) return true
+
+  const normalizedAnswerKeys = new Set(answerKeys.map(normalizeFormFieldKey))
+  return fields.some((field) => normalizedAnswerKeys.has(normalizeFormFieldKey(field)))
+}
+
+function normalizeFormFieldKey(field: string): string {
+  return field
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .toLowerCase()
+}
+
+function isSyntheticAskBucketField(field: string): boolean {
+  const normalized = normalizeFormFieldKey(field)
+  return normalized.endsWith('_details') || normalized.endsWith('_detail')
 }
 
 function upsertEvidence(run: ProcedureRunState, evidence: ProcedureRunEvidenceState): void {
