@@ -160,6 +160,14 @@ export default function LiveChatChannelWorkspace({
   )
 
   const connectionState = getConnectionState(config, connectionTested)
+  const persistedConfigHasCredentials = hasRequiredLiveChatCredentials(origConfig ?? config)
+  const saveState = syncStatus === 'error'
+    ? 'error'
+    : syncStatus === 'syncing'
+      ? 'syncing'
+      : persistedConfigHasCredentials
+        ? 'saved'
+        : 'unconfigured'
   const inputCls = 'w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-[13px] outline-none focus:border-indigo/30'
   const labelCls = 'mb-1 block text-[12px] font-semibold text-[var(--mist)]'
   const cardCls = 'rounded-[26px] border border-black/[0.06] bg-white/72 p-5 shadow-[0_16px_36px_rgba(21,23,25,0.05)]'
@@ -500,8 +508,22 @@ export default function LiveChatChannelWorkspace({
                 </div>
                 <div className="flex items-center justify-between gap-3 border-b border-black/[0.05] pb-3">
                   <span className="text-[var(--fog)]">{isZh ? '保存状态' : 'Save status'}</span>
-                  <span className={`font-semibold ${syncStatus === 'error' ? 'text-vermillion' : syncStatus === 'syncing' ? 'text-amber' : 'text-malachite'}`}>
-                    {syncStatus === 'error' ? t('livechat.saveFailed') : syncStatus === 'syncing' ? t('livechat.saveSaving') : t('livechat.saved')}
+                  <span className={`font-semibold ${
+                    saveState === 'error'
+                      ? 'text-vermillion'
+                      : saveState === 'syncing'
+                        ? 'text-amber'
+                        : saveState === 'saved'
+                          ? 'text-malachite'
+                          : 'text-[var(--fog)]'
+                  }`}>
+                    {saveState === 'error'
+                      ? t('livechat.saveFailed')
+                      : saveState === 'syncing'
+                        ? t('livechat.saveSaving')
+                        : saveState === 'saved'
+                          ? t('livechat.saved')
+                          : t('livechat.stateUnconfigured')}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
@@ -688,20 +710,25 @@ export default function LiveChatChannelWorkspace({
           {t('livechat.reset')}
         </button>
         <div className="flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/60 px-3 py-2">
-          {syncStatus === 'syncing' ? (
+          {saveState === 'syncing' ? (
             <>
               <span className="h-3 w-3 animate-spin rounded-full border-2 border-amber/30 border-t-amber" />
               <span className="text-[11px] font-medium text-amber">{t('livechat.saveSaving')}</span>
             </>
-          ) : syncStatus === 'error' ? (
+          ) : saveState === 'error' ? (
             <>
               <AlertCircle className="h-3 w-3 text-vermillion" />
               <span className="text-[11px] font-medium text-vermillion">{t('livechat.saveFailed')}</span>
             </>
-          ) : (
+          ) : saveState === 'saved' ? (
             <>
               <CheckCircle2 className="h-3 w-3 text-malachite" />
               <span className="text-[11px] font-medium text-malachite">{t('livechat.saved')}</span>
+            </>
+          ) : (
+            <>
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--fog)]/35" />
+              <span className="text-[11px] font-medium text-[var(--fog)]">{t('livechat.stateUnconfigured')}</span>
             </>
           )}
         </div>

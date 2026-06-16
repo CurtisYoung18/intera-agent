@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockApiClient = vi.fn()
@@ -26,6 +26,9 @@ vi.mock('@/components/locale-provider', () => ({
         'livechat.tab.connection': 'Connection',
         'livechat.tab.rendering': 'Rendering',
         'livechat.webhookRouteNotePerAgent': 'Keep this webhook URL fixed in LiveChat. Publish/version changes should continue routing through this same URL.',
+        'livechat.saveFailed': 'Save failed',
+        'livechat.saveSaving': 'Saving...',
+        'livechat.saved': 'Saved',
       }
       return labels[key] ?? key
     },
@@ -79,6 +82,17 @@ describe('LiveChatChannelWorkspace', () => {
     expect(passwordFields.length).toBeGreaterThan(0)
     expect(passwordFields.every((field) => field.closest('form'))).toBe(true)
     expect(passwordFields.every((field) => field.getAttribute('autocomplete') === 'new-password')).toBe(true)
+  })
+
+  it('does not claim unconfigured livechat is already saved', async () => {
+    const { default: LiveChatChannelWorkspace } = await import('@/components/integrations/livechat-channel-workspace')
+
+    render(<LiveChatChannelWorkspace agentConfigId="agent_v2" onBack={() => {}} />)
+
+    const saveStatusRow = (await screen.findByText('Save status')).closest('div')
+    expect(saveStatusRow).not.toBeNull()
+    expect(within(saveStatusRow!).getByText('Not configured')).toBeDefined()
+    expect(screen.queryByText('Saved')).toBeNull()
   })
 
   it('blocks enabling livechat until required credentials are filled', async () => {
