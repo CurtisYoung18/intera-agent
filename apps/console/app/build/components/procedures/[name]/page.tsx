@@ -13,7 +13,6 @@ import {
   ListChecks,
   Loader2,
   Lock,
-  Play,
   Plus,
   Settings,
   Sparkles,
@@ -35,10 +34,8 @@ import {
   PROCEDURE_CONDITION_KINDS,
   PROCEDURE_RUNTIME_SIGNALS,
   PROCEDURE_V2_ACTION_KINDS,
-  simulateProcedure,
   type CaseTypeItem,
   type ProcedureRuntimeSignalContract,
-  type ProcedureSimulationInputContract,
   type ProcedureV2ActionContract,
   type ProcedureV2ActionKindContract,
   type ProcedureV2BranchContract,
@@ -220,30 +217,6 @@ function formOperatorLabel(t: TranslateFn, operator: BranchDraft['operator']) {
       return t('procedureEditor.formOperator.present')
     case 'equals':
       return t('procedureEditor.formOperator.equals')
-  }
-}
-
-function simulationStatusLabel(t: TranslateFn, status: 'ready' | 'completed' | 'handoff') {
-  switch (status) {
-    case 'ready':
-      return t('procedureEditor.simulation.status.ready')
-    case 'completed':
-      return t('procedureEditor.simulation.status.completed')
-    case 'handoff':
-      return t('procedureEditor.simulation.status.handoff')
-  }
-}
-
-function simulationStepStatusLabel(t: TranslateFn, status: 'active' | 'completed' | 'pending' | 'skipped') {
-  switch (status) {
-    case 'active':
-      return t('procedureEditor.simulation.stepStatus.active')
-    case 'completed':
-      return t('procedureEditor.simulation.stepStatus.completed')
-    case 'pending':
-      return t('procedureEditor.simulation.stepStatus.pending')
-    case 'skipped':
-      return t('procedureEditor.simulation.stepStatus.skipped')
   }
 }
 
@@ -1036,18 +1009,7 @@ export default function BuildProcedureDetailPage() {
   const [newHookDrafts, setNewHookDrafts] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState<ProcedureEditorDraft>(() => createEmptyDraft(t))
   const [selectedKey, setSelectedKey] = useState<string>('')
-  const [rightPanelMode, setRightPanelMode] = useState<'preview' | 'simulation'>('simulation')
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [simulation, setSimulation] = useState<ProcedureSimulationInputContract>({
-    signals: [],
-    toolNames: [],
-    knowledgeToolNames: [],
-    formFields: [],
-    knowledgeSearches: 0,
-    handoffRequested: false,
-    ended: false,
-    matchedLlmConditionIds: [],
-  })
 
   const load = useCallback(async () => {
     if (!agentConfigId) {
@@ -1090,10 +1052,6 @@ export default function BuildProcedureDetailPage() {
   }, [saveSuccess])
 
   const procedure = useMemo(() => toProcedure(t, draft), [draft, t])
-  const simulationReceipt = useMemo(
-    () => simulateProcedure(procedure, simulation),
-    [procedure, simulation],
-  )
 
   const getStepBindings = useCallback((stepId: string) => {
     if (!item) return []
@@ -1719,7 +1677,7 @@ export default function BuildProcedureDetailPage() {
                 ) : null}
 
                 {selected !== 'overview' && (
-                <section className="mt-14 space-y-10">
+                <section className="space-y-10">
                   {draft.steps.map((step, index) => {
                     const bindings = getStepBindings(step.id)
                     const availableHooks = availableHooksForStep(step.id)
@@ -1970,17 +1928,6 @@ export default function BuildProcedureDetailPage() {
                       </div>
                     )
                   })}
-                  <div className="grid gap-4 md:grid-cols-[72px_minmax(0,1fr)]">
-                    <div className="hidden md:block" />
-                    <button
-                      type="button"
-                      onClick={addStep}
-                      className="inline-flex w-fit items-center gap-2 rounded-full border border-black/[0.07] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--mist)] shadow-sm transition hover:border-indigo/20 hover:text-indigo"
-                    >
-                      <Plus className="h-4 w-4" />
-                      {t('procedureEditor.actions.addStep')}
-                    </button>
-                  </div>
                 </section>
                 )}
               </div>
