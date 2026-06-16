@@ -1543,14 +1543,14 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
               {snapshot?.resolvedModelLabel || (isZh ? '加载模型中' : 'Loading model')}
             </span>
           </div>
-          <InlineTruthPill compact label={isZh ? '图片' : 'Image'} value={visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
-          <InlineTruthPill compact label="Memory" value={snapshot?.memoryModeLabel || (isZh ? '加载中' : 'Loading')} />
+          <InlineTruthPill compact label={isZh ? '图片' : 'Image'} value={isZh ? (visionSupport.status === 'supported' ? '支持' : visionSupport.status === 'unsupported' ? '不支持' : '未知') : visionSupport.label} tone={toneForVisionSupport(visionSupport.status)} />
+          <InlineTruthPill compact label={isZh ? '记忆' : 'Memory'} value={snapshot?.memoryModeLabel ? (isZh ? (({ Short: '短期', Long: '长期', Custom: '自定义', Balanced: '均衡' } as Record<string, string>)[snapshot.memoryModeLabel] ?? snapshot.memoryModeLabel) : snapshot.memoryModeLabel) : (isZh ? '加载中' : 'Loading')} />
           <InlineTruthPill
             compact
-            label="Hooks"
+            label={isZh ? '钩子' : 'Hooks'}
             value={snapshot?.enabledHookCount == null ? (isZh ? '未知' : 'Unknown') : isZh ? `${snapshot.enabledHookCount} 个` : `${snapshot.enabledHookCount} active`}
           />
-          <InlineTruthPill compact label="Temp" value={snapshot ? String(snapshot.temperature) : '...'} />
+          <InlineTruthPill compact label={isZh ? '温度' : 'Temp'} value={snapshot ? String(snapshot.temperature) : '...'} />
         </div>
       </header>
 

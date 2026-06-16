@@ -566,14 +566,14 @@ function truncatePublisherId(value: string) {
 }
 
 function publisherDisplay(config: AgentVersion | null, locale: ReleaseLocale) {
-  if (!config) return locale === 'zh' ? '不可用' : 'Unavailable'
+  if (!config) return locale === 'zh' ? '未记录' : 'Not recorded'
   const email = config.publisherEmail?.trim()
   const name = config.publisherName?.trim()
   if (email && name) return `${email} · ${name}`
   if (email) return email
   if (name) return name
   if (config.publishedBy) return truncatePublisherId(config.publishedBy)
-  return locale === 'zh' ? '不可用' : 'Unavailable'
+  return locale === 'zh' ? '未记录' : 'Not recorded'
 }
 
 function roleLabel(role: VersionRole, locale: ReleaseLocale) {
@@ -1044,9 +1044,9 @@ export default function ReleaseCommandCenter() {
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <div className="text-right">
               <p className="text-[12px] font-medium text-[var(--color-text-tertiary)]">
-                {data.family.length}/{MAX_AGENT_CONFIG_VERSIONS} retained
+                {locale === 'zh' ? `已保留 ${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS}` : `${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS} retained`}
               </p>
-              <p className="sr-only">{data.family.length} of {MAX_AGENT_CONFIG_VERSIONS} retained</p>
+              <p className="sr-only">{locale === 'zh' ? `已保留 ${data.family.length}/${MAX_AGENT_CONFIG_VERSIONS} 个版本` : `${data.family.length} of ${MAX_AGENT_CONFIG_VERSIONS} retained`}</p>
             </div>
             <button
               type="button"
@@ -1284,12 +1284,12 @@ function ReleaseVersionCompareRow({
     ? (selectedVersion ? `v${selectedVersion.version}` : (locale === 'zh' ? '历史版本' : 'History'))
     : draft
       ? `v${draft.version}`
-      : (locale === 'zh' ? 'No draft' : 'No draft')
+      : (locale === 'zh' ? '暂无草稿' : 'No draft')
   const comparePill = showingHistorical
     ? selectedValidationSnapshot.label
     : draft
       ? draftValidationSnapshot.label
-      : (locale === 'zh' ? 'Awaiting draft' : 'Awaiting draft')
+      : (locale === 'zh' ? '等待草稿' : 'Awaiting draft')
   const comparePillTone = showingHistorical
     ? selectedValidationSnapshot.tone
     : draft
@@ -1305,7 +1305,7 @@ function ReleaseVersionCompareRow({
         eyebrow={locale === 'zh' ? '当前 LIVE' : 'Now live'}
         metaLabel={locale === 'zh' ? '发布于' : 'published'}
         metaValue={formatDate(locale, live?.publishedAt ?? live?.updatedAt)}
-        detail={live ? (locale === 'zh' ? `发布人 ${publisherDisplay(live, locale)}` : `by ${publisherDisplay(live, locale)}`) : (locale === 'zh' ? '发布人不可用' : 'Publisher unavailable')}
+        detail={live ? (locale === 'zh' ? `发布人 ${publisherDisplay(live, locale)}` : `by ${publisherDisplay(live, locale)}`) : (locale === 'zh' ? '发布人未记录' : 'Publisher not recorded')}
         pill={liveValidationSnapshot.label}
         pillTone={liveValidationSnapshot.tone}
       />
@@ -1705,7 +1705,7 @@ function ReleaseUtilityStrip({
           </p>
           <p className="mt-2 text-[12px] leading-5 text-[var(--color-text-tertiary)]">
             {locale === 'zh'
-              ? 'Import dry-run 会继续检查 Required secrets、conflicts、unsupported integrations 和 Knowledge refs。'
+              ? '导入试运行仍会检查：缺失的密钥、配置冲突、不受支持的集成，以及知识库引用。'
               : 'Import dry-run still reports Required secrets, conflicts, unsupported integrations, and Knowledge refs.'}
           </p>
           <span className="sr-only">Required secrets</span>

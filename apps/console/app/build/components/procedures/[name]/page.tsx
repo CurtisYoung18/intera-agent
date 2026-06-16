@@ -1061,6 +1061,14 @@ export default function BuildProcedureDetailPage() {
     load()
   }, [load])
 
+  // Auto-dismiss the save-success confirmation so it does not permanently
+  // duplicate the persistent saved-state label in the header.
+  useEffect(() => {
+    if (!saveSuccess) return
+    const id = setTimeout(() => setSaveSuccess(null), 2500)
+    return () => clearTimeout(id)
+  }, [saveSuccess])
+
   const procedure = useMemo(() => toProcedure(t, draft), [draft, t])
   const simulationReceipt = useMemo(
     () => simulateProcedure(procedure, simulation),
@@ -1415,9 +1423,11 @@ export default function BuildProcedureDetailPage() {
                 <span className="hidden shrink-0 rounded-full bg-black/[0.04] px-3 py-1 text-[12px] font-medium text-[var(--mist)] sm:inline-flex">
                   {t('procedureEditor.status.draft')}
                 </span>
-                <span className="hidden shrink-0 text-[13px] text-[var(--fog)] sm:inline-flex">
-                  {saveStateLabel}
-                </span>
+                {(dirty || saving) && (
+                  <span className="hidden shrink-0 text-[13px] text-[var(--fog)] sm:inline-flex">
+                    {saveStateLabel}
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 lg:justify-end">

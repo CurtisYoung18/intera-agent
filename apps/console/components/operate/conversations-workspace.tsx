@@ -282,7 +282,7 @@ export default function ConversationsWorkspace() {
               </h1>
               <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
                 {isZh
-                  ? '浏览实时 Chats，找到需要关注的 ProcedureRun，并继续深入 transcript、User、Trace 或 Memory 详情，同时保持平稳的运营视角。'
+                  ? '浏览实时会话，找到需要关注的 ProcedureRun，并深入查看对话记录、用户、Trace 或记忆详情，同时保持平稳的运营视角。'
                   : 'Scan live Chats, find the ProcedureRuns that need attention, and move into transcript, User, Trace, or Memory detail without losing the calm operating context.'}
               </p>
             </div>
@@ -290,7 +290,7 @@ export default function ConversationsWorkspace() {
             <div className="flex flex-wrap gap-3">
               <MetricCard label={isZh ? '会话数' : 'Chats'} value={String(total)} tone="neutral" />
               <MetricCard label={isZh ? '待接手' : 'Waiting handoff'} value={String(waitingCount)} tone="amber" />
-              <MetricCard label="ProcedureRuns" value={String(procedureRunCount)} tone="teal" />
+              <MetricCard label={isZh ? 'ProcedureRun 数' : 'ProcedureRuns'} value={String(procedureRunCount)} tone="teal" />
               <MetricCard label={isZh ? '最近活动' : 'Latest activity'} value={latestActivity} tone="indigo" />
             </div>
           </div>

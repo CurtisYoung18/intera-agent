@@ -1174,7 +1174,7 @@ function ControlPanel({
           <button type="button" onClick={onApply} disabled={!canApply || proposalPhase === 'applying'} className="intera-q2-button inline-flex h-10 items-center justify-center gap-2 bg-[var(--color-accent-primary)] px-4 text-[13px] font-semibold text-white disabled:opacity-50" data-testid="config-pilot-apply-draft">
             {proposalPhase === 'applying' ? <Loader2 size={15} className="animate-spin" /> : <LockKeyhole size={15} />} {isZh ? '应用已接受的草稿' : 'Apply accepted draft'}
           </button>
-          <p className="text-[12px] leading-5 text-[var(--color-text-tertiary)]">{isZh ? '这里的 Apply 只会调用 `/api/admin/config-pilot/apply`，写入 draft 配置，并把验证标记为过期。发布、激活、部署和回滚都不在这里执行。' : 'Apply calls only `/api/admin/config-pilot/apply`, writes draft config, and marks validation stale. Publish, activate, deploy, and rollback are unavailable here.'}</p>
+          <p className="text-[12px] leading-5 text-[var(--color-text-tertiary)]">{isZh ? '应用后只会写入草稿配置，并把验证标记为过期；发布、激活、部署和回滚都不在这里执行。' : 'Apply only writes the draft config and marks validation as stale. It does not publish, activate, deploy, or roll back here.'}</p>
         </div>
       </section>
 

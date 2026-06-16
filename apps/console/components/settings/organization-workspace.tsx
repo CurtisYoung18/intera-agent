@@ -85,19 +85,14 @@ function OrganizationPageInner() {
           <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">
               <Building2 className="h-3.5 w-3.5" />
-              Settings
+              {t('organization.settingsTag')}
             </div>
             <h1 className="mt-3 text-[clamp(1.45rem,2vw,1.95rem)] font-semibold tracking-tight text-[var(--mist)]">
               {t('organization.title')}
             </h1>
             <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
-              Manage the workspace name, member access, invitation flow, and the permission matrix without leaving the quiet material language used across the rest of the Console.
+              {t('organization.description')}
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-[11px] text-[var(--fog)]">
-            <span className="rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5">Organization profile</span>
-            <span className="rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5">Members and invitations</span>
-            <span className="rounded-full border border-black/[0.06] bg-white/82 px-3 py-1.5">Permission matrix</span>
           </div>
         </div>
       </div>
@@ -183,7 +178,7 @@ function GeneralTab() {
       <GlassCard className="p-6 sm:p-7">
         <div className="space-y-4">
           <div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">General</p>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">{t('organization.general')}</p>
             <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--smoke)]">{t('organization.nameLabel')}</label>
             <input
               type="text"
@@ -193,7 +188,7 @@ function GeneralTab() {
               onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
             />
             <p className="mt-2 text-[12px] leading-6 text-[var(--fog)]">
-              This name is shown in the identity menu, org picker, and workspace-level surfaces.
+              {t('organization.nameHint')}
             </p>
           </div>
           <div className="flex items-center gap-3">

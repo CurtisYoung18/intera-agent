@@ -18,32 +18,44 @@ const COMPONENT_ITEMS = [
 const COMPONENTS_PAGE_COPY = {
   en: {
     heroDescription:
-      'Keep Brain, Procedures, Tools, Hooks, Knowledge, and Integrations inside one local Build hub with shared material, restrained chips, and stable save or test flows.',
+      'Keep Brain, Procedures, Tools, Hooks, Knowledge, and Integrations in one Build workspace with consistent styling and stable save and test flows.',
     localOnlyTitle: 'Local only',
     localOnlyBody: 'Components stays a Build-local hub. It does not become top-level global nav again.',
     flowSafeTitle: 'Flow-safe',
-    flowSafeBody: 'Existing save, test, and detail editors remain intact under the updated Build shell language.',
+    flowSafeBody: 'Existing save, test, and detail editors remain intact under the updated Build shell.',
     tableComponent: 'Component',
     tableWhat: 'What you can do here',
     tableRoute: 'Route',
     insideWorkspace: 'Inside Components workspace',
-    openDescription: (label: string) =>
-      `Open ${label.toLowerCase()} controls while keeping the shared Build shell, local navigation, and editor-specific save or test flows intact.`,
+    descriptions: {
+      'sidebar.brain': 'Configure the agent persona, model, memory strategy, and global prompt.',
+      'sidebar.procedures': 'Define the steps, branches, and escalation rules the agent follows for each case type.',
+      'sidebar.tools': 'Manage the tools the agent can call, with their parameters and call rules.',
+      'sidebar.hooks': 'Insert checks, blocks, and human escalation before or after tool calls and before replies.',
+      'sidebar.knowledge': 'Maintain the knowledge base content and retrieval the agent cites when answering.',
+      'sidebar.integrations': 'Connect external systems and data sources to extend the agent.',
+    } as Record<string, string>,
     openRoute: 'Open route',
   },
   zh: {
     heroDescription:
-      '把 Brain、Procedures、Tools、Hooks、Knowledge 和 Integrations 收进同一个本地 Build hub，复用统一材质、克制 chip 和稳定的保存/测试流程。',
+      '把大脑、流程、工具、钩子、知识库和集成收进同一个 Build 工作区，复用统一的界面风格与稳定的保存、测试流程。',
     localOnlyTitle: '仅限 Build 内部',
     localOnlyBody: 'Components 继续作为 Build 内部工作区存在，不再恢复成全局一级导航。',
     flowSafeTitle: '流程不变',
-    flowSafeBody: '现有保存、测试和细节编辑器都会在新的 Build 壳层语言下原样保留。',
+    flowSafeBody: '现有保存、测试和细节编辑器都会在新的 Build 界面下原样保留。',
     tableComponent: '组件',
     tableWhat: '这里可以做什么',
     tableRoute: '入口',
     insideWorkspace: '位于 Components 工作区',
-    openDescription: (label: string) =>
-      `在保留共享 Build 壳层、本地导航和各编辑器原有保存/测试流程的前提下，打开 ${label} 控制面。`,
+    descriptions: {
+      'sidebar.brain': '配置 Agent 的人设、模型、记忆策略与全局提示词。',
+      'sidebar.procedures': '定义 Agent 处理各类客户问题的步骤、分支与升级条件。',
+      'sidebar.tools': '管理 Agent 可调用的工具及其参数与调用规则。',
+      'sidebar.hooks': '在工具调用前后或回复前插入校验、拦截与人工升级。',
+      'sidebar.knowledge': '维护知识库内容与检索，供 Agent 回答时引用。',
+      'sidebar.integrations': '连接外部系统与数据源，扩展 Agent 的能力边界。',
+    } as Record<string, string>,
     openRoute: '打开入口',
   },
 } as const
@@ -120,7 +132,7 @@ export default function BuildComponentsPage() {
                     </div>
                   </div>
                   <p className="text-[13px] leading-5 text-[var(--color-text-secondary)]">
-                    {copy.openDescription(label)}
+                    {copy.descriptions[item.labelKey] ?? ''}
                   </p>
                   <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-border-subtle)] bg-white/82 px-2.5 py-1 text-[11px] font-semibold text-[var(--color-text-secondary)]">
                     {copy.openRoute}
