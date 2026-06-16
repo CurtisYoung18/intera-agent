@@ -6,6 +6,7 @@ import {
   RUNTIME_BYPASS_HEADER,
   authorizeInternalRequest,
   createRuntimeServer,
+  resolveRuntimeExecutionMode,
   resolveConsoleRuntimeHealthUrl,
   resolveConsoleMessagesUrl,
 } from './server.mjs'
@@ -26,6 +27,13 @@ async function close(server: ReturnType<typeof createRuntimeServer>): Promise<vo
 }
 
 describe('runtime service', () => {
+  it('defaults to direct execution and keeps legacy-forward as an explicit rollback mode', () => {
+    expect(resolveRuntimeExecutionMode({})).toBe('direct')
+    expect(resolveRuntimeExecutionMode({ INTERA_RUNTIME_EXECUTION_MODE: 'direct' })).toBe('direct')
+    expect(resolveRuntimeExecutionMode({ INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward' })).toBe('legacy-forward')
+    expect(resolveRuntimeExecutionMode({ INTERA_RUNTIME_EXECUTION_MODE: 'legacy' })).toBe('legacy-forward')
+  })
+
   it('resolves the legacy Console messages backend explicitly', () => {
     expect(resolveConsoleMessagesUrl({
       CONSOLE_INTERNAL_MESSAGES_URL: 'http://console.local/api/messages',
@@ -69,6 +77,7 @@ describe('runtime service', () => {
       env: {
         INTERNAL_API_SECRET: 'secret-1',
         CONSOLE_INTERNAL_URL: 'http://console.local',
+        INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward',
       },
       fetch: fetchMock as typeof fetch,
     })
@@ -110,6 +119,7 @@ describe('runtime service', () => {
       env: {
         INTERNAL_API_SECRET: 'secret-1',
         CONSOLE_INTERNAL_URL: 'http://console.local',
+        INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward',
       },
       fetch: fetchMock as typeof fetch,
     })
@@ -136,6 +146,7 @@ describe('runtime service', () => {
       env: {
         INTERNAL_API_SECRET: 'secret-1',
         CONSOLE_INTERNAL_MESSAGES_URL: 'http://console.local/api/messages',
+        INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward',
       },
       fetch: fetchMock as typeof fetch,
     })
@@ -187,12 +198,126 @@ describe('runtime service', () => {
     }
   })
 
+  it('serves direct runtime health from the runtime process without calling Console', async () => {
+    const fetchMock = vi.fn()
+    const directRuntimeHealth = vi.fn(async () => ({
+      status: 'ok',
+      sessions: 4,
+      activeRuns: 1,
+      queueDepth: 2,
+      stats: {
+        liveSessions: 4,
+        activeRuns: 1,
+        queueDepth: 2,
+      },
+    }))
+    const server = createRuntimeServer({
+      env: { INTERNAL_API_SECRET: 'secret-1' },
+      fetch: fetchMock as typeof fetch,
+      directRuntimeHealth,
+    })
+    const baseUrl = await listen(server)
+    try {
+      const response = await fetch(`${baseUrl}/internal/health`)
+      const body = await response.json()
+      expect(response.status).toBe(200)
+      expect(body).toMatchObject({
+        status: 'ok',
+        mode: 'direct',
+        sessions: 4,
+        activeRuns: 1,
+        queueDepth: 2,
+        stats: {
+          liveSessions: 4,
+        },
+      })
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(directRuntimeHealth).toHaveBeenCalledTimes(1)
+    } finally {
+      await close(server)
+    }
+  })
+
+  it('executes message requests through the direct handler by default', async () => {
+    const fetchMock = vi.fn()
+    const directMessagesHandler = vi.fn(async () => new Response('data: {"type":"message_stop"}\n\n', {
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+    const server = createRuntimeServer({
+      env: { INTERNAL_API_SECRET: 'secret-1' },
+      fetch: fetchMock as typeof fetch,
+      directMessagesHandler,
+    })
+    const baseUrl = await listen(server)
+    try {
+      const response = await fetch(`${baseUrl}/internal/cases/case-1/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          [INTERNAL_SECRET_HEADER]: 'secret-1',
+          'x-intera-org': 'org-a',
+          'x-intera-agent-config-id': 'agent-a',
+        },
+        body: JSON.stringify({ message: 'hi' }),
+      })
+
+      expect(response.status).toBe(200)
+      await expect(response.text()).resolves.toContain('message_stop')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(directMessagesHandler).toHaveBeenCalledWith(
+        JSON.stringify({ message: 'hi', caseId: 'case-1' }),
+        expect.objectContaining({
+          [INTERNAL_SECRET_HEADER]: 'secret-1',
+          [RUNTIME_BYPASS_HEADER]: '1',
+          'x-intera-org': 'org-a',
+          'x-intera-agent-config-id': 'agent-a',
+        }),
+      )
+    } finally {
+      await close(server)
+    }
+  })
+
+  it('executes close requests through the direct handler by default', async () => {
+    const fetchMock = vi.fn()
+    const directCloseHandler = vi.fn(async () => Response.json({ ok: true }))
+    const server = createRuntimeServer({
+      env: { INTERNAL_API_SECRET: 'secret-1' },
+      fetch: fetchMock as typeof fetch,
+      directCloseHandler,
+    })
+    const baseUrl = await listen(server)
+    try {
+      const response = await fetch(`${baseUrl}/internal/cases/case-1/close`, {
+        method: 'POST',
+        headers: {
+          [INTERNAL_SECRET_HEADER]: 'secret-1',
+          'x-intera-org': 'org-a',
+        },
+      })
+
+      expect(response.status).toBe(200)
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(directCloseHandler).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({
+          [INTERNAL_SECRET_HEADER]: 'secret-1',
+          [RUNTIME_BYPASS_HEADER]: '1',
+          'x-intera-org': 'org-a',
+        }),
+      )
+    } finally {
+      await close(server)
+    }
+  })
+
   it('forwards close requests to Console internal close endpoint', async () => {
     const fetchMock = vi.fn(async () => Response.json({ ok: true }))
     const server = createRuntimeServer({
       env: {
         INTERNAL_API_SECRET: 'secret-1',
         CONSOLE_INTERNAL_URL: 'http://console.local',
+        INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward',
       },
       fetch: fetchMock as typeof fetch,
     })

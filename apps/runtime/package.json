@@ -5,7 +5,10 @@
   "description": "Intera Runtime service — internal SSE host for agent turns",
   "type": "module",
   "scripts": {
-    "start": "node src/server.mjs",
+    "start": "tsx --tsconfig ../console/tsconfig.json src/server.mjs",
     "test": "cd ../.. && vitest run apps/runtime/src/server.test.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.22.4"
   }
 }

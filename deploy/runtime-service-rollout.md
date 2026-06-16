@@ -1,8 +1,8 @@
 # Runtime Service Rollout
 
-CONS-M3B introduces a separate `intera-runtime.service` process and an internal API seam before the full turn handler is physically moved out of the Console process.
+CONS-M3B introduces a separate `intera-runtime.service` process and an internal API seam. The service now defaults to direct runtime execution: internal message and close requests are handled inside the runtime process by loading the existing Console handler module, instead of HTTP-forwarding the turn back to the Console process.
 
-## Current Mode: Legacy Forward
+## Current Mode: Direct Runtime Execution
 
 The runtime service owns the internal API and deployment topology:
 
@@ -10,7 +10,9 @@ The runtime service owns the internal API and deployment topology:
 - `POST /internal/cases/:caseId/messages`
 - `POST /internal/cases/:caseId/close`
 
-In this first M3B step, message execution is still forwarded to the existing Console `/api/messages` handler with `x-intera-runtime-bypass: 1`. This prevents recursive proxying while preserving the current SSE event contract. The next M3B step can move the legacy handler internals behind the runtime process without changing LiveChat or Console ingress URLs again.
+The runtime service starts with `tsx --tsconfig ../console/tsconfig.json` so it can load the existing TypeScript/Next handler modules while the deeper runtime-core extraction continues. `x-intera-runtime-bypass: 1` is still added to internal requests as a recursion guard, but in direct mode it protects the shared handler from proxying back into runtime; it is no longer a legacy-forward transport signal.
+
+Set `INTERA_RUNTIME_EXECUTION_MODE=legacy-forward` only as an explicit rollback. In that mode the service forwards to Console `/api/messages` and Console `/api/internal/cases/:caseId/close`, preserving the old strangler seam.
 
 ## Host Env
 
@@ -21,11 +23,13 @@ INTERNAL_API_SECRET=<same-secret-for-console-and-runtime>
 INTERA_RUNTIME_URL=http://127.0.0.1:3101
 CONSOLE_INTERNAL_URL=http://127.0.0.1:3000
 RUNTIME_PORT=3101
+# Optional rollback only:
+# INTERA_RUNTIME_EXECUTION_MODE=legacy-forward
 ```
 
 `INTERA_RUNTIME_URL` enables Console and LiveChat internal calls to use the runtime service. If it is unset, Console falls back to the in-process `/api/messages` handler and LiveChat keeps calling Console directly.
 
-The deploy script is fail-closed: when `INTERA_RUNTIME_URL` is set, `intera-runtime.service` must be installed, the runtime service restarts first, Console restarts second, Console `/api/health` must pass, and then `GET ${INTERA_RUNTIME_URL}/internal/health` must pass. Runtime health intentionally checks Console-backed live session stats, so it is probed after Console is on the matching build. When `INTERA_RUNTIME_URL` is unset, runtime service restart is skipped for backward compatibility.
+The deploy script is fail-closed: when `INTERA_RUNTIME_URL` is set, `intera-runtime.service` must be installed, the runtime service restarts first, Console restarts second, Console `/api/health` must pass, and then `GET ${INTERA_RUNTIME_URL}/internal/health` must pass. In direct mode, runtime health reports the runtime process's own live session stats and must include `"mode":"direct"`. When `INTERA_RUNTIME_URL` is unset, runtime service restart is skipped for backward compatibility.
 
 ## Install
 
@@ -39,7 +43,7 @@ sudo systemctl restart intera-console.service
 
 Caddy must not expose `/internal/*` publicly. The repo Caddyfiles return `404` for public `/internal/*`; runtime calls should stay on loopback/private networking.
 
-`/internal/health` remains in `legacy-forward` mode in this step, but its `sessions`, `activeRuns`, and `queueDepth` values are aggregated from Console's internal `GET /api/internal/runtime/health` endpoint instead of runtime-only in-flight proxy counters.
+`/internal/health` in direct mode returns `{ status:"ok", mode:"direct", sessions, activeRuns, queueDepth, stats }`. If it returns `mode:"legacy-forward"`, the host is intentionally rolled back or the env still sets `INTERA_RUNTIME_EXECUTION_MODE=legacy-forward`.
 
 ## Rollback
 
@@ -51,12 +55,14 @@ sudo systemctl restart intera-console.service
 
 With `INTERA_RUNTIME_URL` removed, `/api/messages` and LiveChat bridge calls use the pre-M3B Console path.
 
+For a narrower rollback that keeps the runtime service in the request path while moving execution back to Console, set `INTERA_RUNTIME_EXECUTION_MODE=legacy-forward` and restart `intera-runtime.service`.
+
 ## Acceptance Still Required
 
 This local preflight does not close CONS-M3B production acceptance. Production signoff still requires:
 
 - both `intera-console.service` and `intera-runtime.service` live;
-- `GET /internal/health` proof on the host;
+- `GET /internal/health` proof on the host with `mode:"direct"`;
 - deploy-during-run receipt;
 - runtime-restart-during-run receipt;
 - LiveChat webhook to runtime to reply round-trip receipt;

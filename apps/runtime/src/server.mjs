@@ -25,6 +25,12 @@ export function resolveConsoleRuntimeHealthUrl(env = process.env) {
   return `${resolveConsoleBaseUrl(env)}/api/internal/runtime/health`
 }
 
+export function resolveRuntimeExecutionMode(env = process.env) {
+  const value = env.INTERA_RUNTIME_EXECUTION_MODE?.trim().toLowerCase()
+  if (value === 'legacy' || value === 'legacy-forward') return 'legacy-forward'
+  return 'direct'
+}
+
 export function authorizeInternalRequest(headers, env = process.env) {
   const secret = env.INTERNAL_API_SECRET
   if (!secret) return false
@@ -115,9 +121,47 @@ async function loadConsoleRuntimeHealth(fetchImpl, env) {
   return await response.json()
 }
 
+async function loadDirectRuntimeHealth() {
+  const { getRuntimeSessionStats } = await import('../../console/lib/agent/session-store.ts')
+  const stats = getRuntimeSessionStats()
+  return {
+    status: 'ok',
+    sessions: stats.liveSessions,
+    activeRuns: stats.activeRuns,
+    queueDepth: stats.queueDepth,
+    stats,
+  }
+}
+
+async function executeDirectMessagesHandler(body, headers) {
+  const { NextRequest } = await import('next/server')
+  const { POST } = await import('../../console/app/api/messages/route.ts')
+  const request = new NextRequest('http://intera-runtime.internal/api/messages', {
+    method: 'POST',
+    headers,
+    body,
+  })
+  return await POST(request)
+}
+
+async function executeDirectCloseHandler(caseId, headers) {
+  const { NextRequest } = await import('next/server')
+  const { POST } = await import('../../console/app/api/internal/cases/[caseId]/close/route.ts')
+  const request = new NextRequest(`http://intera-runtime.internal/api/internal/cases/${encodeURIComponent(caseId)}/close`, {
+    method: 'POST',
+    headers,
+    body: '{}',
+  })
+  return await POST(request, { params: Promise.resolve({ caseId }) })
+}
+
 export function createRuntimeServer(options = {}) {
   const env = options.env ?? process.env
   const fetchImpl = options.fetch ?? globalThis.fetch
+  const executionMode = resolveRuntimeExecutionMode(env)
+  const directRuntimeHealth = options.directRuntimeHealth ?? loadDirectRuntimeHealth
+  const directMessagesHandler = options.directMessagesHandler ?? executeDirectMessagesHandler
+  const directCloseHandler = options.directCloseHandler ?? executeDirectCloseHandler
   const state = {
     startedAt: new Date().toISOString(),
     inFlightCases: new Set(),
@@ -128,11 +172,13 @@ export function createRuntimeServer(options = {}) {
 
     if (req.method === 'GET' && parts.join('/') === 'internal/health') {
       try {
-        const upstream = await loadConsoleRuntimeHealth(fetchImpl, env)
+        const upstream = executionMode === 'direct'
+          ? await directRuntimeHealth()
+          : await loadConsoleRuntimeHealth(fetchImpl, env)
         const upstreamStats = upstream?.stats ?? {}
         json(res, 200, {
           status: 'ok',
-          mode: 'legacy-forward',
+          mode: executionMode,
           sessions: pickNumber(upstream.sessions, pickNumber(upstreamStats.liveSessions)),
           activeRuns: pickNumber(upstream.activeRuns, pickNumber(upstreamStats.activeRuns)),
           queueDepth: pickNumber(upstream.queueDepth, pickNumber(upstreamStats.queueDepth)),
@@ -140,15 +186,14 @@ export function createRuntimeServer(options = {}) {
           local: {
             inFlightCases: state.inFlightCases.size,
           },
-          upstream: {
-            status: upstream.status ?? 'ok',
-            stats: upstreamStats,
-          },
+          ...(executionMode === 'legacy-forward'
+            ? { upstream: { status: upstream.status ?? 'ok', stats: upstreamStats } }
+            : { stats: upstreamStats }),
         })
       } catch (err) {
         json(res, 503, {
           status: 'degraded',
-          mode: 'legacy-forward',
+          mode: executionMode,
           sessions: state.inFlightCases.size,
           activeRuns: state.inFlightCases.size,
           queueDepth: 0,
@@ -202,11 +247,13 @@ export function createRuntimeServer(options = {}) {
 
         state.inFlightCases.add(pathCaseId)
         try {
-          const upstream = await fetchImpl(resolveConsoleMessagesUrl(env), {
-            method: 'POST',
-            headers: forwardHeaders,
-            body,
-          })
+          const upstream = executionMode === 'direct'
+            ? await directMessagesHandler(body, forwardHeaders)
+            : await fetchImpl(resolveConsoleMessagesUrl(env), {
+                method: 'POST',
+                headers: forwardHeaders,
+                body,
+              })
           await pipeFetchResponse(upstream, res)
         } finally {
           state.inFlightCases.delete(pathCaseId)
@@ -215,12 +262,13 @@ export function createRuntimeServer(options = {}) {
       }
 
       if (req.method === 'POST' && action === 'close') {
-        const closeUrl = `${resolveConsoleBaseUrl(env)}/api/internal/cases/${encodeURIComponent(caseId)}/close`
-        const upstream = await fetchImpl(closeUrl, {
-          method: 'POST',
-          headers: forwardHeaders,
-          body: '{}',
-        })
+        const upstream = executionMode === 'direct'
+          ? await directCloseHandler(caseId, forwardHeaders)
+          : await fetchImpl(`${resolveConsoleBaseUrl(env)}/api/internal/cases/${encodeURIComponent(caseId)}/close`, {
+              method: 'POST',
+              headers: forwardHeaders,
+              body: '{}',
+            })
         await pipeFetchResponse(upstream, res)
         return
       }
