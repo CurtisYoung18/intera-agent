@@ -1172,7 +1172,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
   const submitManualTurn = useCallback(() => {
     const trimmed = message.trim()
-    const queuedImages = attachedImagesRef.current
+    const queuedImages = attachedImages.length > 0 ? attachedImages : attachedImagesRef.current
     if (!trimmed && queuedImages.length === 0) return
     setMessage('')
     setAttachedImages([])
@@ -1181,7 +1181,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       return
     }
     runTurn(trimmed, queuedImages)
-  }, [message, responding, runTurn])
+  }, [attachedImages, message, responding, runTurn])
 
   const handleComposerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !composingRef.current) {

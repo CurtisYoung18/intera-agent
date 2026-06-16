@@ -459,13 +459,15 @@ describe('PlaygroundPage snapshot truth', () => {
 
     await waitFor(() => {
       expect(screen.getByAltText('receipt.png')).toBeDefined()
+      expect((screen.getByRole('button', { name: /Send manual runtime test turn/i }) as HTMLButtonElement).disabled).toBe(false)
     })
 
-    const sendButton = screen.getByRole('button', { name: /Send manual runtime test turn/i }) as HTMLButtonElement
-    expect(sendButton.disabled).toBe(false)
-
     await act(async () => {
-      fireEvent.click(sendButton)
+      fireEvent.keyDown(screen.getByPlaceholderText('Type a manual runtime test turn…'), {
+        key: 'Enter',
+        code: 'Enter',
+        shiftKey: false,
+      })
     })
 
     await waitFor(() => {
@@ -546,14 +548,15 @@ describe('PlaygroundPage snapshot truth', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText('My deposit still has not arrived. Please check it.')).toBeDefined()
+      expect(screen.getByPlaceholderText('Type a manual runtime test turn…')).toBeDefined()
     })
     expect(screen.queryByText('Runtime desk')).toBeNull()
+    expect(screen.queryByLabelText('Quick test prompts')).toBeNull()
+    expect(screen.queryByText('My deposit still has not arrived. Please check it.')).toBeNull()
   })
 
-  it('keeps quick test prompts available after restoring a persisted session', async () => {
-    const runBodies: any[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  it('keeps removed quick test prompts hidden after restoring a persisted session', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url === '/api/admin/agent-configs') {
         return jsonResponse({
@@ -586,12 +589,6 @@ describe('PlaygroundPage snapshot truth', () => {
           },
         })
       }
-      if (url === '/api/admin/playground/run') {
-        runBodies.push(JSON.parse(String(init?.body)))
-        return sseResponse([
-          { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: '2026-06-12T00:00:00.000Z' },
-        ])
-      }
       throw new Error(`Unexpected fetch: ${url}`)
     }))
 
@@ -600,22 +597,8 @@ describe('PlaygroundPage snapshot truth', () => {
     await waitFor(() => {
       expect(screen.getByText('old turn')).toBeDefined()
     })
-    const quickRail = screen.getByLabelText('Quick test prompts')
-    expect(quickRail).toBeDefined()
-
-    const restoredQuickPrompt = screen.getByRole('button', { name: /My deposit still has not arrived/i })
-    await act(async () => {
-      fireEvent.click(restoredQuickPrompt)
-    })
-
-    await waitFor(() => {
-      expect(runBodies).toHaveLength(1)
-    })
-    expect(runBodies[0]).toMatchObject({
-      message: 'My deposit still has not arrived. Please check it.',
-      chatId: 'chat-quickstart',
-      configId: 'agent-1',
-    })
+    expect(screen.queryByLabelText('Quick test prompts')).toBeNull()
+    expect(screen.queryByRole('button', { name: /My deposit still has not arrived/i })).toBeNull()
   })
 
   it('keeps immersive mode scoped to the console content region outside the global sidebar', async () => {
