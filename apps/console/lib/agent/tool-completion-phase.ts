@@ -11,6 +11,7 @@ import type { TraceWriter } from './trace'
 
 export interface ToolCompletionPhaseDeps {
   caseId: string
+  agentConfigId: string
   orgId: string
   userId: string
   chatId?: string | null
@@ -44,6 +45,7 @@ export class ToolCompletionPhase {
     const toolResults = await input.toolExecutor.waitForAll()
     const runtimeToolResolution = await new RuntimeManagedToolResolver({
       caseId: this.deps.caseId,
+      agentConfigId: this.deps.agentConfigId,
       orgId: this.deps.orgId,
       userId: this.deps.userId,
       chatId: this.deps.chatId,

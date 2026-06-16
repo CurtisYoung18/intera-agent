@@ -25,6 +25,7 @@ export interface PendingHumanTaskEscalation {
 
 export interface RuntimeManagedToolResolverDeps {
   caseId: string
+  agentConfigId: string
   orgId: string
   userId: string
   chatId?: string | null
@@ -225,7 +226,7 @@ export class RuntimeManagedToolResolver {
       }
     }
     const row = await prisma.userProfile.findUnique({
-      where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
+      where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: key } },
       select: {
         profile: true,
         sections: true,
@@ -301,15 +302,15 @@ export class RuntimeManagedToolResolver {
     const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
     if (this.shouldPersistRuntimeMemory()) {
       const existing = await prisma.userProfile.findUnique({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: profileKeyValue } },
+        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: profileKeyValue } },
         select: { profile: true },
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const merged = mergeProfile(existing?.profile ?? '', incoming, maxTokens)
-      const stats = await recomputeProfileStats(prisma, profileKeyValue, this.deps.orgId)
+      const stats = await recomputeProfileStats(prisma, profileKeyValue, this.deps.orgId, this.deps.agentConfigId)
       await prisma.userProfile.upsert({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: profileKeyValue } },
-        create: { userId: profileKeyValue, orgId: this.deps.orgId, profile: merged.profile, sections: merged.sections, ...stats },
+        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: profileKeyValue } },
+        create: { userId: profileKeyValue, orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, profile: merged.profile, sections: merged.sections, ...stats },
         update: { profile: merged.profile, sections: merged.sections, ...stats },
       }).catch((err: unknown) => {
         console.warn('[AgentLoop] remember(scope="user") failed:', err)

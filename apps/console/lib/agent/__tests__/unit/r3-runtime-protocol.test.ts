@@ -97,9 +97,10 @@ async function resolveRuntimeTool(loop: AgentLoop, name: string, input: Record<s
     toolUse: { id: `toolu_${name}`, name, input },
   }
 
-  await new RuntimeManagedToolResolver({
-    caseId: anyLoop.deps.caseId,
-    orgId: anyLoop.deps.orgId,
+	  await new RuntimeManagedToolResolver({
+	    caseId: anyLoop.deps.caseId,
+	    agentConfigId: anyLoop.deps.configId,
+	    orgId: anyLoop.deps.orgId,
     userId: anyLoop.deps.userId,
     chatId: anyLoop.deps.chatId,
     config: anyLoop.deps.config,

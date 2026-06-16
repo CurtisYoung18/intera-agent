@@ -31,9 +31,11 @@ describe('LiveChatFormWidget', () => {
       <LiveChatFormWidget
         title="Deposit details"
         description="Please fill in the requested details."
-        locale="en"
-        chatId="chat-1"
-        caseId="case-1"
+	        locale="en"
+	        chatId="chat-1"
+	        caseId="case-1"
+	        orgId="default"
+	        agentConfigId="agent-1"
         fields={[
           { key: 'amount', type: 'number', label: 'Amount', required: true },
           { key: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'] },
@@ -56,9 +58,11 @@ describe('LiveChatFormWidget', () => {
     const init = firstCall?.[1] as RequestInit | undefined
     if (!init) throw new Error('expected fetch init')
     expect(init.body).toBe(JSON.stringify({
-      chatId: 'chat-1',
-      caseId: 'case-1',
-      answers: {
+	      chatId: 'chat-1',
+	      caseId: 'case-1',
+	      orgId: 'default',
+	      agentConfigId: 'agent-1',
+	      answers: {
         amount: '800',
         payment_channel: 'Bank transfer',
       },

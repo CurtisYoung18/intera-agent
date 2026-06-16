@@ -136,6 +136,7 @@ export class AgentLoop {
     this.dryRun = deps.dryRun ?? false
     this.memoryLifecycle = new RuntimeMemoryLifecycle({
       config: deps.config,
+      agentConfigId: deps.configId,
       caseId: deps.caseId,
       orgId: deps.orgId,
       userId: deps.userId,
@@ -219,6 +220,7 @@ export class AgentLoop {
     })
     this.toolCompletionPhase = new ToolCompletionPhase({
       caseId: deps.caseId,
+      agentConfigId: deps.configId,
       orgId: deps.orgId,
       userId: deps.userId,
       chatId: deps.chatId,

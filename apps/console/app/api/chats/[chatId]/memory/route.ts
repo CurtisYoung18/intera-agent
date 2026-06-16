@@ -32,7 +32,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     const key = profileKey(userId ?? undefined, params.chatId)
     const profile = key
       ? await repo.raw.userProfile.findUnique({
-          where: { orgId_userId: { orgId: repo.orgId, userId: key } },
+          where: { orgId_agentConfigId_userId: { orgId: repo.orgId, agentConfigId: scope.agentConfigId, userId: key } },
         }).catch(() => null)
       : null
 
@@ -47,7 +47,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
         updatedAt: m.updatedAt,
       })),
       profile,
-      profileScope: profile ? 'legacy_org_profile' : null,
+      profileScope: profile ? 'agent_profile' : null,
     })
   },
 })

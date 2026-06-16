@@ -313,12 +313,13 @@ model ChatMemory {
 }
 
 // ============================================
-// User Profile — AI-maintained Markdown user portrait (per userId, cross-chat)
+// User Profile — AI-maintained Markdown user portrait (per agent + userId, cross-chat)
 // ============================================
 model UserProfile {
-  id     String @id @default(cuid())
-  userId String
-  orgId  String @default("default")
+  id            String @id @default(cuid())
+  userId        String
+  orgId         String @default("default")
+  agentConfigId String @default("") @map("agent_config_id")
 
   /// Free-form Markdown maintained by the compact engine and operators
   profile String @default("")
@@ -337,7 +338,8 @@ model UserProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([orgId, userId])
+  @@unique([orgId, agentConfigId, userId])
+  @@index([orgId, agentConfigId])
   @@index([userId])
   @@map("user_profiles")
 }

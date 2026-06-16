@@ -15,6 +15,7 @@ import { getActiveProcedureRun } from './session-store'
 
 export interface RuntimeMemoryLifecycleDeps {
   config: AgentConfigData
+  agentConfigId: string
   caseId: string
   orgId: string
   userId: string
@@ -134,16 +135,16 @@ export class RuntimeMemoryLifecycle {
       if (!summary) return
 
       const existing = await prisma.userProfile.findUnique({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
+        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: key } },
         select: { profile: true },
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', summary, maxTokens)
-      const stats = await recomputeProfileStats(prisma, key, this.deps.orgId)
+      const stats = await recomputeProfileStats(prisma, key, this.deps.orgId, this.deps.agentConfigId)
 
       await prisma.userProfile.upsert({
-        where: { orgId_userId: { orgId: this.deps.orgId, userId: key } },
-        create: { userId: key, orgId: this.deps.orgId, profile: merged, sections, ...stats },
+        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: key } },
+        create: { userId: key, orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, profile: merged, sections, ...stats },
         update: { profile: merged, sections, ...stats },
       })
     } catch (err) {

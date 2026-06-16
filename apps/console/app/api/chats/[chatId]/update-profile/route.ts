@@ -48,21 +48,20 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
 
     const combinedSummary = memories.map(m => m.summary!).join('\n\n---\n\n')
 
-    const orgId = sampleCase?.orgId ?? 'default'
     const agentCfg = await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 
     const existing = await repo.raw.userProfile.findUnique({
-      where: { orgId_userId: { orgId: repo.orgId, userId: key } },
+      where: { orgId_agentConfigId_userId: { orgId: repo.orgId, agentConfigId, userId: key } },
       select: { profile: true },
     }).catch(() => null)
     const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', combinedSummary, maxTokens)
-    const stats = await recomputeProfileStats(repo.raw, key, repo.orgId)
+    const stats = await recomputeProfileStats(repo.raw, key, repo.orgId, agentConfigId)
 
     await repo.raw.userProfile.upsert({
-      where: { orgId_userId: { orgId: repo.orgId, userId: key } },
-      create: { userId: key, orgId: repo.orgId, profile: merged, sections, ...stats },
+      where: { orgId_agentConfigId_userId: { orgId: repo.orgId, agentConfigId, userId: key } },
+      create: { userId: key, orgId: repo.orgId, agentConfigId, profile: merged, sections, ...stats },
       update: { profile: merged, sections, ...stats },
     })
 

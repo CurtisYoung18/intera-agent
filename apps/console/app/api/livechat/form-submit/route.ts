@@ -5,11 +5,13 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { getSession } from '@/lib/livechat/session-store'
-import { getLiveChatConfigForFamily, getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForFamily } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 
 const formSchema = z.object({
   chatId: z.string().min(1, 'chatId is required'),
+  orgId: z.string().min(1, 'orgId is required'),
+  agentConfigId: z.string().min(1, 'agentConfigId is required'),
   caseId: z.string().optional().default(''),
   answers: z.record(z.unknown()).refine(v => !Array.isArray(v), 'answers must be an object'),
 }).refine(data => JSON.stringify(data.answers).length <= 50_000, 'answers too large (max 50KB)')
@@ -27,19 +29,16 @@ export const POST = defineRoute<z.infer<typeof formSchema>>({
 
     const session = await getSession(input.chatId)
     if (!session) return NextResponse.json({ error: 'Session not found for chatId' }, { status: 404 })
-
-    let resolvedAgentConfigId = session.agentConfigId
-    let config = session.agentConfigId
-      ? await getLiveChatConfigForFamily(session.agentConfigId)
-      : null
-
-    if (!config?.enabled) {
-      const fallback = await getLiveChatConfigForOrg(session.orgId)
-      resolvedAgentConfigId = fallback?.agentConfigId
-      config = fallback?.config ?? null
+    if (session.orgId !== input.orgId || session.agentConfigId !== input.agentConfigId) {
+      return NextResponse.json({ error: 'Session scope mismatch' }, { status: 403 })
     }
 
-    if (!config?.enabled) return NextResponse.json({ error: 'LiveChat channel not configured' }, { status: 404 })
+    const resolvedAgentConfigId = session.agentConfigId
+    const config = await getLiveChatConfigForFamily(session.agentConfigId)
+
+    if (!config?.enabled) {
+      return NextResponse.json({ error: 'LiveChat channel not configured' }, { status: 404 })
+    }
 
     handleIncomingEvent(
       input.chatId, session.orgId, session.userId,

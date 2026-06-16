@@ -23,6 +23,7 @@ export async function recomputeProfileStats(
   prisma: PrismaClient,
   profileKeyStr: string,
   orgId?: string,
+  agentConfigId?: string,
 ): Promise<ProfileStats> {
   const empty: ProfileStats = {
     totalChats: 0, totalCases: 0, resolvedCases: 0, escalatedCases: 0,
@@ -36,9 +37,22 @@ export async function recomputeProfileStats(
 
     if (!isUser && !isChat) return empty
 
+    const agentScopedCaseIds = agentConfigId
+      ? (await (prisma as any).procedureRun.findMany({
+          where: {
+            agentConfigId,
+            ...(orgId ? { orgId } : {}),
+          },
+          select: { caseId: true },
+        })).map((run: { caseId: string }) => run.caseId)
+      : null
+
+    if (agentScopedCaseIds && agentScopedCaseIds.length === 0) return empty
+
     const where = {
       ...(isUser ? { userId: rawId } : { chatId: rawId }),
       ...(orgId ? { orgId } : {}),
+      ...(agentScopedCaseIds ? { id: { in: agentScopedCaseIds } } : {}),
     }
 
     const cases = await (prisma as any).case.findMany({

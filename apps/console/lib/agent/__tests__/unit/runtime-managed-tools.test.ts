@@ -44,9 +44,10 @@ describe('runtime-managed-tools', () => {
       toolUse: { id: 'toolu_memory', name: 'read_chat_memory', input: {} },
     }
 
-    await new RuntimeManagedToolResolver({
-      caseId: 'case-1',
-      orgId: 'org-1',
+	    await new RuntimeManagedToolResolver({
+	      caseId: 'case-1',
+	      agentConfigId: 'agent-1',
+	      orgId: 'org-1',
       userId: 'user-1',
       chatId: 'chat-1',
       config: makeDefaultConfig(),

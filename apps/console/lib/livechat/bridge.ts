@@ -364,7 +364,11 @@ export async function handleIncomingEvent(
     credentials: { botAccessToken: config.botAccessToken, licenseId: config.licenseId },
   }
   const renderCtx: RenderContext = {
-    caseId: session.caseId, orgId, sessionId: chatId, binding,
+    caseId: session.caseId,
+    orgId,
+    agentConfigId: resolvedAgentConfigId ?? '',
+    sessionId: chatId,
+    binding,
   }
 
   let streamTruncated = true
