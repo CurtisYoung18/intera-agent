@@ -1,21 +1,31 @@
 // GET /api/chats/[chatId]/memory — ChatMemory + UserProfile for this chat
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
+import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { profileKey } from '@/lib/agent/identity'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
 
-export const GET = defineRoute<void, { chatId: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const scope = await resolveAgentCaseScope(repo, selectedAgentFromInput(input))
     const chatCases = await repo.raw.case.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { userId: true },
     })
     const userId = chatCases[0]?.userId
 
     const memories = await repo.raw.chatMemory.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...childCaseIdFilterForScope(scope) },
       orderBy: { updatedAt: 'desc' },
     })
 

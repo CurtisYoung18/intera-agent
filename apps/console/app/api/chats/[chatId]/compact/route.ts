@@ -1,10 +1,12 @@
 // POST /api/chats/[chatId]/compact — Manually trigger chat memory compaction
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
+import { z } from 'zod'
 import { defineRoute, RouteError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { compactConversation } from '@/lib/agent/compact'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
 
 function parseMemoryStrategy(raw: unknown) {
   try {
@@ -14,12 +16,21 @@ function parseMemoryStrategy(raw: unknown) {
   return null
 }
 
-export const POST = defineRoute<void, { chatId: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'POST',
   requireRole: ['admin', 'owner'],
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const agentConfigId = selectedAgentFromInput(input)
+    const scope = await resolveAgentCaseScope(repo, agentConfigId)
     const cases = await repo.raw.case.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { id: true, userId: true, orgId: true },
     })
     if (cases.length === 0) throw new RouteError('not_found', 'No cases found for this chat')
@@ -27,14 +38,16 @@ export const POST = defineRoute<void, { chatId: string }>({
     const caseIds = cases.map(c => c.id)
 
     const messages = await repo.raw.message.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...childCaseIdFilterForScope(scope) },
       orderBy: { createdAt: 'asc' },
       take: 100,
     })
     if (messages.length === 0) throw new RouteError('validation', 'No messages to compact')
 
     const orgId = cases[0]?.orgId ?? 'default'
-    const agentCfg = await repo.raw.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
+    const agentCfg = agentConfigId
+      ? await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
+      : await repo.raw.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
 
     const apiMessages = messages
@@ -55,7 +68,13 @@ export const POST = defineRoute<void, { chatId: string }>({
 
     const summary = result.summary
     const activeRuns = await repo.raw.procedureRun.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId, caseId: { in: caseIds }, status: { in: ['active', 'paused'] } },
+      where: {
+        orgId: repo.orgId,
+        chatId: params.chatId,
+        caseId: { in: caseIds },
+        ...(agentConfigId ? { agentConfigId } : {}),
+        status: { in: ['active', 'paused'] },
+      },
       orderBy: { updatedAt: 'desc' },
       select: { id: true, caseId: true },
     })

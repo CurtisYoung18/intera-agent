@@ -1,12 +1,14 @@
 // POST /api/chats/[chatId]/update-profile — Merge chat summaries into User Profile
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
+import { z } from 'zod'
 import { defineRoute, RouteError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 import { profileKey } from '@/lib/agent/identity'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
 
 function parseMemoryStrategy(raw: unknown) {
   try {
@@ -16,12 +18,21 @@ function parseMemoryStrategy(raw: unknown) {
   return null
 }
 
-export const POST = defineRoute<void, { chatId: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'POST',
   requireRole: ['admin', 'owner'],
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const agentConfigId = selectedAgentFromInput(input)
+    const scope = await resolveAgentCaseScope(repo, agentConfigId)
     const sampleCase = await repo.raw.case.findFirst({
-      where: { orgId: repo.orgId, chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { userId: true, orgId: true },
     })
 
@@ -29,7 +40,7 @@ export const POST = defineRoute<void, { chatId: string }>({
     if (!key) throw new RouteError('validation', 'No stable user identity for this chat — cannot update User Profile.', undefined, 422)
 
     const memories = await repo.raw.chatMemory.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId, summary: { not: null } },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...childCaseIdFilterForScope(scope), summary: { not: null } },
       select: { summary: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
     })
@@ -38,7 +49,9 @@ export const POST = defineRoute<void, { chatId: string }>({
     const combinedSummary = memories.map(m => m.summary!).join('\n\n---\n\n')
 
     const orgId = sampleCase?.orgId ?? 'default'
-    const agentCfg = await repo.raw.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
+    const agentCfg = agentConfigId
+      ? await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
+      : await repo.raw.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 

@@ -20,6 +20,7 @@ import { ConsoleStatusPill } from '@/components/ui/console-chrome'
 import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
+import { useAgentContext } from '@/lib/agent/agent-context'
 import { summarizeConversationSourceTruth } from '@/lib/operate/runtime-truth'
 import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
 
@@ -55,10 +56,12 @@ function fmtRelative(iso: string, locale: 'en' | 'zh'): string {
 
 function ConversationRow({
   session,
+  agentId,
   onDelete,
   deleting,
 }: {
   session: ChatSession
+  agentId: string | null
   onDelete: (chatId: string) => void
   deleting: boolean
 }) {
@@ -70,11 +73,14 @@ function ConversationRow({
     session.cases.map((caseItem) => ({ source: caseItem.source, userId: session.userId })),
   )
   const displayUserLabel = sourceTruth.kind === 'synthetic_review' ? (isZh ? 'Playground 导出' : 'Playground export') : session.userId
+  const href = agentId
+    ? `/operate/conversations/${encodeURIComponent(session.chatId)}?agentId=${encodeURIComponent(agentId)}`
+    : `/operate/conversations/${encodeURIComponent(session.chatId)}`
 
   return (
     <div className="group relative min-w-0">
       <Link
-        href={`/operate/conversations/${encodeURIComponent(session.chatId)}`}
+        href={href}
         className="block rounded-[24px] border border-black/[0.06] bg-white/[0.72] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl transition-all hover:-translate-y-[1px] hover:border-indigo/16 hover:bg-white/82"
       >
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
@@ -189,6 +195,7 @@ function MetricCard({ label, value, tone }: { label: string; value: string; tone
 export default function ConversationsWorkspace() {
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
+  const { selectedAgentId, loading: agentLoading, loadError: agentLoadError } = useAgentContext()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -197,9 +204,18 @@ export default function ConversationsWorkspace() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = useCallback(async (showLoading = false) => {
+    if (agentLoading) return
+    if (!selectedAgentId) {
+      setSessions([])
+      setTotal(0)
+      setLoadError(agentLoadError || (isZh ? '没有可用 Agent' : 'No agent available'))
+      setLoading(false)
+      return
+    }
     if (showLoading) setLoading(true)
     try {
-      const result = await apiClient<ChatsListResponse>('/api/chats?limit=200')
+      const params = new URLSearchParams({ limit: '200', agentId: selectedAgentId })
+      const result = await apiClient<ChatsListResponse>(`/api/chats?${params.toString()}`)
       setSessions(result.data.sessions)
       setTotal(result.data.total)
       setLoadError(null)
@@ -212,7 +228,7 @@ export default function ConversationsWorkspace() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [isZh])
+  }, [agentLoadError, agentLoading, isZh, selectedAgentId])
 
   useEffect(() => {
     load(true)
@@ -225,7 +241,8 @@ export default function ConversationsWorkspace() {
     if (!confirm(isZh ? `删除会话 ${label} 以及所有关联的 ProcedureRun？\n这个操作无法撤销。` : `Delete chat session ${label} and all linked ProcedureRuns?\nThis cannot be undone.`)) return
     setDeletingId(chatId)
     try {
-      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(chatId)}`, { method: 'DELETE' })
+      const query = selectedAgentId ? `?agentId=${encodeURIComponent(selectedAgentId)}` : ''
+      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(chatId)}${query}`, { method: 'DELETE' })
       setSessions((prev) => prev.filter((item) => item.chatId !== chatId))
       setTotal((prev) => prev - 1)
     } catch {
@@ -233,7 +250,7 @@ export default function ConversationsWorkspace() {
     } finally {
       setDeletingId(null)
     }
-  }, [isZh])
+  }, [isZh, selectedAgentId])
 
   const filtered = sessions.filter((session) => {
     if (!search) return true
@@ -298,6 +315,7 @@ export default function ConversationsWorkspace() {
                   exportedAt: new Date().toISOString(),
                   filter: search || null,
                   total,
+                  agentId: selectedAgentId,
                   shown: filtered.length,
                   sessions: filtered,
                 })}
@@ -349,6 +367,7 @@ export default function ConversationsWorkspace() {
             <ConversationRow
               key={session.chatId}
               session={session}
+              agentId={selectedAgentId}
               onDelete={handleDelete}
               deleting={deletingId === session.chatId}
             />

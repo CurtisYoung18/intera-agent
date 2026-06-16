@@ -14,6 +14,11 @@ import {
 
 const h = vi.hoisted(() => {
   const mockGetSession = vi.fn()
+  const agentConfigs: Record<string, { id: string; orgId: string }> = {
+    'agent-a': { id: 'agent-a', orgId: 'default' },
+    'agent-b': { id: 'agent-b', orgId: 'default' },
+    'foreign-agent': { id: 'foreign-agent', orgId: 'org-b' },
+  }
   const cases = [
     {
       id: 'case-new',
@@ -59,22 +64,42 @@ const h = vi.hoisted(() => {
     },
   ]
   const runs = [
-    { id: 'run-new', caseId: 'case-new', orgId: 'default', updatedAt: new Date('2026-06-16T00:03:00.000Z') },
-    { id: 'run-middle', caseId: 'case-middle', orgId: 'default', updatedAt: new Date('2026-06-16T00:02:00.000Z') },
+    { id: 'run-new', caseId: 'case-new', orgId: 'default', agentConfigId: 'agent-a', updatedAt: new Date('2026-06-16T00:03:00.000Z') },
+    { id: 'run-middle', caseId: 'case-middle', orgId: 'default', agentConfigId: 'agent-b', updatedAt: new Date('2026-06-16T00:02:00.000Z') },
   ]
-  return { mockGetSession, cases, runs }
+  return { mockGetSession, agentConfigs, cases, runs }
 })
+
+function matchesWhere(row: any, where: Record<string, any> = {}) {
+  if (where.orgId && row.orgId !== where.orgId) return false
+  if (where.agentConfigId && row.agentConfigId !== where.agentConfigId) return false
+  if (where.id?.in && !where.id.in.includes(row.id)) return false
+  if (where.caseId?.in && !where.caseId.in.includes(row.caseId)) return false
+  return true
+}
 
 vi.mock('@/lib/db/repo-for-org', () => ({
   repoForOrg(orgId: string) {
     return {
       orgId,
+      agentConfig: {
+        findUnique: vi.fn(async (args: any) => {
+          const config = h.agentConfigs[args?.where?.id]
+          if (!config || config.orgId !== orgId) return null
+          return args?.select ? { id: config.id } : config
+        }),
+      },
       case: {
-        findMany: vi.fn(async () => h.cases.filter((row) => row.orgId === orgId)),
+        findMany: vi.fn(async (args: any) => h.cases
+          .filter((row) => matchesWhere(row, { ...(args?.where ?? {}), orgId }))
+          .sort((a, b) => b.updatedAt.toISOString().localeCompare(a.updatedAt.toISOString()))),
       },
       raw: {
         procedureRun: {
-          findMany: vi.fn(async () => h.runs),
+          findMany: vi.fn(async (args: any) => h.runs
+            .filter((row) => matchesWhere(row, args?.where ?? {}))
+            .sort((a, b) => b.updatedAt.toISOString().localeCompare(a.updatedAt.toISOString()))
+            .map((row) => ({ id: row.id, caseId: row.caseId }))),
         },
       },
     } as any
@@ -187,6 +212,46 @@ describe('/api/chats route', () => {
       id: 'run-middle',
       runId: 'run-middle',
     })
+  })
+
+  it('filters conversations to the selected agent', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions).toHaveLength(1)
+    expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'chat-new',
+      userId: 'user-new',
+    })
+    expect(body.data.sessions[0].cases[0]).toMatchObject({
+      id: 'run-new',
+      runId: 'run-new',
+    })
+  })
+
+  it('returns a different conversation set when the selected agent changes', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-b'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions).toHaveLength(1)
+    expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'chat-middle',
+      userId: 'user-middle',
+      hasHumanTask: true,
+    })
+  })
+
+  it('rejects an agent outside the active org', async () => {
+    const res = await GET(makeRequest('?agentId=foreign-agent'))
+    const body = await res.json()
+
+    expect(res.status).toBe(404)
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('not_found')
   })
 })
 

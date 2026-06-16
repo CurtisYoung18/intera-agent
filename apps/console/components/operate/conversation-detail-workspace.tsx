@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -21,6 +21,7 @@ import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { ConsoleBackButton } from '@/components/ui/console-chrome'
 import { apiClient } from '@/lib/api/client'
+import { useAgentContext } from '@/lib/agent/agent-context'
 import { computeConversationMetrics } from '@/components/operate/conversation-metrics'
 import {
   getRuntimeSourceTruth,
@@ -115,6 +116,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   const decodedChatId = decodeURIComponent(chatId)
   const router = useRouter()
   const { t, locale } = useConsoleLocale()
+  const { selectedAgentId, loading: agentLoading } = useAgentContext()
   const isZh = locale === 'zh'
 
   const [session, setSession] = useState<ChatSession | null>(null)
@@ -134,11 +136,15 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   const [deleting, setDeleting] = useState(false)
 
   const activeChatId = resolvedChatId || decodedChatId
+  const withAgent = useCallback((path: string) => {
+    if (!selectedAgentId) return path
+    return `${path}${path.includes('?') ? '&' : '?'}agentId=${encodeURIComponent(selectedAgentId)}`
+  }, [selectedAgentId])
 
   const loadMemory = async () => {
     setMemoryLoading(true)
     try {
-      const r = await apiClient(`/api/chats/${encodeURIComponent(activeChatId)}/memory`)
+      const r = await apiClient(withAgent(`/api/chats/${encodeURIComponent(activeChatId)}/memory`))
       setMemoryData(r.data)
     } catch { /* ignore */ }
     finally { setMemoryLoading(false) }
@@ -152,7 +158,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     setCompacting(true)
     setCompactResult(null)
     try {
-      const r = await apiClient(`/api/chats/${encodeURIComponent(activeChatId)}/compact`, { method: 'POST' })
+      const r = await apiClient(withAgent(`/api/chats/${encodeURIComponent(activeChatId)}/compact`), { method: 'POST' })
       setCompactResult(r.data)
       loadMemory()
     } catch { setCompactResult({ error: 'Compact failed' }) }
@@ -162,7 +168,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     setUpdatingProfile(true)
     setProfileResult(null)
     try {
-      const r = await apiClient(`/api/chats/${encodeURIComponent(activeChatId)}/update-profile`, { method: 'POST' })
+      const r = await apiClient(withAgent(`/api/chats/${encodeURIComponent(activeChatId)}/update-profile`), { method: 'POST' })
       setProfileResult(r.data)
     } catch { setProfileResult({ error: 'Update failed' }) }
     finally { setUpdatingProfile(false) }
@@ -208,23 +214,35 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
   useEffect(() => {
     async function load() {
+      if (agentLoading) return
+      if (!selectedAgentId) {
+        setSession(null)
+        setMessages([])
+        setTraces([])
+        setLoading(false)
+        return
+      }
       setLoading(true)
+      setSession(null)
+      setMessages([])
+      setTraces([])
+      setMemoryData(null)
       try {
         const detail = await apiClient<{
           session: ChatSession
           requestedChatId: string
           resolvedChatId: string
           externalChatId?: string | null
-        }>(`/api/chats/${encodeURIComponent(decodedChatId)}`)
+        }>(withAgent(`/api/chats/${encodeURIComponent(decodedChatId)}`))
         const found = detail.data.session
         setSession(found)
         setResolvedChatId(detail.data.resolvedChatId || found.chatId)
 
         const canonicalChatId = detail.data.resolvedChatId || found.chatId
         const [tracesResult, msgResult] = await Promise.all([
-          apiClient<{ traces: TraceItem[] }>(`/api/chats/${encodeURIComponent(canonicalChatId)}/traces?limit=200`),
+          apiClient<{ traces: TraceItem[] }>(withAgent(`/api/chats/${encodeURIComponent(canonicalChatId)}/traces?limit=200`)),
           apiClient<{ messages: MsgItem[] }>(
-            `/api/chats/${encodeURIComponent(canonicalChatId)}/messages?limit=500`,
+            withAgent(`/api/chats/${encodeURIComponent(canonicalChatId)}/messages?limit=500`),
           ),
         ])
         setTraces(tracesResult.data.traces ?? [])
@@ -234,7 +252,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
       finally { setLoading(false) }
     }
     load()
-  }, [decodedChatId])
+  }, [agentLoading, decodedChatId, selectedAgentId, withAgent])
 
   type Row = { type: 'msg'; msg: MsgItem } | { type: 'case_banner'; c: CaseSummary }
   const rows: Row[] = []
@@ -254,7 +272,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     if (!confirm(isZh ? `删除会话 ${decodedChatId.slice(0, 16)}… 以及关联的 ${session.cases.length} 个 ProcedureRun？` : `Delete chat ${decodedChatId.slice(0, 16)}… and all ${session.cases.length} linked ProcedureRun(s)?`)) return
     setDeleting(true)
     try {
-      await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(activeChatId)}`, { method: 'DELETE' })
+      await apiClient<ChatDeleteResponse>(withAgent(`/api/chats/${encodeURIComponent(activeChatId)}`), { method: 'DELETE' })
       router.push('/operate/conversations')
     } catch { alert(isZh ? '删除失败' : 'Delete failed'); setDeleting(false) }
   }

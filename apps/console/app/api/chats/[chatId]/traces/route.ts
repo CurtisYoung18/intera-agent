@@ -4,11 +4,14 @@
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { caseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
 
 const querySchema = z.object({
   limit: z.string().optional().default('200'),
   offset: z.string().optional().default('0'),
   actionType: z.string().optional(),
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
 })
 
 export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
@@ -18,19 +21,21 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
   async handler({ input, params, repo }) {
     const limit = Math.min(parseInt(input.limit), 500)
     const offset = parseInt(input.offset)
+    const scope = await resolveAgentCaseScope(repo, selectedAgentFromInput(input))
 
     const linkedCases = await repo.raw.case.findMany({
-      where: { orgId: repo.orgId, chatId: params.chatId },
+      where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { id: true },
     })
     const caseIds = linkedCases.map(c => c.id)
+    const traceTargets = [
+      ...(scope ? [] : [{ chatId: params.chatId }]),
+      ...(caseIds.length > 0 ? [{ caseId: { in: caseIds } }] : []),
+    ]
 
     const where: Record<string, unknown> = {
       orgId: repo.orgId,
-      OR: [
-        { chatId: params.chatId },
-        ...(caseIds.length > 0 ? [{ caseId: { in: caseIds } }] : []),
-      ],
+      OR: traceTargets.length > 0 ? traceTargets : [{ caseId: { in: [] } }],
     }
     if (input.actionType) where.actionType = input.actionType
 

@@ -1,11 +1,18 @@
 // DELETE /api/chats/[chatId] — Removes every case in a chat session.
 // Migrated to defineRoute + repoForOrg (Wave 1 G1/G2/G3).
 
+import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { resolveChatAlias } from '@/lib/operate/chat-alias'
 import type { RepoForOrg } from '@/lib/db/repo-for-org'
 import type { ChatSession } from '@intera/shared/contracts/chats'
+import { caseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../_agent-scope'
+
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
 
 type ChatDetailResponse = {
   session: ChatSession & { externalChatId?: string }
@@ -14,12 +21,13 @@ type ChatDetailResponse = {
   externalChatId?: string
 }
 
-async function buildChatSession(repo: RepoForOrg, requestedChatId: string): Promise<ChatDetailResponse> {
+async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agentConfigId?: string): Promise<ChatDetailResponse> {
   const alias = await resolveChatAlias(repo, requestedChatId)
   const chatId = alias.resolvedChatId
+  const scope = await resolveAgentCaseScope(repo, agentConfigId)
 
   const cases = await repo.case.findMany({
-    where: { chatId },
+    where: { chatId, ...caseIdFilterForScope(scope) },
     orderBy: { updatedAt: 'desc' as const },
     include: {
       humanTasks: { select: { id: true }, take: 1 },
@@ -31,11 +39,14 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string): Prom
     throw new NotFoundError('Chat not found')
   }
 
-  const activeRuns = await repo.raw.procedureRun.findMany({
-    where: { orgId: repo.orgId, caseId: { in: cases.map((c) => c.id) } },
-    orderBy: { updatedAt: 'desc' as const },
-    select: { id: true, caseId: true },
-  })
+  const caseIds = new Set(cases.map((c) => c.id))
+  const activeRuns = scope
+    ? scope.runs.filter((run) => caseIds.has(run.caseId))
+    : await repo.raw.procedureRun.findMany({
+      where: { orgId: repo.orgId, caseId: { in: cases.map((c) => c.id) } },
+      orderBy: { updatedAt: 'desc' as const },
+      select: { id: true, caseId: true },
+    })
   const runByCase = new Map<string, string>()
   for (const run of activeRuns) {
     if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
@@ -72,23 +83,28 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string): Prom
   }
 }
 
-export const GET = defineRoute<void, { chatId: string }>({
+export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
     const requestedChatId = decodeURIComponent(params.chatId)
-    return apiOk(await buildChatSession(repo, requestedChatId))
+    return apiOk(await buildChatSession(repo, requestedChatId, selectedAgentFromInput(input)))
   },
 })
 
-export const DELETE = defineRoute<void, { chatId: string }>({
+export const DELETE = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'DELETE',
-  async handler({ params, repo, audit }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo, audit }) {
     const decoded = decodeURIComponent(params.chatId)
     const alias = await resolveChatAlias(repo, decoded)
     const chatId = alias.resolvedChatId
+    const scope = await resolveAgentCaseScope(repo, selectedAgentFromInput(input))
 
     const cases = await repo.case.findMany({
-      where: { chatId },
+      where: { chatId, ...caseIdFilterForScope(scope) },
       select: { id: true },
     })
 
@@ -99,10 +115,10 @@ export const DELETE = defineRoute<void, { chatId: string }>({
     }
 
     // Clean up dependents via raw prisma (belt-and-suspenders with onDelete: Cascade)
-    await repo.raw.humanTask.deleteMany({ where: { orgId: repo.orgId, chatId } })
-    await repo.raw.actionTrace.deleteMany({ where: { orgId: repo.orgId, chatId } })
-    await repo.raw.message.deleteMany({ where: { orgId: repo.orgId, chatId } })
-    await repo.raw.chatMemory.deleteMany({ where: { orgId: repo.orgId, chatId } })
+    await repo.raw.humanTask.deleteMany({ where: { orgId: repo.orgId, chatId, caseId: { in: caseIds } } })
+    await repo.raw.actionTrace.deleteMany({ where: { orgId: repo.orgId, chatId, caseId: { in: caseIds } } })
+    await repo.raw.message.deleteMany({ where: { orgId: repo.orgId, chatId, caseId: { in: caseIds } } })
+    await repo.raw.chatMemory.deleteMany({ where: { orgId: repo.orgId, chatId, caseId: { in: caseIds } } })
     await repo.case.deleteMany({ where: { id: { in: caseIds } } })
 
     await audit({

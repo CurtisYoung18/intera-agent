@@ -8,6 +8,8 @@ import { z } from 'zod'
 export const ChatsListInput = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
 })
 
 export type ChatsListInput = z.infer<typeof ChatsListInput>
