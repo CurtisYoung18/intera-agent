@@ -29,6 +29,7 @@ import VersionContextBar, { useSelectedAgentId } from '@/components/admin/versio
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import type { TranslateFn } from '@/lib/i18n/types'
+import { NEW_PROCEDURE_SENTINEL, toStableProcedureType } from '../_shared'
 import {
   parseProcedure,
   PROCEDURE_CONDITION_KINDS,
@@ -426,11 +427,34 @@ function createEmptyDraft(t: TranslateFn): ProcedureEditorDraft {
     requiredFacts: [],
     escalateOn: [],
     autoCloseConditions: [],
-    whenToUse: '',
+    whenToUse: t('caseTypes.defaults.whenToUse'),
     overview: '',
     knowledgeGuidance: '',
     handoffGuidance: '',
-    steps: [buildStepDraft(t, 0)],
+    steps: [
+      {
+        id: 'step_1',
+        title: t('caseTypes.defaults.stepTitle'),
+        guidance: t('caseTypes.defaults.stepGuidance'),
+        skipGuidance: '',
+        completionGuidance: '',
+        actions: [
+          {
+            id: 'step_1_ask',
+            kind: 'ask',
+            label: t('caseTypes.defaults.actionLabel'),
+            guidance: '',
+            required: true,
+            fields: [],
+            suggestedSources: [],
+            toolName: '',
+            queue: 'general',
+            endStatus: 'completed',
+          },
+        ],
+        branches: [],
+      },
+    ],
   }
 }
 
@@ -995,6 +1019,7 @@ export default function BuildProcedureDetailPage() {
   const agentConfigId = useSelectedAgentId()
   const { orgId } = useSession()
   const procedureName = params.name
+  const isNewDraft = procedureName === NEW_PROCEDURE_SENTINEL
 
   const [item, setItem] = useState<CaseTypeItem | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1018,14 +1043,22 @@ export default function BuildProcedureDetailPage() {
       return
     }
     try {
-      const [caseTypeResult, hooksResult] = await Promise.all([
-        apiClient<{ caseType: CaseTypeItem }>(
-          `/api/admin/case-types/${encodeURIComponent(procedureName)}?agentConfigId=${encodeURIComponent(agentConfigId)}`,
-        ),
-        apiClient<{ hooks: ProcedureHook[] }>(
+      const hooksResult = await apiClient<{ hooks: ProcedureHook[] }>(
           `/api/admin/hooks?agentConfigId=${encodeURIComponent(agentConfigId)}`,
-        ).catch(() => ({ data: { hooks: [] } })),
-      ])
+        ).catch(() => ({ data: { hooks: [] } }))
+
+      setHooks(hooksResult.data.hooks || [])
+      if (isNewDraft) {
+        setItem(null)
+        setDraft(createEmptyDraft(t))
+        setError(null)
+        setSaveError(null)
+        return
+      }
+
+      const caseTypeResult = await apiClient<{ caseType: CaseTypeItem }>(
+        `/api/admin/case-types/${encodeURIComponent(procedureName)}?agentConfigId=${encodeURIComponent(agentConfigId)}`,
+      )
       setItem(caseTypeResult.data.caseType)
       setDraft(toDraft(t, caseTypeResult.data.caseType))
       setHooks(hooksResult.data.hooks || [])
@@ -1036,7 +1069,7 @@ export default function BuildProcedureDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [agentConfigId, procedureName, t])
+  }, [agentConfigId, isNewDraft, procedureName, t])
 
   useEffect(() => {
     setLoading(true)
@@ -1074,8 +1107,8 @@ export default function BuildProcedureDetailPage() {
   }, [hooks, isHookAlreadyBoundToStep])
 
   const dirty = useMemo(() => {
-    if (!item) return false
-    return JSON.stringify(draft) !== JSON.stringify(toDraft(t, item))
+    const baseline = item ? toDraft(t, item) : createEmptyDraft(t)
+    return JSON.stringify(draft) !== JSON.stringify(baseline)
   }, [draft, item, t])
 
   const updateStep = useCallback((stepId: string, patch: Partial<StepDraft>) => {
@@ -1229,21 +1262,51 @@ export default function BuildProcedureDetailPage() {
   }, [])
 
   const save = useCallback(async () => {
-    if (!agentConfigId || !item) return
+    if (!agentConfigId) return
     if (!draft.displayName.trim()) {
       setSaveSuccess(null)
       setSaveError(t('procedureEditor.error.displayNameRequired'))
+      return
+    }
+    const normalizedType = draft.type.trim() || toStableProcedureType(draft.displayName, '')
+    if (!normalizedType) {
+      setSaveSuccess(null)
+      setSaveError('Enter a Procedure key before saving.')
       return
     }
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(null)
     try {
-      await apiClient(`/api/admin/case-types/${encodeURIComponent(item.type)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
+      if (isNewDraft) {
+        const created = await apiClient<{ caseType: CaseTypeItem }>('/api/admin/case-types', {
+          method: 'POST',
+          body: {
+            agentConfigId,
+            type: normalizedType,
+            displayName: draft.displayName,
+            description: draft.description,
+            icon: draft.icon,
+            defaultGoal: draft.defaultGoal,
+            enabled: draft.enabled,
+            maxAutoTurns: draft.maxAutoTurns,
+            requiredFacts: draft.requiredFacts,
+            escalateOn: draft.escalateOn,
+            autoCloseConditions: draft.autoCloseConditions,
+            procedure,
+          },
+        })
+        await bustConfigCache(orgId).catch(() => {})
+        setSaveSuccess(t('common.saved'))
+        router.replace(`/build/components/procedures/${encodeURIComponent(created.data.caseType.type)}`)
+        return
+      }
+
+      await apiClient(`/api/admin/case-types/${encodeURIComponent(item!.type)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
         method: 'PUT',
         body: {
           agentConfigId,
-          type: draft.type,
+          type: normalizedType,
           displayName: draft.displayName,
           description: draft.description,
           icon: draft.icon,
@@ -1258,8 +1321,8 @@ export default function BuildProcedureDetailPage() {
       })
       await bustConfigCache(orgId).catch(() => {})
       setSaveSuccess(t('common.saved'))
-      if (draft.type !== item.type) {
-        router.replace(`/build/components/procedures/${encodeURIComponent(draft.type)}`)
+      if (normalizedType !== item!.type) {
+        router.replace(`/build/components/procedures/${encodeURIComponent(normalizedType)}`)
         return
       }
       await load()
@@ -1268,7 +1331,7 @@ export default function BuildProcedureDetailPage() {
     } finally {
       setSaving(false)
     }
-  }, [agentConfigId, draft, item, load, orgId, procedure, router, t])
+  }, [agentConfigId, draft, isNewDraft, item, load, orgId, procedure, router, t])
 
   const deleteProcedure = useCallback(async () => {
     if (!agentConfigId || !item) return
@@ -1437,15 +1500,17 @@ export default function BuildProcedureDetailPage() {
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   {t('common.save')}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={saving}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/[0.04] text-[var(--fog)] transition hover:bg-vermillion/[0.08] hover:text-vermillion disabled:opacity-50"
-                  aria-label={t('common.delete')}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                {!isNewDraft ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    disabled={saving}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/[0.04] text-[var(--fog)] transition hover:bg-vermillion/[0.08] hover:text-vermillion disabled:opacity-50"
+                    aria-label={t('common.delete')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
                 <Link
                   href="/build/components/procedures"
                   className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-black/[0.04] text-[var(--mist)] transition hover:bg-black/[0.07]"
@@ -1854,7 +1919,9 @@ export default function BuildProcedureDetailPage() {
                                 </Link>
                               </div>
                               <div className="flex flex-wrap gap-2">
-                                {bindings.length === 0 ? (
+                                {isNewDraft ? (
+                                  <span className="text-[11px] text-[var(--fog)]">Save this Procedure before binding Hooks.</span>
+                                ) : bindings.length === 0 ? (
                                   <span className="text-[11px] text-[var(--fog)]">{t('procedureEditor.section.noHookBindings')}</span>
                                 ) : (
                                   bindings.map((binding) => (
@@ -1895,7 +1962,7 @@ export default function BuildProcedureDetailPage() {
                                     <button
                                       type="button"
                                       onClick={() => bindExistingHookToStep(step.id)}
-                                      disabled={!hookStepDrafts[step.id] || busy}
+                                      disabled={isNewDraft || !hookStepDrafts[step.id] || busy}
                                       className="rounded-xl border border-black/[0.06] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--mist)] transition hover:text-indigo disabled:opacity-40"
                                     >
                                       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('procedureEditor.actions.bind')}
@@ -1914,7 +1981,7 @@ export default function BuildProcedureDetailPage() {
                                     <button
                                       type="button"
                                       onClick={() => createAndBindHookToStep(step.id)}
-                                      disabled={!newHookDrafts[step.id] || busy}
+                                      disabled={isNewDraft || !newHookDrafts[step.id] || busy}
                                       className="rounded-xl border border-indigo/18 bg-indigo/[0.08] px-3 py-2 text-[12px] font-semibold text-indigo transition hover:bg-indigo/[0.14] disabled:opacity-40"
                                     >
                                       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t('procedureEditor.actions.create')}
@@ -1939,7 +2006,7 @@ export default function BuildProcedureDetailPage() {
       </PageLoader>
 
       <ConfirmDialog
-        open={confirmDelete}
+        open={!isNewDraft && confirmDelete}
         title={t('procedureEditor.confirm.deleteTitle')}
         message={draft.displayName || draft.type
           ? t('procedureEditor.confirm.deleteMessageNamed', { name: draft.displayName || draft.type })

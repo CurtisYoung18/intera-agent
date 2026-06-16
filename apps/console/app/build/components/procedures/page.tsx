@@ -12,41 +12,10 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import { parseProcedure, type CaseTypeItem } from '@intera/shared/contracts/case-types'
-
-function nextProcedureTypeName() {
-  return `new_procedure_${Date.now()}`
-}
+import { NEW_PROCEDURE_SENTINEL } from './_shared'
 
 function procedureStepCount(item: CaseTypeItem) {
   return parseProcedure(item.procedure ?? null)?.steps.length ?? 0
-}
-
-function buildNewProcedure(t: ReturnType<typeof useConsoleLocale>['t']) {
-  return {
-    version: 'v2' as const,
-    whenToUse: t('caseTypes.defaults.whenToUse'),
-    overview: '',
-    knowledgeGuidance: '',
-    handoffGuidance: '',
-    steps: [
-      {
-        id: 'step_1',
-        title: t('caseTypes.defaults.stepTitle'),
-        guidance: t('caseTypes.defaults.stepGuidance'),
-        actions: [
-          {
-            id: 'step_1_ask',
-            kind: 'ask' as const,
-            label: t('caseTypes.defaults.actionLabel'),
-            guidance: '',
-            required: true,
-            fields: [],
-          },
-        ],
-        branches: [],
-      },
-    ],
-  }
 }
 
 export default function BuildProceduresPage() {
@@ -104,34 +73,8 @@ export default function BuildProceduresPage() {
 
   const handleCreate = useCallback(async () => {
     if (!agentConfigId) return
-    const type = nextProcedureTypeName()
-    setSavingName(type)
-    try {
-      const result = await apiClient<{ caseType: CaseTypeItem }>('/api/admin/case-types', {
-        method: 'POST',
-        body: {
-          agentConfigId,
-          type,
-          displayName: t('caseTypes.defaults.displayName'),
-          description: '',
-          icon: '\u{1F4CB}',
-          requiredFacts: [],
-          defaultGoal: '',
-          escalateOn: [],
-          autoCloseConditions: [],
-          enabled: true,
-          procedure: buildNewProcedure(t),
-          maxAutoTurns: 10,
-        },
-      })
-      await bustConfigCache(orgId).catch(() => {})
-      router.push(`/build/components/procedures/${encodeURIComponent(result.data.caseType.type)}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('caseTypes.error.create'))
-    } finally {
-      setSavingName(null)
-    }
-  }, [agentConfigId, orgId, router, t])
+    router.push(`/build/components/procedures/${NEW_PROCEDURE_SENTINEL}`)
+  }, [agentConfigId, router])
 
   const handleToggle = useCallback(async (item: CaseTypeItem) => {
     if (!agentConfigId) return
@@ -187,10 +130,10 @@ export default function BuildProceduresPage() {
             <button
               type="button"
               onClick={handleCreate}
-              disabled={!!savingName || !agentConfigId}
+              disabled={!agentConfigId}
               className="flex items-center gap-2 rounded-xl border border-indigo/20 bg-indigo/[0.08] px-4 py-2.5 text-[13px] font-medium text-indigo transition-all hover:bg-indigo/[0.15] disabled:opacity-50"
             >
-              {savingName?.startsWith('new_procedure_') ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              <Plus className="h-4 w-4" />
               {t('caseTypes.new')}
             </button>
           </div>
