@@ -158,12 +158,13 @@ export default function LiveChatChannelWorkspace({
   const inputCls = 'w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-[13px] outline-none focus:border-indigo/30'
   const labelCls = 'mb-1 block text-[12px] font-semibold text-[var(--mist)]'
   const cardCls = 'rounded-[26px] border border-black/[0.06] bg-white/72 p-5 shadow-[0_16px_36px_rgba(21,23,25,0.05)]'
+  const webhookTargetId = config.webhookAgentConfigId ?? ''
 
   const webhookUrl =
-    typeof window !== 'undefined' && orgId && (config.webhookAgentConfigId || agentConfigId)
-      ? `${window.location.origin}/api/livechat/webhook/${orgId}/${config.webhookAgentConfigId || agentConfigId}`
-      : orgId && (config.webhookAgentConfigId || agentConfigId)
-        ? `/api/livechat/webhook/${orgId}/${config.webhookAgentConfigId || agentConfigId}`
+    typeof window !== 'undefined' && orgId && webhookTargetId
+      ? `${window.location.origin}/api/livechat/webhook/${orgId}/${webhookTargetId}`
+      : orgId && webhookTargetId
+        ? `/api/livechat/webhook/${orgId}/${webhookTargetId}`
         : ''
 
   const persistConfig = useCallback(async (nextConfig: LiveChatConfig) => {
@@ -448,12 +449,12 @@ export default function LiveChatChannelWorkspace({
                   {copied ? <CheckCircle2 className="h-4 w-4 text-malachite" /> : <Copy className="h-4 w-4" />}
                 </button>
               </div>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[12px]">
+              <div className="mt-4 space-y-2 text-[12px]">
                 <div className="inline-flex items-center gap-2 text-malachite">
                   <span className={`h-2 w-2 rounded-full ${stateColor(connectionState)}`} />
                   <span className="font-medium">{connectionStateLabels[connectionState]}</span>
                 </div>
-                <span className="text-[var(--fog)]">{isZh ? '按当前 Agent 版本生效' : 'Bound to the current Agent version'}</span>
+                <p className="text-[var(--fog)]">{t('livechat.webhookRouteNotePerAgent')}</p>
               </div>
             </section>
 
