@@ -3,7 +3,7 @@
 //
 // When Task 0 lands, these expand to drive the real route entry point.
 
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import {
   ChatsListInput,
   ChatByIdParams,
@@ -11,6 +11,98 @@ import {
   ChatDeleteResponse,
   ChatSessionSchema,
 } from '@intera/shared/contracts/chats'
+
+const h = vi.hoisted(() => {
+  const mockGetSession = vi.fn()
+  const cases = [
+    {
+      id: 'case-new',
+      orgId: 'default',
+      userId: 'user-new',
+      chatId: 'chat-new',
+      type: 'deposit_not_credited',
+      status: 'active',
+      source: 'live',
+      goal: 'Newest chat',
+      createdAt: new Date('2026-06-16T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-16T00:03:00.000Z'),
+      humanTasks: [],
+      _count: { messages: 3 },
+    },
+    {
+      id: 'case-middle',
+      orgId: 'default',
+      userId: 'user-middle',
+      chatId: 'chat-middle',
+      type: 'withdrawal_password_reset',
+      status: 'waiting_human',
+      source: 'live',
+      goal: 'Middle chat',
+      createdAt: new Date('2026-06-16T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-16T00:02:00.000Z'),
+      humanTasks: [{ id: 'task-middle' }],
+      _count: { messages: 2 },
+    },
+    {
+      id: 'case-old',
+      orgId: 'default',
+      userId: 'user-old',
+      chatId: 'chat-old',
+      type: 'general',
+      status: 'completed',
+      source: 'live',
+      goal: 'Old chat',
+      createdAt: new Date('2026-06-16T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-16T00:01:00.000Z'),
+      humanTasks: [],
+      _count: { messages: 1 },
+    },
+  ]
+  const runs = [
+    { id: 'run-new', caseId: 'case-new', orgId: 'default', updatedAt: new Date('2026-06-16T00:03:00.000Z') },
+    { id: 'run-middle', caseId: 'case-middle', orgId: 'default', updatedAt: new Date('2026-06-16T00:02:00.000Z') },
+  ]
+  return { mockGetSession, cases, runs }
+})
+
+vi.mock('@/lib/db/repo-for-org', () => ({
+  repoForOrg(orgId: string) {
+    return {
+      orgId,
+      case: {
+        findMany: vi.fn(async () => h.cases.filter((row) => row.orgId === orgId)),
+      },
+      raw: {
+        procedureRun: {
+          findMany: vi.fn(async () => h.runs),
+        },
+      },
+    } as any
+  },
+}))
+
+vi.mock('@/lib/auth', () => ({
+  getSession: h.mockGetSession,
+}))
+
+vi.mock('@/lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}))
+
+import { GET } from '@/app/api/chats/route'
+
+function makeRequest(query = '') {
+  return {
+    method: 'GET',
+    json: async () => ({}),
+    nextUrl: new URL(`http://localhost/api/chats${query}`),
+  } as any
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin', userId: 'user-1' })
+})
 
 // ── Contract schema validation ──────────────────────────────────────────────
 
@@ -72,6 +164,28 @@ describe('chats contract schemas', () => {
       expect(() => ChatDeleteResponse.parse({ ok: true, deleted: 3 })).not.toThrow()
       expect(() => ChatDeleteResponse.parse({ ok: true, deleted: 0 })).not.toThrow()
       expect(() => ChatDeleteResponse.parse({ ok: true })).toThrow()
+    })
+  })
+})
+
+// ── Route regression tests ──────────────────────────────────────────────────
+
+describe('/api/chats route', () => {
+  it('parses limit and offset from GET query params', async () => {
+    const res = await GET(makeRequest('?limit=1&offset=1'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(3)
+    expect(body.data.sessions).toHaveLength(1)
+    expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'chat-middle',
+      userId: 'user-middle',
+      hasHumanTask: true,
+    })
+    expect(body.data.sessions[0].cases[0]).toMatchObject({
+      id: 'run-middle',
+      runId: 'run-middle',
     })
   })
 })

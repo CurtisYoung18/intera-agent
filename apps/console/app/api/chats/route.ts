@@ -13,6 +13,7 @@ import { ChatsListInput, type ChatSession } from '@intera/shared/contracts/chats
 export const GET = defineRoute({
   method: 'GET',
   inputSchema: ChatsListInput,
+  parseQuery: true,
   handler: async ({ input, repo }) => {
     const { limit, offset } = input
 
