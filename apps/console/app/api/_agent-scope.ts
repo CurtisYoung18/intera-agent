@@ -44,6 +44,41 @@ export async function resolveRequiredAgentCaseScope(
   return resolveAgentCaseScope(repo, requireSelectedAgentFromInput(input))
 }
 
+export async function resolveAgentCaseScopeForChat(
+  repo: RepoForOrg,
+  agentConfigId: string,
+  chatId: string,
+): Promise<AgentCaseScope> {
+  const scope = await resolveAgentCaseScope(repo, agentConfigId)
+  const chatCases = await repo.raw.case.findMany({
+    where: { orgId: repo.orgId, chatId },
+    select: { id: true },
+  })
+  const chatCaseIds = chatCases.map((caseRow: { id: string }) => caseRow.id)
+  if (chatCaseIds.length === 0) return scope
+
+  const runsForChat = await repo.raw.procedureRun.findMany({
+    where: { orgId: repo.orgId, caseId: { in: chatCaseIds } },
+    select: { caseId: true },
+  })
+  const casesWithRuns = new Set(runsForChat.map((run: { caseId: string }) => run.caseId))
+  const unscopedCaseIds = chatCaseIds.filter((caseId: string) => !casesWithRuns.has(caseId))
+  if (unscopedCaseIds.length === 0) return scope
+
+  return {
+    ...scope,
+    caseIds: [...new Set([...scope.caseIds, ...unscopedCaseIds])],
+  }
+}
+
+export async function resolveRequiredAgentCaseScopeForChat(
+  repo: RepoForOrg,
+  input: { agentId?: string | null; agentConfigId?: string | null },
+  chatId: string,
+): Promise<AgentCaseScope> {
+  return resolveAgentCaseScopeForChat(repo, requireSelectedAgentFromInput(input), chatId)
+}
+
 export function caseIdFilterForScope(scope: AgentCaseScope): Record<string, unknown> {
   return { id: { in: scope.caseIds } }
 }

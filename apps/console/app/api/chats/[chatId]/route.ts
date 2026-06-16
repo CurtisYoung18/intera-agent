@@ -7,7 +7,7 @@ import { apiOk } from '@intera/shared/contracts/envelope'
 import { resolveChatAlias } from '@/lib/operate/chat-alias'
 import type { RepoForOrg } from '@/lib/db/repo-for-org'
 import type { ChatSession } from '@intera/shared/contracts/chats'
-import { caseIdFilterForScope, resolveAgentCaseScope, requireSelectedAgentFromInput, selectedAgentFromInput } from '../_agent-scope'
+import { caseIdFilterForScope, resolveAgentCaseScopeForChat, requireSelectedAgentFromInput, selectedAgentFromInput } from '../_agent-scope'
 
 const querySchema = z.object({
   agentId: z.string().optional(),
@@ -24,7 +24,7 @@ type ChatDetailResponse = {
 async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agentConfigId: string): Promise<ChatDetailResponse> {
   const alias = await resolveChatAlias(repo, requestedChatId)
   const chatId = alias.resolvedChatId
-  const scope = await resolveAgentCaseScope(repo, agentConfigId)
+  const scope = await resolveAgentCaseScopeForChat(repo, agentConfigId, chatId)
 
   const cases = await repo.case.findMany({
     where: { chatId, ...caseIdFilterForScope(scope) },
@@ -95,7 +95,7 @@ export const DELETE = defineRoute<z.infer<typeof querySchema>, { chatId: string 
     const decoded = decodeURIComponent(params.chatId)
     const alias = await resolveChatAlias(repo, decoded)
     const chatId = alias.resolvedChatId
-    const scope = await resolveAgentCaseScope(repo, requireSelectedAgentFromInput(input))
+    const scope = await resolveAgentCaseScopeForChat(repo, requireSelectedAgentFromInput(input), chatId)
 
     const cases = await repo.case.findMany({
       where: { chatId, ...caseIdFilterForScope(scope) },

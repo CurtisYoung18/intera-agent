@@ -152,4 +152,36 @@ describe('/api/chats/[chatId] agent scoping', () => {
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')
   })
+
+  it('includes same-chat general cases that have no ProcedureRun for traceability', async () => {
+    h.cases.push({
+      id: 'case-general',
+      orgId: 'default',
+      userId: 'user-a',
+      chatId: 'shared-chat',
+      type: 'general',
+      status: 'created',
+      source: 'live',
+      goal: 'Direct answer without a ProcedureRun',
+      createdAt: new Date('2026-06-16T00:01:00.000Z'),
+      updatedAt: new Date('2026-06-16T00:04:00.000Z'),
+      humanTasks: [],
+      _count: { messages: 2 },
+    })
+
+    const res = await GET(makeRequest('?agentId=agent-a'), routeCtx())
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.session.cases).toHaveLength(2)
+    expect(body.data.session.cases.map((caseRow: { id: string }) => caseRow.id)).toEqual([
+      'case-general',
+      'run-a',
+    ])
+    expect(body.data.session.cases.find((caseRow: { id: string }) => caseRow.id === 'case-general')).toMatchObject({
+      runId: null,
+      goal: 'Direct answer without a ProcedureRun',
+    })
+    expect(body.data.session.cases.some((caseRow: { id: string }) => caseRow.id === 'run-b')).toBe(false)
+  })
 })

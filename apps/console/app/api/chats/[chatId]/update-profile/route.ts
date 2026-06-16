@@ -8,7 +8,7 @@ import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 import { profileKey } from '@/lib/agent/identity'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
-import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScope, requireSelectedAgentFromInput } from '../../_agent-scope'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScopeForChat, requireSelectedAgentFromInput } from '../../_agent-scope'
 
 function parseMemoryStrategy(raw: unknown) {
   try {
@@ -30,7 +30,7 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
   parseQuery: true,
   async handler({ input, params, repo }) {
     const agentConfigId = requireSelectedAgentFromInput(input)
-    const scope = await resolveRequiredAgentCaseScope(repo, input)
+    const scope = await resolveRequiredAgentCaseScopeForChat(repo, input, params.chatId)
     const sampleCase = await repo.raw.case.findFirst({
       where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { userId: true, orgId: true },
