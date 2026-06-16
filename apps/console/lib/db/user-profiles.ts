@@ -31,6 +31,7 @@ type UserProfileRow = UserProfile & {
 let scopePromise: Promise<UserProfileStorageScope> | null = null
 
 async function detectUserProfileStorageScope(db: QueryablePrisma): Promise<UserProfileStorageScope> {
+  if (typeof db.$queryRaw !== 'function') return 'legacy_org_profile'
   if (!scopePromise) {
     scopePromise = db.$queryRaw<Array<{ exists: boolean }>>(Prisma.sql`
       select exists (
@@ -105,6 +106,19 @@ export async function readUserProfile(
   db: QueryablePrisma,
   input: { orgId: string; userId: string; agentConfigId?: string | null },
 ): Promise<UserProfileRow | null> {
+  const scope = await detectUserProfileStorageScope(db)
+  if (scope === 'agent_config_profile') {
+    return db.userProfile.findUnique({
+      where: {
+        orgId_agentConfigId_userId: {
+          orgId: input.orgId,
+          agentConfigId: normalizedAgentConfigId(input.agentConfigId),
+          userId: input.userId,
+        },
+      },
+    }) as Promise<UserProfileRow | null>
+  }
+
   try {
     return await db.userProfile.findUnique({
       where: { orgId_userId: { orgId: input.orgId, userId: input.userId } },
@@ -147,6 +161,26 @@ export async function upsertUserProfile(
     patch: UserProfilePatch
   },
 ): Promise<UserProfileRow> {
+  const scope = await detectUserProfileStorageScope(db)
+  if (scope === 'agent_config_profile') {
+    return db.userProfile.upsert({
+      where: {
+        orgId_agentConfigId_userId: {
+          orgId: input.orgId,
+          agentConfigId: normalizedAgentConfigId(input.agentConfigId),
+          userId: input.userId,
+        },
+      },
+      create: {
+        userId: input.userId,
+        orgId: input.orgId,
+        agentConfigId: normalizedAgentConfigId(input.agentConfigId),
+        ...input.patch,
+      },
+      update: input.patch,
+    }) as Promise<UserProfileRow>
+  }
+
   try {
     return await db.userProfile.upsert({
       where: { orgId_userId: { orgId: input.orgId, userId: input.userId } },
@@ -154,7 +188,7 @@ export async function upsertUserProfile(
       update: input.patch,
     }) as UserProfile
   } catch {
-    const scope = await detectUserProfileStorageScope(db)
+    const fallbackScope = await detectUserProfileStorageScope(db)
     const existing = await readUserProfileRaw(db, input)
     const now = new Date()
     const next: UserProfileRow = {
@@ -172,10 +206,10 @@ export async function upsertUserProfile(
       lastSeenAt: input.patch.lastSeenAt ?? existing?.lastSeenAt ?? null,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      agentConfigId: scope === 'agent_config_profile' ? normalizedAgentConfigId(input.agentConfigId) : '',
+      agentConfigId: fallbackScope === 'agent_config_profile' ? normalizedAgentConfigId(input.agentConfigId) : '',
     }
 
-    if (scope === 'agent_config_profile') {
+    if (fallbackScope === 'agent_config_profile') {
       const rows = await db.$queryRaw<UserProfileRow[]>(Prisma.sql`
         insert into user_profiles (
           id,
@@ -223,7 +257,7 @@ export async function upsertUserProfile(
           "firstSeenAt" = excluded."firstSeenAt",
           "lastSeenAt" = excluded."lastSeenAt",
           "updatedAt" = excluded."updatedAt"
-        returning ${selectColumns(scope)}
+        returning ${selectColumns(fallbackScope)}
       `)
       return rows[0]!
     }

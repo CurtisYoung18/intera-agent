@@ -254,13 +254,34 @@ export async function deleteScenario(agentConfigId: string, name: string): Promi
   })
 }
 
+interface AppendScenarioReceiptOptions {
+  scenarioSnapshot?: SavedScenario
+}
+
 export async function appendScenarioReceipt(
   agentConfigId: string,
   receipt: ScenarioReceipt,
+  options: AppendScenarioReceiptOptions = {},
 ): Promise<ScenarioReceipt> {
   const parsed = scenarioReceiptSchema.parse(receipt)
+  const scenarioSnapshot = options.scenarioSnapshot?.name === parsed.scenarioName
+    ? options.scenarioSnapshot
+    : undefined
   return updateStore((store) => {
     const bucket = bucketFor(store, agentConfigId)
+    const scenarioCount = Object.keys(bucket.scenarios).length
+    if (!bucket.scenarios[parsed.scenarioName]) {
+      if (scenarioCount === 0) {
+        throw new Error(`Scenario store integrity violation: refusing to append receipt "${parsed.runId}" because the Scenario catalog is empty for agent "${agentConfigId}".`)
+      }
+      if (!scenarioSnapshot) {
+        throw new Error(`Scenario store integrity violation: refusing to append receipt "${parsed.runId}" because Scenario "${parsed.scenarioName}" is missing for agent "${agentConfigId}".`)
+      }
+      bucket.scenarios[scenarioSnapshot.name] = {
+        ...scenarioSnapshot,
+        agentConfigId,
+      }
+    }
     bucket.receipts.unshift(parsed)
     bucket.receipts = bucket.receipts.slice(0, 50)
     bucket.lastReceiptId = parsed.runId
@@ -280,11 +301,9 @@ export async function appendScenarioReceipt(
       bucket.validationState = 'Validation failed'
     }
     const scenario = bucket.scenarios[parsed.scenarioName]
-    if (scenario) {
-      scenario.lastRunId = parsed.runId
-      scenario.lastRunStatus = parsed.status
-      scenario.updatedAt = scenario.updatedAt || new Date().toISOString()
-    }
+    scenario.lastRunId = parsed.runId
+    scenario.lastRunStatus = parsed.status
+    scenario.updatedAt = scenario.updatedAt || new Date().toISOString()
     return parsed
   })
 }

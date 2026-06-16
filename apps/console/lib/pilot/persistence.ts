@@ -1031,7 +1031,7 @@ export async function runPilotScenarioValidation(repo: RepoForOrg, session: Rout
       userId: session.userId,
     })
     : runScenarioHarness(scenario, input.observed)
-  const savedReceipt = await appendScenarioReceipt(input.agentConfigId, receipt)
+  const savedReceipt = await appendScenarioReceipt(input.agentConfigId, receipt, { scenarioSnapshot: scenario })
   const validation = scenarioValidationSummarySchema.parse(await getScenarioValidationSummary(input.agentConfigId))
   const triage = buildValidationTriage(savedReceipt, validation)
 

@@ -3,7 +3,14 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { defaultScenarioStorePath, resolveScenarioStoreBaseDir } from '@/lib/scenarios/store'
+import { buildScenarioReceipt } from '@/lib/scenarios/runner'
+import {
+  appendScenarioReceipt,
+  defaultScenarioStorePath,
+  listScenarios,
+  resolveScenarioStoreBaseDir,
+  saveScenario,
+} from '@/lib/scenarios/store'
 
 const tempDirs: string[] = []
 
@@ -21,6 +28,7 @@ function makeRepoRoot(root: string): void {
 }
 
 afterEach(() => {
+  delete process.env.INTERA_SCENARIO_STORE_PATH
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()
     if (dir) rmSync(dir, { recursive: true, force: true })
@@ -66,5 +74,47 @@ describe('scenario store path resolution', () => {
     expect(defaultScenarioStorePath(path.join(standaloneRoot, 'apps/console'))).toBe(
       path.join(root, '.intera-agent-runtime', 'scenarios.json'),
     )
+  })
+})
+
+describe('scenario receipt persistence integrity', () => {
+  it('refuses to append a receipt when the Scenario catalog was unexpectedly emptied', async () => {
+    const root = makeTempDir('intera-scenario-store-integrity-')
+    const storePath = path.join(root, 'scenarios.json')
+    process.env.INTERA_SCENARIO_STORE_PATH = storePath
+
+    const scenario = await saveScenario('agent-a', {
+      name: 'deposit_missing_evidence',
+      displayName: 'Deposit missing evidence',
+      tags: ['deposit'],
+      turns: [{ role: 'user', content: 'My deposit is missing.' }],
+      expected: { caseType: 'deposit_issue' },
+      enabled: true,
+    })
+    const receipt = buildScenarioReceipt(scenario, { caseType: 'deposit_issue' }, {
+      executionMode: 'agentRuntime',
+      toolExecutionMode: 'runtime',
+    })
+
+    writeFileSync(storePath, JSON.stringify({
+      version: 1,
+      agents: {
+        'agent-a': {
+          validationState: 'Not validated',
+          scenarios: {},
+          receipts: [],
+        },
+      },
+    }, null, 2))
+
+    await expect(
+      appendScenarioReceipt('agent-a', receipt, { scenarioSnapshot: scenario }),
+    ).rejects.toThrow(/Scenario catalog is empty/)
+
+    const result = await listScenarios('agent-a')
+    expect(result.scenarios).toHaveLength(0)
+    expect(result.receipts).toHaveLength(0)
+
+    delete process.env.INTERA_SCENARIO_STORE_PATH
   })
 })

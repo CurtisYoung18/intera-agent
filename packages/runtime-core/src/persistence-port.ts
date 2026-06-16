@@ -177,7 +177,7 @@ export function createPrismaPersistence(): PersistencePort {
           toolsCalled: record.toolsCalled,
           toolResults: record.toolResults,
           keyEvents: record.keyEvents,
-          humanTaskStatus: 'none',
+          humanTaskStatus: record.humanTaskStatus ?? 'none',
           summary: record.summary ?? undefined,
           todos: record.todos ?? null,
         },
@@ -284,8 +284,15 @@ export function createMemoryPersistence(): {
 
     async saveMemory(_caseId: string, record: MemoryRecord) {
       const idx = memories.findIndex((m) => m.caseId === record.caseId)
-      if (idx >= 0) memories[idx] = record
-      else memories.push(record)
+      if (idx >= 0) {
+        memories[idx] = {
+          ...memories[idx],
+          ...record,
+          humanTaskStatus: record.humanTaskStatus ?? memories[idx].humanTaskStatus,
+        }
+      } else {
+        memories.push(record)
+      }
     },
 
     async saveMessages(msgs: MessageRecord[]) {

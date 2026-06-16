@@ -34,7 +34,7 @@ export const POST = defineRoute<PostInput, ScenarioParams>({
         userId: session.userId,
       })
       : runScenarioHarness(scenario, observed)
-    const savedReceipt = await appendScenarioReceipt(agentConfigId, receipt)
+    const savedReceipt = await appendScenarioReceipt(agentConfigId, receipt, { scenarioSnapshot: scenario })
     const validation = await getScenarioValidationSummary(agentConfigId)
     await audit({
       action: 'scenario.run',

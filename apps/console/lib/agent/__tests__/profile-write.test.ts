@@ -21,6 +21,7 @@ const h = vi.hoisted(() => {
 // ── Mock prisma ──
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
+    $queryRaw: vi.fn(async () => [{ exists: true }]),
     userProfile: {
       findUnique: vi.fn(async ({ where }: { where: { userId?: string; orgId_userId?: { userId: string }; orgId_agentConfigId_userId?: { orgId: string; agentConfigId: string; userId: string } } }) => {
         const scoped = where.orgId_agentConfigId_userId
