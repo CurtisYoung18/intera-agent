@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, act, cleanup, waitFor, within } from '@testing-library/react'
 import React from 'react'
 
 const mockApiClient = vi.fn()
@@ -68,6 +68,9 @@ beforeEach(() => {
           },
         },
       }
+    }
+    if (url === '/api/admin/hooks/investigate_before_transfer?agentConfigId=agent_default_v1' && options?.method === 'DELETE') {
+      return { data: { ok: true } }
     }
     return { data: {} }
   })
@@ -202,5 +205,39 @@ describe('HookBuilder', () => {
 
     expect(screen.getByRole('button', { name: 'Enabled' }).getAttribute('aria-pressed')).toBe('true')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDefined()
+  })
+
+  it('requires confirmation before deleting a Hook', async () => {
+    await renderHookBuilder()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Hook' }))
+    })
+
+    expect(mockApiClient.mock.calls.some(([url, options]) => url.includes('/api/admin/hooks/investigate_before_transfer') && options?.method === 'DELETE')).toBe(false)
+
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText('Delete Hooks')).toBeDefined()
+    expect(within(dialog).getByText('Permanently delete "Investigate before transfer"? This action cannot be undone.')).toBeDefined()
+
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    })
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(mockApiClient.mock.calls.some(([url, options]) => url.includes('/api/admin/hooks/investigate_before_transfer') && options?.method === 'DELETE')).toBe(false)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Hook' }))
+    })
+
+    const confirmDialog = screen.getByRole('alertdialog')
+    await act(async () => {
+      fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Delete' }))
+    })
+
+    await waitFor(() => {
+      expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/hooks/investigate_before_transfer?agentConfigId=agent_default_v1' && options?.method === 'DELETE')).toBe(true)
+    })
   })
 })

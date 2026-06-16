@@ -18,6 +18,7 @@ import {
 import { useConsoleLocale } from '@/components/locale-provider'
 import VersionContextBar, { useSelectedAgentId } from '@/components/admin/version-context-bar'
 import SlashPlaceholderEditor, { type SlashPlaceholderGroup } from '@/components/admin/slash-placeholder-editor'
+import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { ApiClientError, apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import type { TranslateFn } from '@/lib/i18n/types'
@@ -448,6 +449,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null)
   const [bindingDraft, setBindingDraft] = useState<BindingDraft>(bindingDraftDefault)
   const selectedNameRef = useRef<string | null>(null)
 
@@ -533,6 +535,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     setSelectedName(hook.name)
     setDraft(draftFromHook(hook))
     setIsNew(false)
+    setConfirmDeleteName(null)
     setError(null)
   }
 
@@ -541,6 +544,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     setSelectedName(null)
     setDraft(emptyDraft())
     setIsNew(true)
+    setConfirmDeleteName(null)
     setError(null)
   }
 
@@ -580,11 +584,13 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
   }
 
   const deleteHook = async () => {
-    if (!agentConfigId || !selectedHook) return
+    if (!agentConfigId || !confirmDeleteName) return
     setSaving(true)
     setError(null)
     try {
-      await apiClient(`/api/admin/hooks/${encodeURIComponent(selectedHook.name)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
+      const hookName = confirmDeleteName
+      setConfirmDeleteName(null)
+      await apiClient(`/api/admin/hooks/${encodeURIComponent(hookName)}?agentConfigId=${encodeURIComponent(agentConfigId)}`, {
         method: 'DELETE',
       })
       await bustConfigCache(orgId).catch(() => {})
@@ -662,6 +668,12 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     const tool = tools.find((item) => item.id === binding.toolId)
     return tool?.name || binding.scopeKey
   }
+
+  const confirmDeleteLabel = confirmDeleteName
+    ? hooks.find((hook) => hook.name === confirmDeleteName)?.displayName
+      || humanizeStableName(confirmDeleteName)
+      || confirmDeleteName
+    : ''
 
   const bindingsPanel = (
     <section className="rounded-lg border border-black/[0.06] bg-white/70 p-5 shadow-[0_12px_36px_rgba(21,23,25,0.05)]">
@@ -864,7 +876,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                     {!isNew && selectedHook ? (
                       <button
                         type="button"
-                        onClick={deleteHook}
+                        onClick={() => setConfirmDeleteName(selectedHook.name)}
                         title={t('hooks.delete')}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 text-red-600 transition hover:bg-red-500/10"
                       >
@@ -1136,6 +1148,13 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={!!confirmDeleteName}
+        title={t('confirm.deleteTitle', { entity: t('sidebar.hooks') })}
+        message={confirmDeleteName ? t('common.permanentlyDelete', { name: confirmDeleteLabel }) : ''}
+        onConfirm={deleteHook}
+        onCancel={() => setConfirmDeleteName(null)}
+      />
     </div>
   )
 }
