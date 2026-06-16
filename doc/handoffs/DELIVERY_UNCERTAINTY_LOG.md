@@ -542,3 +542,15 @@ Use this format for each new item:
 - Follow-up fix applied: the Procedure `llm_eval` prompt for J1B deposit conflict review now includes structured tool evidence details (for example `get_latest_deposit` output fields like amount / created_at / channel), so the evaluator can actually see and match "missing, stale, or inconsistent" cases before allowing the flow to skip `get_transaction_history`.
 - Why this follow-up: production replay showed the Procedure definition already expected a history-review branch on inconsistent evidence, but the evaluator prompt only exposed evidence labels/outcomes and hid the underlying tool payload, making it easy to skip the conflict path even when the customer-reported deposit time differed from the latest deposit record.
 - Remaining uncertainty: this follow-up fixes the evidence-visibility gap and local runtime guard path, but production still needs a fresh live replay to confirm the current J1B deposit tool payloads consistently surface enough structured fields across real channels/providers. If any provider returns a radically different shape, we may need a narrower normalization pass instead of relying on raw payload summaries alone.
+
+### 2026-06-17 - New-agent Playground status briefly mismatched right after create
+
+- Area: Build / Pilot Lab / Playground / new-agent CRUD
+- Status: owner-review
+- Severity: P3
+- Uncertainty: Immediately after creating temp agent `Codex Temp 0617C`, the first routed Playground render briefly showed the center status row as `Draft version` while the agent picker chip and modal both showed `v1 Active/Live`. Re-entering the page normalized it to `v1 Live`, so this appears to be a transient state-sync issue rather than persisted data corruption.
+- Default action taken: No code change in this hotfix. I fixed the two persistent UI-truth issues found in the same pass (text-only models no longer show the vision starter prompt; Brain now renders `Extended thinking (unsupported by selected model)` cleanly) and left this create-time-only mismatch for explicit owner review.
+- Why this default: The mismatch was momentary, recovered on its own, and I could not yet prove whether the root cause is stale `agentList` hydration, route timing during create, or modal-local optimistic state. A speculative fix here would have been riskier than the verified persistent fixes.
+- Evidence: Reproduced once in the create flow before page re-entry on `https://demo.anytrans.ai/build/pilot-lab?tab=playground&agentId=cmqh0q7et000dqjql79a5x32h`; subsequent production revisit showed stable `v1 Live`. Related hotfix commit for the persistent UI fixes: `8edd897e`.
+- Owner decision needed: Decide whether this transient mismatch is worth a dedicated follow-up lane. If yes, the next pass should instrument create/switch timing around agent-list refresh and selected-version derivation instead of patching copy heuristically.
+- Follow-up owner: architect / console state-sync owner
