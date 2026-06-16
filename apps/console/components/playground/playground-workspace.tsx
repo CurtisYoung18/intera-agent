@@ -127,6 +127,7 @@ const PLAYGROUND_STARTER_PROMPTS = [
     titleEn: 'Receipt screenshot check',
     hintEn: 'Vision input + evidence extraction',
     promptEn: 'I uploaded the receipt screenshot. What can you confirm from it?',
+    requiresVision: true,
   },
 ]
 
@@ -1231,11 +1232,13 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
     && !reply
     && !formRequest
     && !error
-  const starterPrompts = useMemo(() => PLAYGROUND_STARTER_PROMPTS.map((prompt) => ({
-    title: isZh ? prompt.titleZh : prompt.titleEn,
-    hint: isZh ? prompt.hintZh : prompt.hintEn,
-    message: isZh ? prompt.promptZh : prompt.promptEn,
-  })), [isZh])
+  const starterPrompts = useMemo(() => PLAYGROUND_STARTER_PROMPTS
+    .filter((prompt) => !(prompt.requiresVision && visionSupport.status === 'unsupported'))
+    .map((prompt) => ({
+      title: isZh ? prompt.titleZh : prompt.titleEn,
+      hint: isZh ? prompt.hintZh : prompt.hintEn,
+      message: isZh ? prompt.promptZh : prompt.promptEn,
+    })), [isZh, visionSupport.status])
 
   const submitManualTurn = useCallback(() => {
     const trimmed = message.trim()

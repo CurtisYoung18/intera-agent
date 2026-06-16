@@ -109,4 +109,21 @@ describe('ModelWorkspace', () => {
       expect(mockEmitAgentConfigUpdated).toHaveBeenCalledWith('agent-1')
     })
   })
+
+  it('renders unsupported thinking copy with readable separation', async () => {
+    const { default: ModelWorkspace } = await import('../model-workspace')
+
+    await act(async () => {
+      render(
+        <LocaleProvider>
+          <ModelWorkspace />
+        </LocaleProvider>,
+      )
+    })
+
+    await screen.findByText('Model configuration')
+
+    expect(screen.getByText('(unsupported by selected model)')).toBeDefined()
+    expect((screen.getByRole('checkbox', { name: /Extended thinking/i }) as HTMLInputElement).disabled).toBe(true)
+  })
 })

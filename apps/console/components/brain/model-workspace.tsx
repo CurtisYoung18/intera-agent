@@ -376,7 +376,7 @@ export default function ModelWorkspace() {
               />
               <span>
                 {copy.fields.extendedThinking}
-                {!supportsThinking ? <span className="ml-1 text-[10px]">{copy.fields.unsupportedByModel}</span> : null}
+                {!supportsThinking ? <span className="ml-1 text-[10px]">({copy.fields.unsupportedByModel})</span> : null}
               </span>
             </label>
           </div>

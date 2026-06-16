@@ -385,6 +385,17 @@ describe('PlaygroundPage snapshot truth', () => {
     })
   })
 
+  it('hides vision-only starter prompts when the selected model is text-only', async () => {
+    await renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Check missing deposit/i })).toBeDefined()
+      expect(screen.getAllByText('Not supported').length).toBeGreaterThan(0)
+    })
+
+    expect(screen.queryByRole('button', { name: /Receipt screenshot check/i })).toBeNull()
+  })
+
   it('allows submitting an attached image without typed text', async () => {
     currentAgentPayload = {
       data: {
