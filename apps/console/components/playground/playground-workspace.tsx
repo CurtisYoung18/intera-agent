@@ -1232,7 +1232,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
   return (
     <>
-    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes wc-think-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:.8;transform:scale(1)}}@media(max-width:700px){[data-playground-immersive="true"] .pg-toolbar{padding:12px 10px 8px!important}[data-playground-immersive="true"] .pg-title-group{flex-basis:100%!important}[data-playground-immersive="true"] .pg-picker-wrap{min-width:0!important;max-width:100%!important}[data-playground-immersive="true"] .pg-actions{justify-content:flex-start!important;flex-wrap:nowrap!important;overflow-x:auto!important;max-width:100%;padding-bottom:4px;scrollbar-width:none}[data-playground-immersive="true"] .pg-actions>*{flex:0 0 auto!important;white-space:nowrap!important}[data-playground-immersive="true"] .pg-actions::-webkit-scrollbar{display:none}[data-playground-immersive="true"] .pg-status-row{padding-left:0!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none}[data-playground-immersive="true"] .pg-status-row>*{flex:0 0 auto!important;white-space:nowrap!important}[data-playground-immersive="true"] .pg-status-row::-webkit-scrollbar{display:none}[data-playground-immersive="true"] .pg-chat-scroll{padding-left:10px!important;padding-right:10px!important}}`}</style>
+    <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}@keyframes wc-think-pulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:.8;transform:scale(1)}}.pg-starter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}@media(max-width:760px){.pg-starter-grid{grid-template-columns:1fr}}@media(max-width:700px){[data-playground-immersive="true"] .pg-toolbar{padding:12px 10px 8px!important}[data-playground-immersive="true"] .pg-title-group{flex-basis:100%!important}[data-playground-immersive="true"] .pg-picker-wrap{min-width:0!important;max-width:100%!important}[data-playground-immersive="true"] .pg-actions{justify-content:flex-start!important;flex-wrap:nowrap!important;overflow-x:auto!important;max-width:100%;padding-bottom:4px;scrollbar-width:none}[data-playground-immersive="true"] .pg-actions>*{flex:0 0 auto!important;white-space:nowrap!important}[data-playground-immersive="true"] .pg-actions::-webkit-scrollbar{display:none}[data-playground-immersive="true"] .pg-status-row{padding-left:0!important;flex-wrap:nowrap!important;overflow-x:auto!important;scrollbar-width:none}[data-playground-immersive="true"] .pg-status-row>*{flex:0 0 auto!important;white-space:nowrap!important}[data-playground-immersive="true"] .pg-status-row::-webkit-scrollbar{display:none}[data-playground-immersive="true"] .pg-chat-scroll{padding-left:10px!important;padding-right:10px!important}}`}</style>
     <div
       style={{
         display: 'flex',
@@ -1612,9 +1612,8 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                     ? '这些问题只在空白会话显示。进入对话后，输入框上方不会再出现引导卡片。'
                     : 'These prompts only appear before the first turn. Once the conversation starts, no guidance chips sit above the composer.'}
                 </p>
-                <div style={{
+                <div className="pg-starter-grid" style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
                   gap: 12,
                   width: '100%',
                   marginTop: 24,
