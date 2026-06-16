@@ -6,17 +6,35 @@
 // route by the channels lane (Lane C).
 
 import { defineRoute } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { CasesListInput, type CaseSummary } from '@intera/shared/contracts/cases'
 
 export const GET = defineRoute({
   method: 'GET',
   inputSchema: CasesListInput,
+  parseQuery: true,
   handler: async ({ input, repo }) => {
     const { status, limit, offset } = input
+    const agentConfigId = input.agentConfigId ?? input.agentId
 
     const where: Record<string, unknown> = {}
     if (status) where.status = status
+
+    const scopedRuns = agentConfigId
+      ? await (async () => {
+        await assertAgentInOrg(repo, agentConfigId)
+        return repo.raw.procedureRun.findMany({
+          where: { orgId: repo.orgId, agentConfigId },
+          orderBy: { updatedAt: 'desc' as const },
+          select: { id: true, caseId: true },
+        })
+      })()
+      : null
+
+    if (scopedRuns) {
+      where.id = { in: [...new Set(scopedRuns.map((run) => run.caseId))] }
+    }
 
     const [cases, total] = await Promise.all([
       repo.case.findMany({
@@ -32,11 +50,14 @@ export const GET = defineRoute({
       }),
       repo.case.count({ where }),
     ])
-    const activeRuns = await repo.raw.procedureRun.findMany({
-      where: { orgId: repo.orgId, caseId: { in: cases.map((caseRow) => caseRow.id) } },
-      orderBy: { updatedAt: 'desc' as const },
-      select: { id: true, caseId: true },
-    })
+    const caseIds = new Set(cases.map((caseRow) => caseRow.id))
+    const activeRuns = scopedRuns
+      ? scopedRuns.filter((run) => caseIds.has(run.caseId))
+      : await repo.raw.procedureRun.findMany({
+        where: { orgId: repo.orgId, caseId: { in: cases.map((caseRow) => caseRow.id) } },
+        orderBy: { updatedAt: 'desc' as const },
+        select: { id: true, caseId: true },
+      })
     const runByCase = new Map<string, string>()
     for (const run of activeRuns) {
       if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)

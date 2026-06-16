@@ -19,6 +19,7 @@ import {
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient, ApiClientError } from '@/lib/api/client'
+import { useAgentContext } from '@/lib/agent/agent-context'
 import type { CaseDetailResponse, CasesListResponse } from '@intera/shared/contracts/cases'
 import type { HandoffMetrics, HandoffMetricsResponse } from '@intera/shared/contracts/handoff'
 
@@ -96,6 +97,7 @@ function fmtPercent(value: number | null | undefined) {
 
 export default function HumanHandoffPage() {
   const { locale } = useConsoleLocale()
+  const { selectedAgentId, loading: agentLoading, loadError: agentLoadError } = useAgentContext()
   const isZh = locale === 'zh'
   const [cases, setCases] = useState<HandoffCaseSummary[]>([])
   const [metrics, setMetrics] = useState<HandoffMetrics | null>(null)
@@ -109,12 +111,27 @@ export default function HumanHandoffPage() {
     let active = true
 
     async function loadHandoffs() {
+      if (agentLoading) return
+      if (!selectedAgentId) {
+        setLoading(false)
+        setCases([])
+        setMetrics(null)
+        setSelectedRunId(null)
+        setError(agentLoadError || (isZh ? '没有可用 Agent' : 'No agent available'))
+        return
+      }
       setLoading(true)
       setError(null)
       try {
+        const params = new URLSearchParams({
+          status: 'waiting_human',
+          limit: '100',
+          agentId: selectedAgentId,
+        })
+        const metricsParams = new URLSearchParams({ agentId: selectedAgentId })
         const [result, metricsResult] = await Promise.all([
-          apiClient<CasesListResponse>('/api/cases?status=waiting_human&limit=100'),
-          apiClient<HandoffMetricsResponse>('/api/operate/handoff/metrics'),
+          apiClient<CasesListResponse>(`/api/cases?${params.toString()}`),
+          apiClient<HandoffMetricsResponse>(`/api/operate/handoff/metrics?${metricsParams.toString()}`),
         ])
         if (!active) return
         const nextCases = result.data.cases as HandoffCaseSummary[]
@@ -139,7 +156,7 @@ export default function HumanHandoffPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [agentLoadError, agentLoading, isZh, selectedAgentId])
 
   useEffect(() => {
     if (!selectedRunId) {
