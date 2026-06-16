@@ -659,6 +659,8 @@ export const zhBuild: Record<string, string> = {
   'procedureEditor.form.branchKind': '分支类型',
   'procedureEditor.form.label': '标签',
   'procedureEditor.form.conditionType': '条件类型',
+  'procedureEditor.gate.hard': '硬门 · 确定性证据',
+  'procedureEditor.gate.soft': '软判断 · 需运行时回执',
   'procedureEditor.form.conditionLabel': '条件标签',
   'procedureEditor.form.condition': '条件',
   'procedureEditor.form.conditionDetails': '条件细节',

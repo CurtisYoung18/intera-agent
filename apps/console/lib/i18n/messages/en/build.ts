@@ -659,6 +659,8 @@ export const enBuild: Record<string, string> = {
   'procedureEditor.form.branchKind': 'Branch kind',
   'procedureEditor.form.label': 'Label',
   'procedureEditor.form.conditionType': 'Condition type',
+  'procedureEditor.gate.hard': 'Hard gate · deterministic',
+  'procedureEditor.gate.soft': 'Soft · needs runtime receipt',
   'procedureEditor.form.conditionLabel': 'Condition label',
   'procedureEditor.form.condition': 'Condition',
   'procedureEditor.form.conditionDetails': 'Condition details',
