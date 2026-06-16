@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   mockMessageFindMany: vi.fn(),
   mockMessageUpsert: vi.fn(),
   mockTransaction: vi.fn(),
+  mockBuildModePrompt: vi.fn(async () => ({ prompt: 'assembled prompt', basePrompt: 'core prompt' })),
   mockRecordInitialInputEvent: vi.fn(),
   mockGetProcedureRuntime: vi.fn(() => ({
     activeProcedureRun: undefined,
@@ -68,7 +69,7 @@ vi.mock('@intera/shared/prisma', () => ({
         {
           name: 'query_order_status',
           description: 'Lookup an order',
-          inputSchema: '{}',
+          inputSchema: '{"type":"object","properties":{"member_id":{"type":"string"}}}',
           outputSchema: null,
           mode: 'http',
           endpoint: 'https://example.com/query-order',
@@ -102,7 +103,7 @@ vi.mock('../../config-loader', () => ({
 }))
 
 vi.mock('../../buildModePrompt', () => ({
-  buildModePrompt: vi.fn(async () => ({ prompt: 'assembled prompt', basePrompt: 'core prompt' })),
+  buildModePrompt: h.mockBuildModePrompt,
 }))
 
 vi.mock('../../loop', () => ({
@@ -256,6 +257,29 @@ describe('runPlaygroundTurn vision handling', () => {
     }))
     const traceEvent = events.find((event) => event.type === 'trace')
     expect(traceEvent?.data?.trace?.[0]?.runtimeTruth?.executionSurface.mode).toBe('dry_run_mixed')
+  })
+
+  it('passes active ToolRouter definitions into Playground prompt assembly', async () => {
+    vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
+    h.config = { ...h.config, model: 'openai/gpt-4o' }
+
+    await collect({
+      orgId: 'org-1',
+      message: 'hello',
+      playgroundConfig: { debug: false },
+      configId: 'agent-1',
+      userId: 'user-1',
+    })
+
+    expect(h.mockBuildModePrompt).toHaveBeenCalledWith(expect.objectContaining({
+      availableTools: expect.arrayContaining([
+        expect.objectContaining({
+          name: 'query_order_status',
+          description: 'Lookup an order',
+          needsMemberId: true,
+        }),
+      ]),
+    }))
   })
 
   it('restores a provided chatId inside the current org and user boundary even after the case type changes', async () => {

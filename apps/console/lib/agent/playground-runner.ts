@@ -12,6 +12,7 @@ import {
 } from './trace-aggregator'
 import type { ContentBlock, Message, SSEEvent, ToolDefinition } from '@intera/shared/types'
 import { buildModePrompt } from './buildModePrompt'
+import type { ToolSummary } from './prompt-resolver'
 import { loadAgentConfig } from './config-loader'
 import { buildModelList } from './build-model-list'
 import { resolveEffectiveModel } from './resolve-model'
@@ -265,6 +266,20 @@ function deriveApplicableStages(toolDefinitions: ToolDefinition[]): string[] {
     .filter((stage) => applicable.has(stage))
 }
 
+function toolNeedsMemberId(definition: ToolDefinition): boolean {
+  const schema = definition.inputSchema as { properties?: Record<string, unknown> } | null | undefined
+  return !!schema?.properties && Object.prototype.hasOwnProperty.call(schema.properties, 'member_id')
+}
+
+function toolSummariesFromDefinitions(toolDefinitions: ToolDefinition[]): ToolSummary[] {
+  return toolDefinitions.map((definition) => ({
+    name: definition.name,
+    description: definition.description,
+    needsMemberId: toolNeedsMemberId(definition),
+    knowledgeSourceId: definition.knowledgeSourceId,
+  }))
+}
+
 function latestProcedureCaseType(caseId: string | undefined): string {
   if (!caseId) return ''
   const runtime = getProcedureRuntime(caseId)
@@ -321,6 +336,7 @@ export async function* runPlaygroundTurn(input: {
   const toolRouter = await ToolRouter.create(agentConfigId, dryRun)
   const toolDefinitions = toolRouter.getToolDefinitions()
   const toolDefinitionMap = new Map(toolDefinitions.map((definition) => [definition.name, definition]))
+  const availableTools = toolSummariesFromDefinitions(toolDefinitions)
   const capabilityTruth = buildCapabilityTruth(resolvedModel, toolDefinitions, dryRun)
   const applicableStages = deriveApplicableStages(toolDefinitions)
 
@@ -378,7 +394,7 @@ export async function* runPlaygroundTurn(input: {
     caseSchema: null,
     caseState: null,
     sessionBinding: { userId },
-    availableTools: [],
+    availableTools,
   })
 
   // ── Resolve or create Case for this session ──
