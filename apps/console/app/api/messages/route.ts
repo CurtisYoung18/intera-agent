@@ -29,6 +29,7 @@ import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
 import { createSafeSseWriter } from '@/lib/api/safe-sse'
 import { defineRoute } from '@/lib/api/define-route'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { maybeProxyMessagesToRuntime } from '@/lib/runtime/runtime-service'
 import { generateCaseId } from '@/lib/utils'
@@ -252,7 +253,17 @@ export async function POST(request: NextRequest) {
 
         // Session-based requests (web/playground) pass agentConfigId via body;
         // API-key and internal calls get it from the auth layer.
-        const resolvedAgentConfigId = authAgentConfigId || (typeof bodyConfigId === 'string' ? bodyConfigId : null)
+        const bodyAgentConfigId =
+          typeof bodyConfigId === 'string' && bodyConfigId.trim().length > 0
+            ? bodyConfigId.trim()
+            : null
+        const resolvedAgentConfigId = authAgentConfigId || bodyAgentConfigId
+        if (!resolvedAgentConfigId) {
+          sendEvent({ type: 'error', data: 'agentConfigId is required', timestamp: new Date().toISOString() })
+          closeStream()
+          return
+        }
+        await assertAgentInOrg(repo, resolvedAgentConfigId)
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
         const sessionCasePinned = rawSessionCasePinned === true

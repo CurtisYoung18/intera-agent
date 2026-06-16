@@ -5,10 +5,9 @@
 
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
-import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { DEFAULT_MODEL, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { resolveEffectiveModel } from '@/lib/agent/resolve-model'
 
 const getQuerySchema = z.object({
@@ -21,30 +20,12 @@ export const GET = defineRoute({
   inputSchema: getQuerySchema,
   async handler({ input, repo }) {
     const agentId = input.agentId ?? null
-    // Only assert when a client-supplied id is present; the no-id path uses the
-    // org-scoped findFirst({ isActive: true }) and stays within the caller's org.
-    if (agentId) await assertAgentInOrg(repo, agentId)
+    if (!agentId) throw new ValidationError('agentId is required', { agentId: 'Required' })
+    await assertAgentInOrg(repo, agentId)
 
-    let config = agentId
-      // Use raw findUnique — `id` is globally unique, org scoping would miss cross-org configs
-      ? await repo.raw.agentConfig.findUnique({ where: { id: agentId } })
-      : await repo.agentConfig.findFirst({ where: { isActive: true } })
-
-    if (!config) {
-      await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
-      config = await repo.agentConfig.create({
-        data: {
-          model: DEFAULT_MODEL,
-          temperature: 0.5,
-          thinkingBudget: 4096,
-          maxIterations: 20,
-          maxOutputTokens: 4096,
-          extendedThinking: false,
-          resumePrompt: null,
-          memoryStrategy: JSON.stringify(DEFAULT_MEMORY_STRATEGY),
-        } as any,
-      })
-    }
+    // Use raw findUnique — `id` is globally unique, after assertAgentInOrg proves ownership.
+    const config = await repo.raw.agentConfig.findUnique({ where: { id: agentId } })
+    if (!config) throw new NotFoundError('Config not found')
 
     return apiOk({ config, resolvedModel: resolveEffectiveModel(config) })
   },
@@ -74,9 +55,8 @@ function agentUpdateHandler(agentId: string | null) {
     inputSchema: putSchema,
     requireRole: ['admin', 'owner'],
     async handler({ input, repo }) {
-    // Only assert when a client-supplied id is present; the no-id path uses the
-    // org-scoped findFirst({ isActive: true }) and stays within the caller's org.
-    if (agentId) await assertAgentInOrg(repo, agentId)
+    if (!agentId) throw new ValidationError('agentId is required', { agentId: 'Required' })
+    await assertAgentInOrg(repo, agentId)
 
     await repo.raw.organization.upsert({ where: { id: repo.orgId }, update: {}, create: { id: repo.orgId, name: 'Demo Org' } })
 
@@ -92,9 +72,7 @@ function agentUpdateHandler(agentId: string | null) {
     if (input.resumePrompt !== undefined) data.resumePrompt = input.resumePrompt
 
     // Use raw for lookup by globally-unique `id`; org-scoped fields would miss configs in other orgs.
-    const existing = agentId
-      ? await repo.raw.agentConfig.findUnique({ where: { id: agentId } })
-      : await repo.agentConfig.findFirst({ where: { isActive: true } })
+    const existing = await repo.raw.agentConfig.findUnique({ where: { id: agentId } })
 
     if (!existing) throw new NotFoundError('Config not found')
 

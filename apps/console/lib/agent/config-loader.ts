@@ -34,13 +34,19 @@ const DEFAULT_AGENT_CONFIG: AgentConfigData = {
 export async function loadAgentConfig(
   agentConfigId?: string | null,
 ): Promise<AgentConfigData> {
-  const cached = getCachedConfig(agentConfigId ?? undefined)
+  const scopedAgentConfigId = typeof agentConfigId === 'string' && agentConfigId.trim().length > 0
+    ? agentConfigId.trim()
+    : null
+  const cached = getCachedConfig(scopedAgentConfigId ?? undefined)
   if (cached) return cached
+  if (!scopedAgentConfigId) {
+    const fallback = { ...DEFAULT_AGENT_CONFIG }
+    setCachedConfig(undefined, fallback)
+    return fallback
+  }
 
   try {
-    const dbConfig = agentConfigId
-      ? await prisma.agentConfig.findUnique({ where: { id: agentConfigId } })
-      : await prisma.agentConfig.findFirst({ where: { name: 'Default', isActive: true } })
+    const dbConfig = await prisma.agentConfig.findUnique({ where: { id: scopedAgentConfigId } })
 
     if (dbConfig) {
       const r = dbConfig as Record<string, unknown>
@@ -57,7 +63,7 @@ export async function loadAgentConfig(
           DEFAULT_AGENT_CONFIG.memoryStrategy,
         resumePrompt: r.resumePrompt ? String(r.resumePrompt) : '',
       }
-      setCachedConfig(agentConfigId ?? undefined, config)
+      setCachedConfig(scopedAgentConfigId, config)
       return config
     }
   } catch (err) {

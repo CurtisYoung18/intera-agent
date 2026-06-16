@@ -353,18 +353,21 @@ export async function* runPlaygroundTurn(input: {
   const message = formResult
     ? `Tool ask_user_questions result: ${JSON.stringify(formResult.answers)}`
     : input.message
-  const agentConfigId = input.configId || orgId
+  const agentConfigId = typeof input.configId === 'string' && input.configId.trim().length > 0
+    ? input.configId.trim()
+    : null
+  if (!agentConfigId) throw new Error('configId is required')
   const contentBlocks = normalizeContentBlocks(input.contentBlocks)
   const dryRun = pc.toolExecutionMode === 'dry_run'
   const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
   const createPlaygroundChatId = () => (
-    `pg_${input.configId || 'default'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    `pg_${agentConfigId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   )
 
   // ── Load real config from DB ──
-  const agentConfig = await loadAgentConfig(input.configId)
+  const agentConfig = await loadAgentConfig(agentConfigId)
   if (pc.emitThinking !== undefined) { (agentConfig as any).extendedThinking = pc.emitThinking }
   const resolvedModel = resolveEffectiveModel(agentConfig)
 

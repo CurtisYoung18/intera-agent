@@ -82,12 +82,25 @@ describe('POST /api/admin/api-keys', () => {
     })
     const res = await POST(mkReq('http://localhost/api/admin/api-keys', {
       method: 'POST',
-      body: { name: 'test-key' },
+      body: { name: 'test-key', agentConfigId: 'agent-1' },
     }))
     expect(res.status).toBe(201)
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.plaintext).toBe('intera_sk_live_test123')
+  })
+
+  it('rejects creating unbound org-default keys', async () => {
+    mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
+    const res = await POST(mkReq('http://localhost/api/admin/api-keys', {
+      method: 'POST',
+      body: { name: 'test-key' },
+    }))
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
   })
 
   it('rejects invalid body (name as array)', async () => {

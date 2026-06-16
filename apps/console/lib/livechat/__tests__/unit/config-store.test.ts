@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const mockFindFirst = vi.fn()
 const mockAgentFindUnique = vi.fn()
 const mockAgentFindFirst = vi.fn()
+const mockAgentFindMany = vi.fn()
 
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
@@ -12,6 +13,7 @@ vi.mock('@intera/shared/prisma', () => ({
     agentConfig: {
       findUnique: (...args: unknown[]) => mockAgentFindUnique(...args),
       findFirst: (...args: unknown[]) => mockAgentFindFirst(...args),
+      findMany: (...args: unknown[]) => mockAgentFindMany(...args),
     },
   },
 }))
@@ -21,6 +23,7 @@ import {
   getLiveChatConfigForFamily,
   getLiveChatConfigForOrg,
   invalidateLiveChatConfig,
+  resolveLiveChatConfigForOrg,
   resolveLiveChatFamilyAnchorId,
   resolveLiveChatAgentConfigIdForOrg,
 } from '../../config-store'
@@ -30,6 +33,7 @@ describe('config-store', () => {
     vi.clearAllMocks()
     mockAgentFindUnique.mockResolvedValue(null)
     mockAgentFindFirst.mockResolvedValue(null)
+    mockAgentFindMany.mockResolvedValue([])
     invalidateLiveChatConfig('cust-a')
     invalidateLiveChatConfig('cust-b')
     invalidateLiveChatConfig('cust-c')
@@ -142,10 +146,10 @@ describe('config-store', () => {
 
   describe('org-scoped fallback resolution', () => {
     it('resolves the active livechat agent for an org', async () => {
-      mockAgentFindFirst.mockResolvedValue({ id: 'active-agent' })
+      mockAgentFindMany.mockResolvedValue([{ id: 'active-agent' }])
 
       await expect(resolveLiveChatAgentConfigIdForOrg('default')).resolves.toBe('active-agent')
-      expect(mockAgentFindFirst).toHaveBeenCalledWith(expect.objectContaining({
+      expect(mockAgentFindMany).toHaveBeenCalledWith(expect.objectContaining({
         where: expect.objectContaining({
           orgId: 'default',
           isActive: true,
@@ -156,11 +160,23 @@ describe('config-store', () => {
             },
           },
         }),
+        take: 2,
       }))
     })
 
+    it('does not guess when an org has multiple active livechat agents', async () => {
+      mockAgentFindMany.mockResolvedValue([{ id: 'agent-a' }, { id: 'agent-b' }])
+
+      await expect(resolveLiveChatAgentConfigIdForOrg('default')).resolves.toBeNull()
+      await expect(resolveLiveChatConfigForOrg('default')).resolves.toEqual({
+        status: 'ambiguous',
+        agentConfigIds: ['agent-a', 'agent-b'],
+      })
+      expect(mockFindFirst).not.toHaveBeenCalled()
+    })
+
     it('loads the active org binding through family resolution', async () => {
-      mockAgentFindFirst.mockResolvedValue({ id: 'active-agent' })
+      mockAgentFindMany.mockResolvedValue([{ id: 'active-agent' }])
       mockAgentFindUnique.mockResolvedValue({ id: 'active-agent', parentId: null })
       mockFindFirst.mockResolvedValue({
         orgId: 'default',

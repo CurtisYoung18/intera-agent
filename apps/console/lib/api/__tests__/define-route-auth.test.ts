@@ -41,13 +41,13 @@ vi.mock('@/lib/db/repo-for-org', () => ({
 
 vi.mock('@intera/shared/prisma', () => {
   // Use Proxy so repoForOrg can access any model property without crashing
-  const findFirstMock = vi.fn()
+  const findManyMock = vi.fn()
   // Default no-op proxy for any unlisted model — returns itself for chaining
   const noopModel = new Proxy({}, { get: () => vi.fn() })
   return {
     prisma: new Proxy(
       {
-        channelBinding: { findFirst: findFirstMock },
+        channelBinding: { findMany: findManyMock },
       },
       {
         get(target, prop) {
@@ -78,7 +78,7 @@ function mkReq(
 const mockGetSession = getSession as ReturnType<typeof vi.fn>
 const mockResolveApiKey = resolveOrgFromApiKey as ReturnType<typeof vi.fn>
 const mockTrustedCall = isTrustedInternalCall as ReturnType<typeof vi.fn>
-const mockFindFirst = (prisma as any).channelBinding.findFirst as ReturnType<typeof vi.fn>
+const mockFindMany = (prisma as any).channelBinding.findMany as ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -385,7 +385,7 @@ describe('defineRoute auth modes', () => {
 
     it('passes with valid x-webhook-secret header', async () => {
       mockTrustedCall.mockReturnValue(false)
-      mockFindFirst.mockResolvedValue({ credentials: JSON.stringify({ webhookSecret: 'secret-123' }) })
+      mockFindMany.mockResolvedValue([{ credentials: JSON.stringify({ webhookSecret: 'secret-123' }) }])
 
       let captured: any = null
       const handler = defineRoute<void, { orgId: string }>({
@@ -404,11 +404,19 @@ describe('defineRoute auth modes', () => {
 
       expect(captured.orgId).toBe('acme')
       expect(captured.authMode).toBe('webhook')
+      expect(mockFindMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          channel: 'livechat',
+          enabled: true,
+          agentConfig: { orgId: 'acme', isActive: true },
+        }),
+        take: 2,
+      }))
     })
 
     it('returns 401 with wrong x-webhook-secret header', async () => {
       mockTrustedCall.mockReturnValue(false)
-      mockFindFirst.mockResolvedValue({ credentials: JSON.stringify({ webhookSecret: 'secret-123' }) })
+      mockFindMany.mockResolvedValue([{ credentials: JSON.stringify({ webhookSecret: 'secret-123' }) }])
 
       const handler = defineRoute({
         method: 'POST',
@@ -423,9 +431,9 @@ describe('defineRoute auth modes', () => {
       expect(res.status).toBe(401)
     })
 
-    it('returns 401 when webhook is not configured', async () => {
+    it('returns 401 when header-auth webhook is not configured', async () => {
       mockTrustedCall.mockReturnValue(false)
-      mockFindFirst.mockResolvedValue(null)
+      mockFindMany.mockResolvedValue([])
 
       const handler = defineRoute({
         method: 'POST',
@@ -433,7 +441,30 @@ describe('defineRoute auth modes', () => {
         handler: async () => ({ ok: true, data: {} }),
       })
 
-      const res = await handler(mkReq(), { params: Promise.resolve({ orgId: 'acme' }) })
+      const req = mkReq('http://localhost/api/livechat/webhook/acme', {
+        headers: { 'x-webhook-secret': 'secret-123' },
+      })
+      const res = await handler(req, { params: Promise.resolve({ orgId: 'acme' }) })
+      expect(res.status).toBe(401)
+    })
+
+    it('returns 401 when org header-auth webhook is ambiguous', async () => {
+      mockTrustedCall.mockReturnValue(false)
+      mockFindMany.mockResolvedValue([
+        { credentials: JSON.stringify({ webhookSecret: 'secret-123' }) },
+        { credentials: JSON.stringify({ webhookSecret: 'secret-456' }) },
+      ])
+
+      const handler = defineRoute({
+        method: 'POST',
+        auth: 'webhook',
+        handler: async () => ({ ok: true, data: {} }),
+      })
+
+      const req = mkReq('http://localhost/api/livechat/webhook/acme', {
+        headers: { 'x-webhook-secret': 'secret-123' },
+      })
+      const res = await handler(req, { params: Promise.resolve({ orgId: 'acme' }) })
       expect(res.status).toBe(401)
     })
   })

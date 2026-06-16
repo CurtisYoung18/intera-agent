@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 import { generateApiKey } from '@/lib/api-auth'
+import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 
 const KEY_SELECT = {
   id: true,
@@ -29,7 +30,7 @@ export const GET = defineRoute({
 
 const createSchema = z.object({
   name: z.string().trim().optional().default('default'),
-  agentConfigId: z.string().trim().nullable().optional().default(null),
+  agentConfigId: z.string().trim().min(1, 'agentConfigId is required'),
 })
 type CreateInput = z.infer<typeof createSchema>
 
@@ -38,6 +39,7 @@ export const POST = defineRoute<CreateInput>({
   inputSchema: createSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, session, repo, audit }) {
+    await assertAgentInOrg(repo, input.agentConfigId)
     const { plaintext, hash, prefix } = generateApiKey()
     const key = await repo.apiKey.create({
       data: {

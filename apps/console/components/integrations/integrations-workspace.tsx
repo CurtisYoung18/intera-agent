@@ -332,11 +332,15 @@ function ApiKeysTab() {
 
   const handleCreate = async () => {
     const name = newName.trim() || 'default'
+    const agentConfigId = newAgentConfigId || agents[0]?.id
+    if (!agentConfigId) {
+      setError(t('common.failedSave', { status: '' }))
+      return
+    }
     setBusyId('__new__')
     setError('')
     try {
-      const body: Record<string, string> = { name }
-      if (newAgentConfigId) body.agentConfigId = newAgentConfigId
+      const body: Record<string, string> = { name, agentConfigId }
       const result = await apiClient<{ plaintext: string }>('/api/admin/api-keys', {
         method: 'POST',
         body,
@@ -381,10 +385,12 @@ function ApiKeysTab() {
   }
 
   function agentLabel(agentConfigId: string | null): string {
-    if (!agentConfigId) return t('common.active')
+    if (!agentConfigId) return isZh ? '未绑定（旧）' : 'Unbound legacy'
     const config = agents.find((agent) => agent.id === agentConfigId)
     return config ? `${config.name} v${config.version}` : `${agentConfigId.slice(0, 8)}…`
   }
+
+  const selectedNewAgentConfigId = newAgentConfigId || agents[0]?.id || ''
 
   return (
     <>
@@ -476,11 +482,10 @@ function ApiKeysTab() {
               <div>
                 <label className="mb-1 block text-[11px] font-semibold text-[var(--fog)]">{t('apiKeys.bindAgentConfig')}</label>
                 <select
-                  value={newAgentConfigId}
+                  value={selectedNewAgentConfigId}
                   onChange={(event) => setNewAgentConfigId(event.target.value)}
                   className="glass-input-console w-full rounded-xl bg-white/60 text-[13px] text-[var(--mist)] outline-none focus:border-indigo/30"
                 >
-                  <option value="">{t('apiKeys.orgDefault', { label: t('common.active') })}</option>
                   {agents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
                       {agent.name} · v{agent.version}{agent.isActive ? ` (${t('common.active')})` : ''}

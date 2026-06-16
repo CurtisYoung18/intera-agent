@@ -26,6 +26,7 @@ const h = vi.hoisted(() => {
     loadAgentConfig: vi.fn(),
     buildModePrompt: vi.fn(),
     agentLoopCreate: vi.fn(),
+    assertAgentInOrg: vi.fn(),
   }
 })
 
@@ -50,6 +51,9 @@ vi.mock('@/lib/agent/buildModePrompt', () => ({
 }))
 vi.mock('@/lib/agent/loop', () => ({
   AgentLoop: { create: h.agentLoopCreate },
+}))
+vi.mock('@/lib/api/assert-agent-in-org', () => ({
+  assertAgentInOrg: h.assertAgentInOrg,
 }))
 
 import { POST } from '@/app/api/messages/route'
@@ -125,6 +129,7 @@ beforeEach(() => {
 
   h.resolveOrgFromApiKey.mockResolvedValue({ orgId: 'org-a', agentConfigId: 'agent-a' })
   h.isTrustedInternalCall.mockReturnValue(false)
+  h.assertAgentInOrg.mockResolvedValue(undefined)
   h.createAgentClient.mockReturnValue({
     messages: {
       create: vi.fn(async () => ({
@@ -173,6 +178,23 @@ afterEach(() => {
 })
 
 describe('POST /api/messages runtime session guards', () => {
+  it('rejects requests that cannot resolve an agent scope', async () => {
+    h.resolveOrgFromApiKey.mockResolvedValue({ orgId: 'org-a', agentConfigId: null })
+
+    const res = await POST(makeRequest({
+      message: 'hello',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    const events = await readSse(res)
+
+    expect(events.some((event) => event.type === 'error' && event.data === 'agentConfigId is required')).toBe(true)
+    expect(h.assertAgentInOrg).not.toHaveBeenCalled()
+    expect(h.loadAgentConfig).not.toHaveBeenCalled()
+    expect(h.agentLoopCreate).not.toHaveBeenCalled()
+  })
+
   it('releases a registered runtime session when AgentLoop.run throws', async () => {
     h.agentLoopCreate.mockResolvedValue(mockLoop({
       run: vi.fn(async () => {

@@ -44,10 +44,7 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
     })
     if (messages.length === 0) throw new RouteError('validation', 'No messages to compact')
 
-    const orgId = cases[0]?.orgId ?? 'default'
-    const agentCfg = agentConfigId
-      ? await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
-      : await repo.raw.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
+    const agentCfg = await repo.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
 
     const apiMessages = messages

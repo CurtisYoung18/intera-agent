@@ -19,23 +19,28 @@ export async function OPTIONS() {
 }
 
 export async function GET(request: NextRequest) {
-  const agentConfigId = request.nextUrl.searchParams.get('agentConfigId')
+  const agentConfigId = request.nextUrl.searchParams.get('agentConfigId')?.trim() || null
 
   return defineRoute({
     method: 'GET',
     auth: 'none',
     async handler({ session }) {
+      if (!agentConfigId) {
+        return NextResponse.json({
+          agentConfigId: null,
+          enabled: false,
+          showSkillStatus: true,
+          region: 'dal',
+          requiresAgentConfigId: true,
+        }, { headers: CORS })
+      }
+
       // Read directly (bypass config-store enabled filter)
-      // Scoped by agentConfigId when provided, otherwise find first enabled livechat binding
-      const cbRow = agentConfigId
-        ? await prisma.channelBinding.findFirst({
-            where: { agentConfigId, channel: 'livechat' },
-            select: { enabled: true, credentials: true },
-          })
-        : await prisma.channelBinding.findFirst({
-            where: { channel: 'livechat', enabled: true },
-            select: { enabled: true, credentials: true },
-          })
+      // Anonymous widget config must be agent-scoped; there is no safe org/global fallback.
+      const cbRow = await prisma.channelBinding.findFirst({
+        where: { agentConfigId, channel: 'livechat' },
+        select: { enabled: true, credentials: true },
+      })
 
       if (!cbRow) {
         return NextResponse.json({

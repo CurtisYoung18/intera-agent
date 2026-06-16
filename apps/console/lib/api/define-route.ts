@@ -247,36 +247,46 @@ async function resolveSession(
     case 'webhook': {
       const p = params as Record<string, string> | undefined
       const orgId = p?.orgId as string | undefined
+      const agentConfigId = p?.agentConfigId as string | undefined
       if (!orgId) throw new UnauthorizedError('Missing orgId in webhook URL')
 
       // Internal bridge calls are always trusted
       if (isTrustedInternalCall(req)) {
-        return { orgId, role: 'admin', authMode: 'webhook' }
+        return { orgId, role: 'admin', authMode: 'webhook', agentConfigId }
       }
 
-      // External webhook: validate webhookSecret from channel_bindings.
-      // AgentConfigId is resolved from the URL segment (renamed from orgId in agent-scoped model).
-      const cbRow = await prisma.channelBinding.findFirst({
-        where: { channel: 'livechat' },
+      // External LiveChat webhooks normally validate secret_key from the parsed body
+      // inside each handler. If callers opt into header auth, keep it scoped to the
+      // URL agent/org instead of accepting any livechat binding in the database.
+      const secret = req.headers.get('x-webhook-secret')
+      if (!secret) {
+        return { orgId, role: 'admin', authMode: 'webhook', agentConfigId }
+      }
+
+      const cbRows = await prisma.channelBinding.findMany({
+        where: agentConfigId
+          ? { channel: 'livechat', enabled: true, agentConfigId }
+          : {
+              channel: 'livechat',
+              enabled: true,
+              agentConfig: { orgId, isActive: true },
+            },
         select: { credentials: true },
+        take: 2,
       })
-      if (!cbRow) throw new UnauthorizedError('Webhook not configured')
+      if (cbRows.length !== 1) throw new UnauthorizedError('Webhook not configured')
+      const cbRow = cbRows[0]!
       let creds: Record<string, unknown> = {}
       try { creds = JSON.parse(cbRow.credentials) } catch { /* keep empty */ }
       const webhookSecret = creds.webhookSecret as string | null | undefined
       if (!webhookSecret) throw new UnauthorizedError('Webhook not configured')
 
-      // Header-based secret validation
-      const secret = req.headers.get('x-webhook-secret')
-      if (secret) {
-        const a = Buffer.from(webhookSecret)
-        const b = Buffer.from(secret)
-        if (a.length !== b.length || !timingSafeEqual(a, b)) {
-          throw new UnauthorizedError('Invalid webhook secret')
-        }
+      const a = Buffer.from(webhookSecret)
+      const b = Buffer.from(secret)
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        throw new UnauthorizedError('Invalid webhook secret')
       }
-      // If no header secret, let the handler do body-based validation
-      return { orgId, role: 'admin', authMode: 'webhook' }
+      return { orgId, role: 'admin', authMode: 'webhook', agentConfigId }
     }
     case 'none':
     default: {
