@@ -18,6 +18,10 @@ function cacheKey(agentConfigId: string): string {
   return agentConfigId
 }
 
+function hasRequiredLiveChatCredentials(config: Pick<LiveChatConfig, 'botAccessToken' | 'licenseId'>): boolean {
+  return Boolean(config.botAccessToken.trim() && config.licenseId.trim())
+}
+
 export function invalidateLiveChatConfig(agentConfigId: string): void {
   cache.delete(cacheKey(agentConfigId))
 }
@@ -43,7 +47,7 @@ function hydrateFromChannelBinding(row: {
   let creds: Record<string, unknown> = {}
   try { creds = JSON.parse(row.credentials) } catch { /* keep empty */ }
 
-  return {
+  const config: LiveChatConfig = {
     orgId: row.orgId ?? row.agentConfigId,
     botAccessToken: (row.botAccessToken ?? (creds.botAccessToken as string) ?? '') as string,
     licenseId: (row.licenseId ?? (creds.licenseId as string) ?? '') as string,
@@ -57,6 +61,12 @@ function hydrateFromChannelBinding(row: {
     transferGroupId: creds.transferGroupId as number | undefined,
     transferMessage: creds.transferMessage as string | undefined,
   }
+
+  if (config.enabled && !hasRequiredLiveChatCredentials(config)) {
+    return { ...config, enabled: false }
+  }
+
+  return config
 }
 
 export async function getLiveChatConfig(

@@ -197,6 +197,7 @@ describe('B1 — Gated /api/admin/livechat/config requires session', () => {
       agentConfigId: 'test-agent',
       botAccessToken: 'new_token',
       licenseId: 'new_lic',
+      webhookSecret: 'new_secret',
       showSkillStatus: true,
       enabled: true,
     }))
@@ -242,5 +243,27 @@ describe('B1 — Gated /api/admin/livechat/config requires session', () => {
 
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('validation')
+  })
+
+  it('PUT rejects enabling livechat without required credentials', async () => {
+    h.mockGetSession.mockResolvedValue({ orgId: 'orgB', role: 'admin', userId: 'u1' })
+    const res = await adminPut(makeAdminRequestForAgent('test-agent', {
+      agentConfigId: 'test-agent',
+      botAccessToken: '',
+      licenseId: '',
+      webhookSecret: '',
+      showSkillStatus: true,
+      enabled: true,
+    }))
+    const body = await res.json()
+
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(h.configs['test-agent']).toMatchObject({
+      enabled: false,
+      botAccessToken: 'tok_orgb',
+      licenseId: 'lic_orgb',
+      webhookSecret: 'sec_orgb',
+    })
   })
 })

@@ -104,6 +104,10 @@ function stateColor(state: ConnectionState) {
   return 'bg-amber/60'
 }
 
+function hasRequiredLiveChatCredentials(config: Pick<LiveChatConfig, 'licenseId' | 'botAccessToken'>) {
+  return Boolean(config.licenseId.trim() && config.botAccessToken.trim())
+}
+
 export default function LiveChatChannelWorkspace({
   agentConfigId,
   onBack,
@@ -137,6 +141,7 @@ export default function LiveChatChannelWorkspace({
   const [connectionTested, setConnectionTested] = useState<boolean | null>(null)
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionErrorCode, setConnectionErrorCode] = useState<string | null>(null)
+  const [validationMessage, setValidationMessage] = useState<string | null>(null)
   const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(null)
   const loadedRef = useRef(false)
@@ -166,6 +171,16 @@ export default function LiveChatChannelWorkspace({
       : orgId && webhookTargetId
         ? `/api/livechat/webhook/${orgId}/${webhookTargetId}`
         : ''
+
+  const validateBeforePersist = useCallback((nextConfig: LiveChatConfig) => {
+    if (!nextConfig.enabled || hasRequiredLiveChatCredentials(nextConfig)) {
+      setValidationMessage(null)
+      return true
+    }
+    setValidationMessage(t('livechat.enableRequiresCredentials'))
+    setSyncStatus('error')
+    return false
+  }, [t])
 
   const persistConfig = useCallback(async (nextConfig: LiveChatConfig) => {
     if (!agentConfigId) return false
@@ -197,6 +212,7 @@ export default function LiveChatChannelWorkspace({
       skipNextAutosaveRef.current = true
       setConfig(configResult.data.config)
       setOrigConfig(configResult.data.config)
+      setValidationMessage(null)
       setGroups(groupsResult.data.groups || [])
       setConnectionTested(
         Boolean(
@@ -230,12 +246,17 @@ export default function LiveChatChannelWorkspace({
       return
     }
     if (JSON.stringify(config) === JSON.stringify(origConfig)) return
-    setSyncStatus('syncing')
     saveTimer.current = setTimeout(async () => {
-      await persistConfig(configRef.current)
+      const nextConfig = configRef.current
+      if (!validateBeforePersist(nextConfig)) {
+        saveTimer.current = null
+        return
+      }
+      setSyncStatus('syncing')
+      await persistConfig(nextConfig)
       saveTimer.current = null
     }, 800)
-  }, [agentConfigId, config, origConfig, persistConfig])
+  }, [agentConfigId, config, origConfig, persistConfig, validateBeforePersist])
 
   useEffect(() => {
     return () => {
@@ -270,9 +291,10 @@ export default function LiveChatChannelWorkspace({
     if (!agentConfigId) return false
     if (saveTimer.current) clearTimeout(saveTimer.current)
     const payload = nextConfig ?? configRef.current
+    if (!validateBeforePersist(payload)) return false
     setSyncStatus('syncing')
     return persistConfig(payload)
-  }, [agentConfigId, persistConfig])
+  }, [agentConfigId, persistConfig, validateBeforePersist])
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -283,6 +305,7 @@ export default function LiveChatChannelWorkspace({
   const handleReset = () => {
     if (!origConfig) return
     setConfig({ ...origConfig })
+    setValidationMessage(null)
     setSyncStatus('idle')
   }
 
@@ -306,6 +329,7 @@ export default function LiveChatChannelWorkspace({
 
   const toggleEnabled = async () => {
     const nextConfig = { ...config, enabled: !config.enabled }
+    if (!validateBeforePersist(nextConfig)) return
     setConfig(nextConfig)
     await saveNow(nextConfig)
   }
@@ -416,6 +440,13 @@ export default function LiveChatChannelWorkspace({
         </div>
       ) : null}
 
+      {validationMessage ? (
+        <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-vermillion" />
+          <p className="text-[12px] text-red-700">{validationMessage}</p>
+        </div>
+      ) : null}
+
       <div className="mb-2 flex gap-1 border-b border-black/[0.06]">
         {[
           { id: 'connection', label: t('livechat.tab.connection'), icon: Globe },
@@ -492,7 +523,7 @@ export default function LiveChatChannelWorkspace({
                   <span className="text-[11px] font-medium text-[var(--fog)]">{t('livechat.enabled')}</span>
                   <button
                     type="button"
-                    onClick={() => setConfig((current) => ({ ...current, enabled: !current.enabled }))}
+                    onClick={() => { void toggleEnabled() }}
                     className={`relative h-5 w-9 rounded-full transition-colors ${config.enabled ? 'bg-indigo' : 'bg-black/[0.08]'}`}
                   >
                     <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all ${config.enabled ? 'left-[18px]' : 'left-0.5'}`} />
@@ -502,12 +533,18 @@ export default function LiveChatChannelWorkspace({
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <label className={labelCls}>{t('livechat.licenseId')} <span className="text-vermillion">*</span></label>
-                  <input type="text" autoComplete="off" value={config.licenseId} onChange={(event) => setConfig((current) => ({ ...current, licenseId: event.target.value }))} className={inputCls} placeholder="e.g. 12345678" />
+                  <input type="text" autoComplete="off" value={config.licenseId} onChange={(event) => {
+                    setValidationMessage(null)
+                    setConfig((current) => ({ ...current, licenseId: event.target.value }))
+                  }} className={inputCls} placeholder="e.g. 12345678" />
                 </div>
                 <div className="md:col-span-2">
                   <label className={labelCls}>{t('livechat.botToken')} <span className="text-vermillion">*</span></label>
                   <div className="relative">
-                    <input type={showToken ? 'text' : 'password'} autoComplete="new-password" value={config.botAccessToken} onChange={(event) => setConfig((current) => ({ ...current, botAccessToken: event.target.value }))} className={`${inputCls} pr-10`} />
+                    <input type={showToken ? 'text' : 'password'} autoComplete="new-password" value={config.botAccessToken} onChange={(event) => {
+                      setValidationMessage(null)
+                      setConfig((current) => ({ ...current, botAccessToken: event.target.value }))
+                    }} className={`${inputCls} pr-10`} />
                     <button
                       type="button"
                       onClick={() => setShowToken((current) => !current)}
@@ -518,8 +555,11 @@ export default function LiveChatChannelWorkspace({
                   </div>
                 </div>
                 <div className="md:col-span-2">
-                  <label className={labelCls}>{t('livechat.webhookSecret')} <span className="text-vermillion">*</span></label>
-                  <input type="password" autoComplete="new-password" value={config.webhookSecret ?? ''} onChange={(event) => setConfig((current) => ({ ...current, webhookSecret: event.target.value }))} className={inputCls} />
+                  <label className={labelCls}>{t('livechat.webhookSecret')}</label>
+                  <input type="password" autoComplete="new-password" value={config.webhookSecret ?? ''} onChange={(event) => {
+                    setValidationMessage(null)
+                    setConfig((current) => ({ ...current, webhookSecret: event.target.value }))
+                  }} className={inputCls} />
                 </div>
               </div>
             </section>

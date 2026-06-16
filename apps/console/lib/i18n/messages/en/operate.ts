@@ -180,6 +180,7 @@ export const enOperate: Record<string, string> = {
   'livechat.saveSaving': 'Saving…',
   'livechat.saveSaved': 'Saved',
   'livechat.saveFailed': 'Save failed',
+  'livechat.enableRequiresCredentials': 'Fill License ID and Bot Access Token before enabling LiveChat.',
   'livechat.test.errCredentials': 'Invalid credentials — check License ID / Bot token.',
   'livechat.test.errRegion': 'Region mismatch — token region differs from setting.',
   'livechat.test.errPermission': 'Permission denied — token lacks required scope.',

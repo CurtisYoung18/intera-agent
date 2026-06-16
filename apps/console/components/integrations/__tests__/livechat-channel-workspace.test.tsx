@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockApiClient = vi.fn()
@@ -17,6 +17,7 @@ vi.mock('@/components/locale-provider', () => ({
         'livechat.loading': 'Loading…',
         'livechat.back': 'Back',
         'livechat.subtitle': 'Configure routing, rendering, escalation, and webhook delivery.',
+        'livechat.enableRequiresCredentials': 'Fill License ID and Bot Access Token before enabling LiveChat.',
         'livechat.stateUnconfigured': 'Not configured',
         'livechat.stateDisabled': 'Disabled',
         'livechat.stateConnecting': 'Connecting...',
@@ -78,5 +79,18 @@ describe('LiveChatChannelWorkspace', () => {
     expect(passwordFields.length).toBeGreaterThan(0)
     expect(passwordFields.every((field) => field.closest('form'))).toBe(true)
     expect(passwordFields.every((field) => field.getAttribute('autocomplete') === 'new-password')).toBe(true)
+  })
+
+  it('blocks enabling livechat until required credentials are filled', async () => {
+    const { default: LiveChatChannelWorkspace } = await import('@/components/integrations/livechat-channel-workspace')
+
+    render(<LiveChatChannelWorkspace agentConfigId="agent_v2" onBack={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Enable' }))
+
+    expect(await screen.findByText('Fill License ID and Bot Access Token before enabling LiveChat.')).toBeDefined()
+
+    const putCalls = mockApiClient.mock.calls.filter(([, options]) => (options as { method?: string } | undefined)?.method === 'PUT')
+    expect(putCalls).toHaveLength(0)
   })
 })

@@ -180,6 +180,7 @@ export const zhOperate: Record<string, string> = {
   'livechat.saveSaving': '保存中…',
   'livechat.saveSaved': '已保存',
   'livechat.saveFailed': '保存失败',
+  'livechat.enableRequiresCredentials': '启用 LiveChat 前，请先填写许可证 ID 和 Bot 访问令牌。',
   'livechat.test.errCredentials': '凭证无效 — 检查 License ID / Bot 令牌。',
   'livechat.test.errRegion': '区域不符 — Token 区域与设置不一致。',
   'livechat.test.errPermission': '权限不足 — Token 缺少所需权限。',

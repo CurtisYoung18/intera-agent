@@ -64,6 +64,21 @@ describe('config-store', () => {
       expect(config!.enabled).toBe(true)
     })
 
+    it('downgrades enabled bindings with missing credentials to disabled runtime config', async () => {
+      mockFindFirst.mockResolvedValue({
+        orgId: 'cust-b',
+        agentConfigId: 'cust-b',
+        botAccessToken: '',
+        licenseId: '',
+        enabled: true,
+        credentials: JSON.stringify({ webhookSecret: '' }),
+      })
+
+      const config = await getLiveChatConfig('cust-b')
+      expect(config).not.toBeNull()
+      expect(config!.enabled).toBe(false)
+    })
+
     it('returns null on prisma error', async () => {
       mockFindFirst.mockRejectedValue(new Error('DB down'))
       const config = await getLiveChatConfig('cust-c')

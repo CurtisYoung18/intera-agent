@@ -3,7 +3,7 @@
 // Replaces the old orgId + agentName scoping with agentConfigId.
 
 import { NextRequest } from 'next/server'
-import { defineRoute } from '@/lib/api/define-route'
+import { defineRoute, ValidationError } from '@/lib/api/define-route'
 import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import {
@@ -96,6 +96,15 @@ export async function PUT(request: NextRequest) {
         if (existing) {
           if (input.botAccessToken === '••••••••') input.botAccessToken = existing.botAccessToken
           if (input.webhookSecret === '••••••••') input.webhookSecret = existing.webhookSecret ?? ''
+        }
+      }
+
+      if (input.enabled) {
+        const missingFields: Record<string, string> = {}
+        if (!input.licenseId.trim()) missingFields.licenseId = 'License ID is required to enable LiveChat'
+        if (!input.botAccessToken.trim()) missingFields.botAccessToken = 'Bot Access Token is required to enable LiveChat'
+        if (Object.keys(missingFields).length > 0) {
+          throw new ValidationError('Fill License ID and Bot Access Token before enabling LiveChat', missingFields)
         }
       }
 
