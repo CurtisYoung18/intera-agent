@@ -24,7 +24,7 @@ import {
   type RuntimeEventSource,
 } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
-import { classifyExplicitMoneyMovementTopic } from '@/lib/agent/money-movement-routing'
+import { classifyExplicitJ1BCaseType, classifyExplicitMoneyMovementTopic } from '@/lib/agent/money-movement-routing'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
@@ -159,11 +159,43 @@ function resolveCaseByExplicitMoneyMovement(
   return targetCase ? { kind: 'existing', caseId: targetCase.id } : { kind: 'new' }
 }
 
+function resolveCaseByExplicitCaseType(
+  userMessage: string,
+  activeCases: Array<{ id: string; type: string }>,
+): CaseRoutingDecision | null {
+  const caseType = classifyExplicitJ1BCaseType(userMessage)
+  if (!caseType) return null
+  if (caseType === 'human_support_requested' && activeCases.length > 0) return null
+  const targetCase = activeCases.find((activeCase) => activeCase.type === caseType)
+  return targetCase ? { kind: 'existing', caseId: targetCase.id } : { kind: 'new' }
+}
+
+async function resolveExistingExplicitCaseType(
+  agentConfigId: string | null,
+  userMessage: string | undefined,
+): Promise<string | undefined> {
+  if (!agentConfigId || !userMessage) return undefined
+  const caseType = classifyExplicitJ1BCaseType(userMessage)
+  if (!caseType) return undefined
+  try {
+    const row = await prisma.caseType.findUnique({
+      where: { agentConfigId_type: { agentConfigId, type: caseType } },
+      select: { type: true },
+    })
+    return row?.type
+  } catch {
+    return undefined
+  }
+}
+
 async function resolveCaseByIntent(
   userMessage: string,
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
 ): Promise<CaseRoutingDecision> {
+  const explicitCaseType = resolveCaseByExplicitCaseType(userMessage, activeCases)
+  if (explicitCaseType) return explicitCaseType
+
   const explicitMoneyMovement = resolveCaseByExplicitMoneyMovement(userMessage, activeCases)
   if (explicitMoneyMovement) return explicitMoneyMovement
 
@@ -461,6 +493,10 @@ export async function POST(request: NextRequest) {
           return
         }
 
+        const deterministicCaseType = !resumeTrigger && !formResult && !interactionResult
+          ? await resolveExistingExplicitCaseType(resolvedAgentConfigId, userMessage)
+          : undefined
+
         try {
           const claimedCase = await prisma.case.findUnique({
             where: { id: resolvedCaseId },
@@ -518,7 +554,7 @@ export async function POST(request: NextRequest) {
                   data: {
                     orgId: resolvedOrgId,
                     userId: resolvedUserId,
-                    type: 'general',
+                    type: deterministicCaseType ?? 'general',
                     status: 'created',
                     chatId: resolvedChatId,
                   },
@@ -541,7 +577,7 @@ export async function POST(request: NextRequest) {
                   data: {
                     orgId: resolvedOrgId,
                     userId: resolvedUserId,
-                    type: 'general',
+                    type: deterministicCaseType ?? 'general',
                     status: 'created',
                     chatId: resolvedChatId,
                   },
@@ -618,7 +654,8 @@ export async function POST(request: NextRequest) {
         // Chat UI binds SSE events to lane.caseId via case_created.
         if (!resumeTrigger && !formResult && !createdCaseForIntent && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
           const inferredType =
-            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined)
+            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined) ??
+            deterministicCaseType
           if (inferredType) {
             try {
               const ctRow = await prisma.caseType.findUnique({
@@ -738,6 +775,7 @@ export async function POST(request: NextRequest) {
           caseSchema?.type ??
           runtimeProcedure?.procedureId ??
           bodyCaseType ??
+          deterministicCaseType ??
           'general'
         const inferredCaseStatusForRecord =
           deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus, {

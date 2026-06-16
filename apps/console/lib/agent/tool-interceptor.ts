@@ -20,7 +20,7 @@ import type { CaseAgentLoop } from './case-agent-loop'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
-import { retargetMoneyMovementProcedureId } from './money-movement-routing'
+import { retargetExplicitJ1BProcedureId, retargetMoneyMovementProcedureId } from './money-movement-routing'
 import { startProcedureRun } from './session-store'
 
 // ---------------------------------------------------------------------------
@@ -128,7 +128,10 @@ async function handleStartProcedure(
 
   try {
     const customerText = latestUserText(ctx.messages)
-    const correctedProcedureId = retargetMoneyMovementProcedureId(requestedProcedureId, customerText)
+    const explicitProcedureId = retargetExplicitJ1BProcedureId(requestedProcedureId, customerText)
+    const correctedProcedureId = explicitProcedureId && explicitProcedureId !== 'human_support_requested'
+      ? explicitProcedureId
+      : retargetMoneyMovementProcedureId(requestedProcedureId, customerText)
     let routingCorrection: { from: string; to: string; reason: string } | null = null
     let ctRow = correctedProcedureId && isInvestigableCaseType(correctedProcedureId)
       ? await prisma.caseType.findUnique({
@@ -141,7 +144,7 @@ async function handleStartProcedure(
       routingCorrection = {
         from: requestedProcedureId,
         to: ctRow.type,
-        reason: 'Customer message explicitly names the opposite money movement direction.',
+        reason: 'Customer message explicitly names a different supported J1B case type.',
       }
       reason = `${reason} Runtime routing correction: ${requestedProcedureId} -> ${ctRow.type}.`
     } else {
