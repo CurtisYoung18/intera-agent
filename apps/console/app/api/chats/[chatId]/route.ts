@@ -7,7 +7,7 @@ import { apiOk } from '@intera/shared/contracts/envelope'
 import { resolveChatAlias } from '@/lib/operate/chat-alias'
 import type { RepoForOrg } from '@/lib/db/repo-for-org'
 import type { ChatSession } from '@intera/shared/contracts/chats'
-import { caseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../_agent-scope'
+import { caseIdFilterForScope, resolveAgentCaseScope, requireSelectedAgentFromInput, selectedAgentFromInput } from '../_agent-scope'
 
 const querySchema = z.object({
   agentId: z.string().optional(),
@@ -21,7 +21,7 @@ type ChatDetailResponse = {
   externalChatId?: string
 }
 
-async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agentConfigId?: string): Promise<ChatDetailResponse> {
+async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agentConfigId: string): Promise<ChatDetailResponse> {
   const alias = await resolveChatAlias(repo, requestedChatId)
   const chatId = alias.resolvedChatId
   const scope = await resolveAgentCaseScope(repo, agentConfigId)
@@ -40,13 +40,7 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agent
   }
 
   const caseIds = new Set(cases.map((c) => c.id))
-  const activeRuns = scope
-    ? scope.runs.filter((run) => caseIds.has(run.caseId))
-    : await repo.raw.procedureRun.findMany({
-      where: { orgId: repo.orgId, caseId: { in: cases.map((c) => c.id) } },
-      orderBy: { updatedAt: 'desc' as const },
-      select: { id: true, caseId: true },
-    })
+  const activeRuns = scope.runs.filter((run) => caseIds.has(run.caseId))
   const runByCase = new Map<string, string>()
   for (const run of activeRuns) {
     if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
@@ -89,7 +83,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
   parseQuery: true,
   async handler({ input, params, repo }) {
     const requestedChatId = decodeURIComponent(params.chatId)
-    return apiOk(await buildChatSession(repo, requestedChatId, selectedAgentFromInput(input)))
+    return apiOk(await buildChatSession(repo, requestedChatId, requireSelectedAgentFromInput(input)))
   },
 })
 
@@ -101,7 +95,7 @@ export const DELETE = defineRoute<z.infer<typeof querySchema>, { chatId: string 
     const decoded = decodeURIComponent(params.chatId)
     const alias = await resolveChatAlias(repo, decoded)
     const chatId = alias.resolvedChatId
-    const scope = await resolveAgentCaseScope(repo, selectedAgentFromInput(input))
+    const scope = await resolveAgentCaseScope(repo, requireSelectedAgentFromInput(input))
 
     const cases = await repo.case.findMany({
       where: { chatId, ...caseIdFilterForScope(scope) },

@@ -4,11 +4,14 @@
 import { z } from 'zod'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { assertCaseInAgentScope, requireSelectedAgentFromInput } from '@/app/api/_agent-scope'
 
 const querySchema = z.object({
   limit: z.string().optional().default('100'),
   offset: z.string().optional().default('0'),
   actionType: z.string().optional(),
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
 })
 
 export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
@@ -18,6 +21,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
   async handler({ input, params, repo }) {
     const limit = Math.min(parseInt(input.limit), 500)
     const offset = parseInt(input.offset)
+    await assertCaseInAgentScope(repo, params.id, requireSelectedAgentFromInput(input))
 
     const caseData = await repo.case.findFirst({
       where: { id: params.id },

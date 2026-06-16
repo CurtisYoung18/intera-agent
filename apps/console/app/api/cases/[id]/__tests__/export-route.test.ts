@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 const h = vi.hoisted(() => {
   const repo = {
     case: { findUnique: vi.fn() },
-    agentConfig: { findFirst: vi.fn() },
+    agentConfig: { findUnique: vi.fn() },
 	    raw: {
 	      procedureRun: { findFirst: vi.fn() },
 	      message: { findMany: vi.fn() },
@@ -29,7 +29,7 @@ vi.mock('@/lib/logger', () => ({
 import { GET } from '@/app/api/cases/[id]/export/route'
 
 function makeRequest() {
-  return new NextRequest('http://localhost/api/cases/case-export/export', {
+  return new NextRequest('http://localhost/api/cases/case-export/export?agentId=agent-a', {
     method: 'GET',
   })
 }
@@ -49,7 +49,7 @@ beforeEach(() => {
     updatedAt: new Date('2026-06-10T00:01:00.000Z'),
     resolvedAt: null,
   })
-  h.repo.agentConfig.findFirst.mockResolvedValue({
+  h.repo.agentConfig.findUnique.mockResolvedValue({
     model: 'test-model',
     temperature: 0,
     thinkingBudget: 0,

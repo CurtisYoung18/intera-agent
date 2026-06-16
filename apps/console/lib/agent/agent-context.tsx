@@ -7,6 +7,7 @@
 // component calls selectAgent(id), all subscribers re-render immediately.
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 
 interface AgentInfo {
   id: string
@@ -37,7 +38,23 @@ const AgentContext = createContext<AgentContextValue | null>(null)
 
 const LS_KEY = 'intera-agent-id'
 
+function readAgentIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  return params.get('agentId') || params.get('agentConfigId')
+}
+
+function writeAgentIdToUrl(agentId: string): void {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+  if (url.searchParams.get('agentId') === agentId && !url.searchParams.has('agentConfigId')) return
+  url.searchParams.set('agentId', agentId)
+  url.searchParams.delete('agentConfigId')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
 export function AgentProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
   const [agentConfigs, setAgentConfigs] = useState<AgentInfo[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,9 +76,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     const configs = await fetchConfigs()
     setAgentConfigs(configs)
     setLoadError(null)
+    const urlAgentId = readAgentIdFromUrl()
     const stored = (() => { try { return localStorage.getItem(LS_KEY) } catch { return null } })()
     if (configs.length > 0) {
-      if (stored && configs.find((c) => c.id === stored)) {
+      if (urlAgentId && configs.find((c) => c.id === urlAgentId)) {
+        try { localStorage.setItem(LS_KEY, urlAgentId) } catch { /* ignore */ }
+        setSelectedAgentId(urlAgentId)
+      } else if (stored && configs.find((c) => c.id === stored)) {
         setSelectedAgentId(stored)
       } else {
         const active = configs.find((c) => c.isActive) ?? configs[0]
@@ -84,8 +105,20 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true }
   }, [doLoad])
 
+  useEffect(() => {
+    if (loading || agentConfigs.length === 0) return
+    const urlAgentId = readAgentIdFromUrl()
+    if (urlAgentId && urlAgentId !== selectedAgentId && agentConfigs.some((config) => config.id === urlAgentId)) {
+      try { localStorage.setItem(LS_KEY, urlAgentId) } catch { /* ignore */ }
+      setSelectedAgentId(urlAgentId)
+      return
+    }
+    if (selectedAgentId) writeAgentIdToUrl(selectedAgentId)
+  }, [agentConfigs, loading, pathname, selectedAgentId])
+
   const selectAgent = useCallback((id: string) => {
     try { localStorage.setItem(LS_KEY, id) } catch { /* ignore */ }
+    writeAgentIdToUrl(id)
     setSelectedAgentId(id)
   }, [])
 
@@ -99,6 +132,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         const active = configs.find((c) => c.isActive) ?? configs[0]
         if (active) {
           try { localStorage.setItem(LS_KEY, active.id) } catch { /* */ }
+          writeAgentIdToUrl(active.id)
           return active.id
         }
         return prev

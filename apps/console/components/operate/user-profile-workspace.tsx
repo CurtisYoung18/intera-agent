@@ -11,6 +11,7 @@ import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { useConsoleLocale } from '@/components/locale-provider'
 import { ConsoleBackButton } from '@/components/ui/console-chrome'
 import { getRuntimeSourceTruth } from '@/lib/operate/runtime-truth'
+import { useAgentContext } from '@/lib/agent/agent-context'
 
 interface UserProfileData {
   userId: string
@@ -26,8 +27,13 @@ interface ChatLink { chatId: string; caseCount: number; lastActivity: string }
 export default function UserProfileWorkspace({ userId }: { userId: string }) {
   const router = useRouter()
   const { locale } = useConsoleLocale()
+  const { selectedAgentId, loading: agentLoading } = useAgentContext()
   const isZh = locale === 'zh'
   const sourceTruth = getRuntimeSourceTruth({ userId })
+  const withAgent = (path: string) => {
+    if (!selectedAgentId) return path
+    return `${path}${path.includes('?') ? '&' : '?'}agentId=${encodeURIComponent(selectedAgentId)}`
+  }
 
   const [profile, setProfile] = useState<UserProfileData | null>(null)
   const [chats, setChats] = useState<ChatLink[]>([])
@@ -39,11 +45,18 @@ export default function UserProfileWorkspace({ userId }: { userId: string }) {
 
   useEffect(() => {
     async function load() {
+      if (agentLoading) return
+      if (!selectedAgentId) {
+        setProfile(null)
+        setChats([])
+        setLoading(false)
+        return
+      }
       setLoading(true)
       try {
         const [profResult, chatsResult] = await Promise.all([
-          apiClient<{ profile: UserProfileData }>(`/api/users/${encodeURIComponent(userId)}/profile`),
-          apiClient<{ chats: ChatLink[] }>(`/api/users/${encodeURIComponent(userId)}/chats`),
+          apiClient<{ profile: UserProfileData }>(withAgent(`/api/users/${encodeURIComponent(userId)}/profile`)),
+          apiClient<{ chats: ChatLink[] }>(withAgent(`/api/users/${encodeURIComponent(userId)}/chats`)),
         ])
         setProfile(profResult.data.profile ?? profResult.data)
         setEditText(profResult.data.profile?.profile ?? '')
@@ -52,14 +65,14 @@ export default function UserProfileWorkspace({ userId }: { userId: string }) {
       finally { setLoading(false) }
     }
     load()
-  }, [userId])
+  }, [agentLoading, selectedAgentId, userId])
 
   const handleSave = async () => {
     setSaving(true)
     try {
       await apiClient(`/api/users/${encodeURIComponent(userId)}/profile`, {
         method: 'PUT',
-        body: { profile: editText },
+        body: { profile: editText, agentId: selectedAgentId },
       })
       setProfile(prev => prev ? { ...prev, profile: editText } : null)
       setEditing(false)
@@ -71,8 +84,8 @@ export default function UserProfileWorkspace({ userId }: { userId: string }) {
     if (!confirm(isZh ? `删除用户 ${userId} 的全部数据？此操作无法撤销。` : `Delete ALL data for user ${userId}? This cannot be undone.`)) return
     setDeleting(true)
     try {
-      await apiClient(`/api/users/${encodeURIComponent(userId)}/profile`, { method: 'DELETE' })
-      router.push('/operate/handoff')
+      await apiClient(withAgent(`/api/users/${encodeURIComponent(userId)}/profile`), { method: 'DELETE' })
+      router.push(withAgent('/operate/handoff'))
     } catch (e) {
       console.error('Delete failed:', e)
       alert(isZh ? '删除失败' : 'Delete failed')
@@ -194,7 +207,7 @@ export default function UserProfileWorkspace({ userId }: { userId: string }) {
               </div>
               <div className="space-y-2">
                 {chats.map((c) => (
-                  <Link key={c.chatId} href={`/operate/conversations/${encodeURIComponent(c.chatId)}`}
+                  <Link key={c.chatId} href={withAgent(`/operate/conversations/${encodeURIComponent(c.chatId)}`)}
                     className="flex items-center gap-2 rounded-[16px] border border-black/[0.04] px-3 py-2.5 transition-colors hover:bg-black/[0.02]">
                     <MessageSquare className="h-3.5 w-3.5 text-[var(--fog)]/60" />
                     <span className="text-[12px] font-mono text-[var(--mist)]">{c.chatId.slice(0, 16)}...</span>

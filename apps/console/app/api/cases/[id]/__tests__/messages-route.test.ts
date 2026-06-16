@@ -3,8 +3,10 @@ import { NextRequest } from 'next/server'
 
 const h = vi.hoisted(() => {
   const repo = {
+    agentConfig: { findUnique: vi.fn() },
     case: { findUnique: vi.fn() },
     raw: {
+      procedureRun: { findFirst: vi.fn() },
       message: { findMany: vi.fn() },
     },
   }
@@ -23,7 +25,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { GET } from '@/app/api/cases/[id]/messages/route'
 
-function makeRequest(query = 'limit=1&offset=1') {
+function makeRequest(query = 'limit=1&offset=1&agentId=agent-a') {
   return new NextRequest(`http://localhost/api/cases/case-1/messages?${query}`, {
     method: 'GET',
   })
@@ -32,6 +34,8 @@ function makeRequest(query = 'limit=1&offset=1') {
 beforeEach(() => {
   vi.clearAllMocks()
   h.getSession.mockResolvedValue({ userId: 'staff-1', orgId: 'org-a', role: 'admin' })
+  h.repo.agentConfig.findUnique.mockResolvedValue({ id: 'agent-a' })
+  h.repo.raw.procedureRun.findFirst.mockResolvedValue({ id: 'run-1' })
   h.repo.case.findUnique.mockResolvedValue({
     type: 'deposit_issue',
     status: 'open',

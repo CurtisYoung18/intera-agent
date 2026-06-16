@@ -11,6 +11,7 @@ import { apiClient } from '@/lib/api/client'
 import { ConsoleBackButton, ConsoleStatusPill } from '@/components/ui/console-chrome'
 import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { getRuntimeSourceTruth, summarizeToolPairing } from '@/lib/operate/runtime-truth'
+import { useAgentContext } from '@/lib/agent/agent-context'
 import {
   hasRecognizedTokenUsage,
   readCacheReadTokens,
@@ -84,9 +85,14 @@ export default function ProcedureRunDetailWorkspace({
 }) {
   const router = useRouter()
   const { t, locale } = useConsoleLocale()
+  const { selectedAgentId, loading: agentLoading } = useAgentContext()
   const isZh = locale === 'zh'
   const detailId = runId ?? caseId ?? ''
   const isRunDetail = Boolean(runId)
+  const withAgent = (path: string) => {
+    if (!selectedAgentId) return path
+    return `${path}${path.includes('?') ? '&' : '?'}agentId=${encodeURIComponent(selectedAgentId)}`
+  }
 
   const [caseData, setCaseData] = useState<CaseData | null>(null)
   const [traces, setTraces] = useState<TraceRow[]>([])
@@ -97,6 +103,14 @@ export default function ProcedureRunDetailWorkspace({
 
   useEffect(() => {
     if (!detailId) return
+    if (agentLoading) return
+    if (!selectedAgentId) {
+      setCaseData(null)
+      setTraces([])
+      setMessages([])
+      setLoading(false)
+      return
+    }
 
     async function load() {
       setLoading(true)
@@ -105,9 +119,9 @@ export default function ProcedureRunDetailWorkspace({
           ? `/api/runs/${encodeURIComponent(detailId)}`
           : `/api/cases/${encodeURIComponent(detailId)}`
         const [caseResult, tracesResult, msgsResult] = await Promise.all([
-          apiClient<CaseDetailResponse>(basePath),
-          apiClient<{ traces: TraceRow[] }>(`${basePath}/traces?limit=500`),
-          apiClient<{ messages: MsgItem[] }>(`${basePath}/messages?limit=200`),
+          apiClient<CaseDetailResponse>(withAgent(basePath)),
+          apiClient<{ traces: TraceRow[] }>(withAgent(`${basePath}/traces?limit=500`)),
+          apiClient<{ messages: MsgItem[] }>(withAgent(`${basePath}/messages?limit=200`)),
         ])
         setCaseData(caseResult.data.case as unknown as CaseData)
         setTraces(tracesResult.data.traces ?? [])
@@ -116,7 +130,7 @@ export default function ProcedureRunDetailWorkspace({
       finally { setLoading(false) }
     }
     void load()
-  }, [detailId, isRunDetail])
+  }, [agentLoading, detailId, isRunDetail, selectedAgentId])
 
   // ── Metrics from traces ──
   const metrics = useMemo(() => {
@@ -249,20 +263,20 @@ export default function ProcedureRunDetailWorkspace({
           <div className="flex flex-wrap items-center gap-2">
             {caseData.chatId ? (
               <button
-                onClick={() => router.push(`/operate/conversations/${encodeURIComponent(caseData.chatId!)}`)}
+                onClick={() => router.push(withAgent(`/operate/conversations/${encodeURIComponent(caseData.chatId!)}`))}
                 className="rounded-[14px] border border-indigo/18 bg-indigo/[0.06] px-3 py-2 text-[12px] font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
               >
                 {t('caseDetail.viewChat')}
               </button>
             ) : null}
           <a
-            href={`/api/${caseData.runId ? 'runs' : 'cases'}/${encodeURIComponent(caseData.runId ?? caseData.id)}/export`}
+            href={withAgent(`/api/${caseData.runId ? 'runs' : 'cases'}/${encodeURIComponent(caseData.runId ?? caseData.id)}/export`)}
             className="whitespace-nowrap rounded-[14px] border border-[var(--border-subtle)] px-3 py-2 text-[12px] text-[var(--fog)] transition-colors hover:bg-black/[0.03] hover:text-[var(--mist)]"
             onClick={(e) => {
               e.preventDefault()
               const exportKind = caseData.runId ? 'runs' : 'cases'
               const exportId = caseData.runId ?? caseData.id
-              window.open(`/api/${exportKind}/${encodeURIComponent(exportId)}/export`, '_blank')
+              window.open(withAgent(`/api/${exportKind}/${encodeURIComponent(exportId)}/export`), '_blank')
             }}
           >
             {isZh ? '导出 .md' : 'Export .md'}

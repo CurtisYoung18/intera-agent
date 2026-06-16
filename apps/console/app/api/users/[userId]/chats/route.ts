@@ -3,6 +3,13 @@
 
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { caseIdFilterForScope, resolveRequiredAgentCaseScope } from '@/app/api/_agent-scope'
+import { z } from 'zod'
+
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
 
 function caseWhereForProfileKey(profileKey: string, orgId: string): Record<string, unknown> {
   if (profileKey.startsWith('chat:')) return { orgId, chatId: profileKey.slice(5) }
@@ -10,12 +17,15 @@ function caseWhereForProfileKey(profileKey: string, orgId: string): Record<strin
   return { orgId, userId: profileKey }
 }
 
-export const GET = defineRoute<void, { userId: string }>({
+export const GET = defineRoute<z.infer<typeof querySchema>, { userId: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
     const decoded = decodeURIComponent(params.userId)
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
     const cases = await repo.raw.case.findMany({
-      where: caseWhereForProfileKey(decoded, repo.orgId),
+      where: { ...caseWhereForProfileKey(decoded, repo.orgId), ...caseIdFilterForScope(scope) },
       select: { chatId: true, userId: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       take: 100,

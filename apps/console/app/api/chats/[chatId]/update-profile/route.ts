@@ -8,7 +8,7 @@ import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 import { profileKey } from '@/lib/agent/identity'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
-import { caseIdFilterForScope, childCaseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScope, requireSelectedAgentFromInput } from '../../_agent-scope'
 
 function parseMemoryStrategy(raw: unknown) {
   try {
@@ -29,8 +29,8 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
   inputSchema: querySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
-    const agentConfigId = selectedAgentFromInput(input)
-    const scope = await resolveAgentCaseScope(repo, agentConfigId)
+    const agentConfigId = requireSelectedAgentFromInput(input)
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
     const sampleCase = await repo.raw.case.findFirst({
       where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { userId: true, orgId: true },
@@ -49,9 +49,7 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
     const combinedSummary = memories.map(m => m.summary!).join('\n\n---\n\n')
 
     const orgId = sampleCase?.orgId ?? 'default'
-    const agentCfg = agentConfigId
-      ? await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
-      : await repo.raw.agentConfig.findFirst({ where: { orgId, isActive: true } }).catch(() => null)
+    const agentCfg = await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 

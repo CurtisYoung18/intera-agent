@@ -9,7 +9,7 @@
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { ChatsListInput, type ChatSession } from '@intera/shared/contracts/chats'
-import { caseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from './_agent-scope'
+import { caseIdFilterForScope, resolveRequiredAgentCaseScope } from './_agent-scope'
 
 export const GET = defineRoute({
   method: 'GET',
@@ -17,7 +17,7 @@ export const GET = defineRoute({
   parseQuery: true,
   handler: async ({ input, repo }) => {
     const { limit, offset } = input
-    const scope = await resolveAgentCaseScope(repo, selectedAgentFromInput(input))
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
 
     const cases = await repo.case.findMany({
       where: caseIdFilterForScope(scope),
@@ -28,13 +28,7 @@ export const GET = defineRoute({
       },
     })
     const caseIds = new Set(cases.map((c) => c.id))
-    const activeRuns = scope
-      ? scope.runs.filter((run) => caseIds.has(run.caseId))
-      : await repo.raw.procedureRun.findMany({
-        where: { orgId: repo.orgId, caseId: { in: cases.map((c) => c.id) } },
-        orderBy: { updatedAt: 'desc' as const },
-        select: { id: true, caseId: true },
-      })
+    const activeRuns = scope.runs.filter((run) => caseIds.has(run.caseId))
     const runByCase = new Map<string, string>()
     for (const run of activeRuns) {
       if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)

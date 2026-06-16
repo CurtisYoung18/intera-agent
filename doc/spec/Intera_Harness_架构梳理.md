@@ -18,6 +18,10 @@ The Console should let a delivery person build, adapt, validate, deploy, and mai
 
 Data ownership follows **Account -> Org -> Agent**. Account and Org are parent boundaries for commercial ownership, membership, billing, and administration. AgentConfig/Agent version is the unit for runtime/config data: Chats, Runtime shells, ProcedureRuns, Messages, Traces, HumanTasks, Memory, Scenario receipts, Operate queues, and Operate metrics must all be addressable by `agentConfigId`. Org/account screens may show explicit aggregate roll-ups, but selected-Agent surfaces must never silently read all org data.
 
+Selected-Agent UI routes must carry the selected Agent in the URL, currently as `agentId=<agentConfigId>` until a path-based `/agents/[agentId]/...` route tree exists. Client context may remember the last selection, but URL scope wins on page load, refresh, share, and browser navigation. Runtime/Operate APIs that serve selected-Agent data must require `agentId`/`agentConfigId`, assert `org -> agent` ownership, and return not-found/empty scoped truth rather than falling back to org-wide data.
+
+`UserProfile` is a legacy org-scoped storage table until its schema is migrated to include `agentConfigId`. Selected-Agent user/profile pages may derive counts, chats, and recency from agent-scoped cases, but must not present legacy profile markdown as agent-exclusive truth.
+
 ```text
 Import starter template
   -> adapt Agent with UI + ConfigPilot

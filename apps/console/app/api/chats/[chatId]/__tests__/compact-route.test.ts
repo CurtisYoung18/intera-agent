@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const { mockCase, mockMessage, mockAgentConfig, mockChatMemory, mockProcedureRun, mockCompactConversation } = vi.hoisted(() => ({
   mockCase: { findMany: vi.fn(), findFirst: vi.fn() },
   mockMessage: { findMany: vi.fn() },
-  mockAgentConfig: { findFirst: vi.fn() },
+  mockAgentConfig: { findFirst: vi.fn(), findUnique: vi.fn() },
   mockChatMemory: { upsert: vi.fn() },
   mockProcedureRun: { findMany: vi.fn() },
   mockCompactConversation: vi.fn(),
@@ -42,7 +42,7 @@ import { NextRequest } from 'next/server'
 const mockGetSession = getSession as ReturnType<typeof vi.fn>
 
 function makeReq(chatId: string): NextRequest {
-  const url = `http://localhost:3001/api/chats/${encodeURIComponent(chatId)}/compact`
+  const url = `http://localhost:3001/api/chats/${encodeURIComponent(chatId)}/compact?agentId=agent-a`
   return new NextRequest(url, { method: 'POST' })
 }
 
@@ -54,6 +54,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue({ userId: 'u1', orgId: 'acme', role: 'admin' })
+    mockAgentConfig.findUnique.mockResolvedValue({ id: 'agent-a' })
     mockProcedureRun.findMany.mockResolvedValue([])
   })
 
@@ -95,7 +96,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
       { id: 'case-1', userId: 'user-1', orgId: 'org-1' },
     ])
     mockMessage.findMany.mockResolvedValue(messages)
-    mockAgentConfig.findFirst.mockResolvedValue(null)
+    mockAgentConfig.findUnique.mockResolvedValueOnce({ id: 'agent-a' }).mockResolvedValue(null)
     mockChatMemory.upsert.mockResolvedValue({})
     mockProcedureRun.findMany.mockResolvedValue([{ id: 'run-a', caseId: 'case-a' }])
 
@@ -128,7 +129,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
       { id: 'case-1', userId: 'user-1', orgId: 'org-1' },
     ])
     mockMessage.findMany.mockResolvedValue(messages)
-    mockAgentConfig.findFirst.mockResolvedValue(null)
+    mockAgentConfig.findUnique.mockResolvedValueOnce({ id: 'agent-a' }).mockResolvedValue(null)
 
     mockCompactConversation.mockResolvedValue({
       summary: null,
@@ -158,7 +159,7 @@ describe('POST /api/chats/[chatId]/compact', () => {
       { id: 'case-b', userId: 'user-1', orgId: 'org-1' },
     ])
     mockMessage.findMany.mockResolvedValue(messages)
-    mockAgentConfig.findFirst.mockResolvedValue(null)
+    mockAgentConfig.findUnique.mockResolvedValueOnce({ id: 'agent-a' }).mockResolvedValue(null)
     mockChatMemory.upsert.mockResolvedValue({})
     mockProcedureRun.findMany.mockResolvedValue([{ id: 'run-a', caseId: 'case-a' }])
 

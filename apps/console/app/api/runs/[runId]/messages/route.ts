@@ -5,10 +5,13 @@ import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { hydrateMessageFromDb, isCustomerVisibleMessage } from '@/lib/agent/provider-transcript'
 import { resolveProcedureRun } from '../../_lib'
+import { requireSelectedAgentFromInput } from '@/app/api/_agent-scope'
 
 const querySchema = z.object({
   limit: z.string().optional().default('100'),
   offset: z.string().optional().default('0'),
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
 })
 
 export const GET = defineRoute<z.infer<typeof querySchema>, { runId: string }>({
@@ -18,7 +21,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { runId: string }>({
   async handler({ input, params, repo }) {
     const limit = Math.min(parseInt(input.limit), 500)
     const offset = parseInt(input.offset)
-    const { run, caseData } = await resolveProcedureRun(repo, params.runId)
+    const { run, caseData } = await resolveProcedureRun(repo, params.runId, requireSelectedAgentFromInput(input))
 
     const messages = await repo.raw.message.findMany({
       where: {

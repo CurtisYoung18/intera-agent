@@ -196,22 +196,13 @@ describe('chats contract schemas', () => {
 // ── Route regression tests ──────────────────────────────────────────────────
 
 describe('/api/chats route', () => {
-  it('parses limit and offset from GET query params', async () => {
+  it('rejects requests without a selected agent', async () => {
     const res = await GET(makeRequest('?limit=1&offset=1'))
     const body = await res.json()
 
-    expect(body.ok).toBe(true)
-    expect(body.data.total).toBe(3)
-    expect(body.data.sessions).toHaveLength(1)
-    expect(body.data.sessions[0]).toMatchObject({
-      chatId: 'chat-middle',
-      userId: 'user-middle',
-      hasHumanTask: true,
-    })
-    expect(body.data.sessions[0].cases[0]).toMatchObject({
-      id: 'run-middle',
-      runId: 'run-middle',
-    })
+    expect(res.status).toBe(404)
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('not_found')
   })
 
   it('filters conversations to the selected agent', async () => {

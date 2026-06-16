@@ -177,6 +177,8 @@ Use this as the UI refactor target after the Foundation Reset contracts and Hook
 
 All runtime/config evidence in this IA is Agent-scoped unless the screen explicitly says it is an org/account roll-up. Switching the selected Agent must change Operate queues, metrics, traces, receipts, and runtime context; unattributed legacy rows belong in an explicit legacy/unknown roll-up, not selected-Agent truth.
 
+Selected-Agent routes must be URL-scoped. The current route contract is to preserve `?agentId=<agentConfigId>` across Operate inbox, handoff, profile, conversation detail, ProcedureRun detail, and export links. Client context/localStorage can remember the last selection, but URL scope wins on reload and APIs must reject missing or foreign agent scope instead of showing org-wide data.
+
 ### 2.2 Current-to-target route migration
 
 | Current route | Target route |

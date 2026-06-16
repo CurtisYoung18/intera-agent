@@ -3,11 +3,20 @@
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { resolveProcedureRun } from '../_lib'
+import { requireSelectedAgentFromInput } from '@/app/api/_agent-scope'
+import { z } from 'zod'
 
-export const GET = defineRoute<void, { runId: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>, { runId: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
-    const { run, caseData } = await resolveProcedureRun(repo, params.runId)
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const { run, caseData } = await resolveProcedureRun(repo, params.runId, requireSelectedAgentFromInput(input))
 
     const [memory, humanTasks, msgCount, traceCount] = await Promise.all([
       repo.raw.chatMemory.findFirst({ where: { orgId: repo.orgId, runId: run.id } }),

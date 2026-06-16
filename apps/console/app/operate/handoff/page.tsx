@@ -99,6 +99,12 @@ export default function HumanHandoffPage() {
   const { locale } = useConsoleLocale()
   const { selectedAgentId, loading: agentLoading, loadError: agentLoadError } = useAgentContext()
   const isZh = locale === 'zh'
+  const withAgent = useMemo(() => {
+    return (path: string) => {
+      if (!selectedAgentId) return path
+      return `${path}${path.includes('?') ? '&' : '?'}agentId=${encodeURIComponent(selectedAgentId)}`
+    }
+  }, [selectedAgentId])
   const [cases, setCases] = useState<HandoffCaseSummary[]>([])
   const [metrics, setMetrics] = useState<HandoffMetrics | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
@@ -170,7 +176,7 @@ export default function HumanHandoffPage() {
     async function loadDetail() {
       setDetailLoading(true)
       try {
-        const result = await apiClient<CaseDetailResponse>(`/api/runs/${encodeURIComponent(runId)}`)
+        const result = await apiClient<CaseDetailResponse>(withAgent(`/api/runs/${encodeURIComponent(runId)}`))
         if (!active) return
         setDetail(result.data.case as HandoffCaseDetail)
       } catch (err) {
@@ -186,7 +192,7 @@ export default function HumanHandoffPage() {
     return () => {
       active = false
     }
-  }, [selectedRunId])
+  }, [selectedRunId, withAgent])
 
   const handoffListCount = cases.length
   const activeHandoffProcedureRuns = metrics?.activeHandoffProcedureRuns ?? handoffListCount
@@ -330,7 +336,7 @@ export default function HumanHandoffPage() {
             {isZh ? '当前没有会话处于人工接管中。只要新的 ProcedureRun 转人工，它就会出现在这里。' : 'No conversation is currently human-owned. New handoffs will appear here as soon as a ProcedureRun is transferred to a human.'}
           </p>
           <Link
-            href="/operate/conversations"
+            href={withAgent('/operate/conversations')}
             className="mt-5 inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-[12px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo"
           >
             {isZh ? '打开会话' : 'Open Conversations'}
@@ -345,7 +351,7 @@ export default function HumanHandoffPage() {
                 <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '人工接管会话' : 'Human-owned Conversations'}</h2>
                 <p className="text-[11px] text-[var(--fog)]">{isZh ? '按最近接管活动排序。' : 'Sorted by latest handoff activity.'}</p>
               </div>
-              <Link href="/operate/conversations" className="flex-shrink-0 text-[11px] font-medium text-indigo/70 hover:text-indigo">
+              <Link href={withAgent('/operate/conversations')} className="flex-shrink-0 text-[11px] font-medium text-indigo/70 hover:text-indigo">
                 {isZh ? '全部会话' : 'All conversations'}
               </Link>
             </div>
@@ -406,13 +412,13 @@ export default function HumanHandoffPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      href={`/operate/conversations/${encodeURIComponent(detail.chatId)}`}
+                      href={withAgent(`/operate/conversations/${encodeURIComponent(detail.chatId)}`)}
                       className="inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-[12px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo"
                     >
                       {isZh ? '打开会话' : 'Open conversation'}
                     </Link>
                     <Link
-                      href={`/operate/conversations/runs/${encodeURIComponent(detail.runId ?? '')}`}
+                      href={withAgent(`/operate/conversations/runs/${encodeURIComponent(detail.runId ?? '')}`)}
                       className="inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-[12px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo"
                     >
                       {isZh ? '打开 ProcedureRun 详情' : 'Open ProcedureRun detail'}

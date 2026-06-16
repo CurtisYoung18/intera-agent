@@ -4,8 +4,10 @@ import { NextRequest } from 'next/server'
 const h = vi.hoisted(() => {
   const repo = {
     orgId: 'org-a',
+    agentConfig: { findUnique: vi.fn() },
     case: { findFirst: vi.fn() },
     raw: {
+      procedureRun: { findFirst: vi.fn() },
       actionTrace: {
         findMany: vi.fn(),
         count: vi.fn(),
@@ -27,7 +29,7 @@ vi.mock('@/lib/logger', () => ({
 
 import { GET } from '@/app/api/cases/[id]/traces/route'
 
-function makeRequest(query = 'limit=2&offset=1') {
+function makeRequest(query = 'limit=2&offset=1&agentId=agent-a') {
   return new NextRequest(`http://localhost/api/cases/case-1/traces?${query}`, {
     method: 'GET',
   })
@@ -36,6 +38,8 @@ function makeRequest(query = 'limit=2&offset=1') {
 beforeEach(() => {
   vi.clearAllMocks()
   h.getSession.mockResolvedValue({ userId: 'staff-1', orgId: 'org-a', role: 'admin' })
+  h.repo.agentConfig.findUnique.mockResolvedValue({ id: 'agent-a' })
+  h.repo.raw.procedureRun.findFirst.mockResolvedValue({ id: 'run-1' })
   h.repo.case.findFirst.mockResolvedValue({ id: 'case-1' })
   h.repo.raw.actionTrace.findMany.mockResolvedValue([])
   h.repo.raw.actionTrace.count.mockResolvedValue(0)
@@ -59,8 +63,8 @@ describe('GET /api/cases/[id]/traces', () => {
     })
   })
 
-  it('returns not found when the case does not belong to the current org', async () => {
-    h.repo.case.findFirst.mockResolvedValue(null)
+  it('returns not found when the selected agent does not own the case', async () => {
+    h.repo.raw.procedureRun.findFirst.mockResolvedValue(null)
 
     const res = await GET(makeRequest(), { params: Promise.resolve({ id: 'case-1' }) })
     const body = await res.json()
@@ -68,6 +72,7 @@ describe('GET /api/cases/[id]/traces', () => {
     expect(res.status).toBe(404)
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')
+    expect(h.repo.case.findFirst).not.toHaveBeenCalled()
     expect(h.repo.raw.actionTrace.findMany).not.toHaveBeenCalled()
   })
 })

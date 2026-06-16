@@ -4,6 +4,7 @@
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { caseIdFilterForScope, resolveRequiredAgentCaseScope } from '@/app/api/_agent-scope'
 
 function caseWhereForProfileKey(profileKey: string, orgId: string): Record<string, unknown> {
   if (profileKey.startsWith('chat:')) return { orgId, chatId: profileKey.slice(5) }
@@ -11,11 +12,19 @@ function caseWhereForProfileKey(profileKey: string, orgId: string): Record<strin
   return { orgId, userId: profileKey }
 }
 
-export const GET = defineRoute<void, { userId: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>, { userId: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
     const decoded = decodeURIComponent(params.userId)
-    const caseWhere = caseWhereForProfileKey(decoded, repo.orgId)
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
+    const caseWhere = { ...caseWhereForProfileKey(decoded, repo.orgId), ...caseIdFilterForScope(scope) }
 
     const [cases, profile, chats] = await Promise.all([
       repo.raw.case.findMany({
@@ -55,42 +64,50 @@ export const GET = defineRoute<void, { userId: string }>({
         firstSeenAt: firstSeenAt?.toISOString() ?? null,
         lastSeenAt,
         updatedAt: profile?.updatedAt?.toISOString() ?? new Date().toISOString(),
+        profileScope: profile ? 'legacy_org_profile' : null,
       },
     })
   },
 })
 
-const putSchema = z.object({ profile: z.string().optional().default('') })
+const putSchema = z.object({
+  profile: z.string().optional().default(''),
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
 
 export const PUT = defineRoute<z.infer<typeof putSchema>, { userId: string }>({
   method: 'PUT',
   inputSchema: putSchema,
   requireRole: ['admin', 'owner'],
   async handler({ input, params, repo }) {
+    await resolveRequiredAgentCaseScope(repo, input)
     const decoded = decodeURIComponent(params.userId)
     const profile = await repo.raw.userProfile.upsert({
       where: { orgId_userId: { orgId: repo.orgId, userId: decoded } },
       create: { userId: decoded, orgId: repo.orgId, profile: input.profile },
       update: { profile: input.profile },
     })
-    return apiOk({ profile })
+    return apiOk({ profile, profileScope: 'legacy_org_profile' })
   },
 })
 
-export const DELETE = defineRoute<void, { userId: string }>({
+export const DELETE = defineRoute<z.infer<typeof querySchema>, { userId: string }>({
   method: 'DELETE',
   requireRole: ['admin', 'owner'],
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
     const decoded = decodeURIComponent(params.userId)
-    const caseWhere = caseWhereForProfileKey(decoded, repo.orgId)
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
+    const caseWhere = { ...caseWhereForProfileKey(decoded, repo.orgId), ...caseIdFilterForScope(scope) }
     const caseIds = (await repo.raw.case.findMany({ where: caseWhere, select: { id: true } })).map(c => c.id)
 
     await Promise.all([
       repo.raw.case.deleteMany({ where: caseWhere }),
       caseIds.length > 0 ? repo.raw.externalConversation.deleteMany({ where: { orgId: repo.orgId, internalCaseId: { in: caseIds } } }) : Promise.resolve(),
-      repo.raw.userProfile.deleteMany({ where: { orgId: repo.orgId, userId: decoded } }),
     ])
 
-    return apiOk({ ok: true, deleted: decoded })
+    return apiOk({ ok: true, deleted: decoded, deletedCases: caseIds.length, profileDeleted: false, profileScope: 'legacy_org_profile' })
   },
 })

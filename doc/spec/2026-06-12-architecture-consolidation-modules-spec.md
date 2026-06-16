@@ -35,6 +35,10 @@ The ownership ladder is **Account -> Org -> Agent**:
 
 All customer-facing runtime/config evidence must be addressable by `agentConfigId`: Chats, Runtime shells, ProcedureRuns, Messages, Traces, HumanTasks, Memory, Scenario receipts, Operate queues, and Operate metrics. Org/account views may aggregate only through explicit roll-ups and must label themselves as roll-ups; they must not masquerade as the selected Agent's data. Legacy rows without `agentConfigId` are unattributed legacy data and are excluded from agent-scoped truth unless a migration/backfill assigns them to a specific Agent.
 
+Selected-Agent surfaces must be URL-addressable by Agent. The current compatibility contract is `?agentId=<agentConfigId>` on Operate/runtime routes; a future path route such as `/agents/[agentId]/operate/...` can replace that once redirects and navigation are migrated. LocalStorage/context selection is only a convenience cache: server reads must require an explicit agent parameter, validate org ownership, and never silently fall back to org-wide runtime data.
+
+Known legacy caveat: `UserProfile` remains org-scoped storage in the current schema. Agent-selected user/profile screens can show stats derived from agent-scoped Cases/ProcedureRuns, but the markdown profile row is a legacy shared profile until a schema migration adds `agentConfigId` and backfills existing rows.
+
 Seven modules, two priorities:
 
 | Module | Name | Priority | Depends on |

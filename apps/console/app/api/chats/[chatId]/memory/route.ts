@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { profileKey } from '@/lib/agent/identity'
-import { caseIdFilterForScope, childCaseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScope } from '../../_agent-scope'
 
 const querySchema = z.object({
   agentId: z.string().optional(),
@@ -17,7 +17,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
   inputSchema: querySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
-    const scope = await resolveAgentCaseScope(repo, selectedAgentFromInput(input))
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
     const chatCases = await repo.raw.case.findMany({
       where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { userId: true },
@@ -47,6 +47,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
         updatedAt: m.updatedAt,
       })),
       profile,
+      profileScope: profile ? 'legacy_org_profile' : null,
     })
   },
 })

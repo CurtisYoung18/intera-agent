@@ -6,7 +6,7 @@ import { defineRoute, RouteError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { compactConversation } from '@/lib/agent/compact'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
-import { caseIdFilterForScope, childCaseIdFilterForScope, resolveAgentCaseScope, selectedAgentFromInput } from '../../_agent-scope'
+import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScope, requireSelectedAgentFromInput } from '../../_agent-scope'
 
 function parseMemoryStrategy(raw: unknown) {
   try {
@@ -27,8 +27,8 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
   inputSchema: querySchema,
   parseQuery: true,
   async handler({ input, params, repo }) {
-    const agentConfigId = selectedAgentFromInput(input)
-    const scope = await resolveAgentCaseScope(repo, agentConfigId)
+    const agentConfigId = requireSelectedAgentFromInput(input)
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
     const cases = await repo.raw.case.findMany({
       where: { orgId: repo.orgId, chatId: params.chatId, ...caseIdFilterForScope(scope) },
       select: { id: true, userId: true, orgId: true },
@@ -72,7 +72,7 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
         orgId: repo.orgId,
         chatId: params.chatId,
         caseId: { in: caseIds },
-        ...(agentConfigId ? { agentConfigId } : {}),
+        agentConfigId,
         status: { in: ['active', 'paused'] },
       },
       orderBy: { updatedAt: 'desc' },

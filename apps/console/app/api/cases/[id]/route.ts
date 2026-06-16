@@ -4,12 +4,19 @@
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { z } from 'zod'
+import { assertCaseInAgentScope, requireSelectedAgentFromInput } from '@/app/api/_agent-scope'
 
-const paramsSchema = z.object({ id: z.string().min(1) })
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
 
-export const GET = defineRoute<void, { id: string }>({
+export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const scopedRun = await assertCaseInAgentScope(repo, params.id, requireSelectedAgentFromInput(input))
     const c = await repo.case.findFirst({
       where: { id: params.id },
     })
@@ -17,25 +24,23 @@ export const GET = defineRoute<void, { id: string }>({
     if (!c) throw new NotFoundError('ProcedureRun not found')
 
     // Fetch related data via raw prisma (these models aren't org-scoped)
-    const [run, memory, humanTasks, msgCount, traceCount] = await Promise.all([
-      repo.raw.procedureRun.findFirst({
-        where: { orgId: repo.orgId, caseId: params.id },
-        orderBy: { updatedAt: 'desc' },
-        select: { id: true },
-      }),
+    const [memory, humanTasks, msgCount, traceCount] = await Promise.all([
       repo.raw.chatMemory.findFirst({ where: { orgId: repo.orgId, caseId: params.id } }),
       repo.raw.humanTask.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'desc' } }),
       repo.raw.message.count({ where: { orgId: repo.orgId, caseId: params.id } }),
       repo.raw.actionTrace.count({ where: { orgId: repo.orgId, caseId: params.id } }),
     ])
 
-    return apiOk({ case: { ...c, runId: run?.id ?? null, memory, humanTasks, _count: { messages: msgCount, traces: traceCount } } })
+    return apiOk({ case: { ...c, runId: scopedRun.runId, memory, humanTasks, _count: { messages: msgCount, traces: traceCount } } })
   },
 })
 
-export const DELETE = defineRoute<void, { id: string }>({
+export const DELETE = defineRoute<z.infer<typeof querySchema>, { id: string }>({
   method: 'DELETE',
-  async handler({ params, repo, audit }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo, audit }) {
+    await assertCaseInAgentScope(repo, params.id, requireSelectedAgentFromInput(input))
     const existing = await repo.case.findFirst({
       where: { id: params.id },
     })

@@ -273,7 +273,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     setDeleting(true)
     try {
       await apiClient<ChatDeleteResponse>(withAgent(`/api/chats/${encodeURIComponent(activeChatId)}`), { method: 'DELETE' })
-      router.push('/operate/conversations')
+      router.push(withAgent('/operate/conversations'))
     } catch { alert(isZh ? '删除失败' : 'Delete failed'); setDeleting(false) }
   }
 
@@ -287,7 +287,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
               <ConsoleBackButton
                 label={isZh ? '会话' : 'Conversations'}
                 ariaLabel={isZh ? '返回会话列表' : 'Back to conversations'}
-                onClick={() => router.push('/operate/conversations')}
+                onClick={() => router.push(withAgent('/operate/conversations'))}
               />
               <div className="min-w-0">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#357f7c]">{isZh ? '运营' : 'Operate'}</p>
@@ -317,7 +317,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                   const profileKey = (userKey && userKey !== 'anonymous' && !isUuid) ? `user:${userKey}` : `chat:${decodedChatId}`
                   return (
                     <Link
-                      href={`/operate/handoff/${encodeURIComponent(profileKey)}`}
+                      href={withAgent(`/operate/handoff/${encodeURIComponent(profileKey)}`)}
                       className="inline-flex items-center gap-1.5 rounded-[14px] border border-indigo/18 bg-indigo/[0.06] px-3 py-2 text-[12px] font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
                       title={isZh ? '打开该用户档案（跨会话历史与偏好）' : "Open this user's profile (cross-chat history & preferences)"}
                     >
@@ -349,9 +349,9 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                 <div key={caseItem.id} className="flex items-center gap-1.5">
                   <CasePill caseItem={caseItem} />
 	                  <Link
-	                    href={caseItem.runId
+	                    href={withAgent(caseItem.runId
 	                      ? `/operate/conversations/runs/${encodeURIComponent(caseItem.runId)}`
-	                      : `/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
+	                      : `/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`)}
 	                    className="console-btn-icon-square h-8 w-8"
                     title={isZh ? '查看 ProcedureRun 详情' : 'View ProcedureRun details'}
                   >
@@ -470,7 +470,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
               </button>
               {/* Link to full User Profile page */}
               {memoryData?.profile && (
-                <Link href={`/operate/handoff/${encodeURIComponent(memoryData.profile.userId)}`}
+                <Link href={withAgent(`/operate/handoff/${encodeURIComponent(memoryData.profile.userId)}`)}
                   className="flex items-center gap-1 px-3 py-1.5 text-[11px] rounded-lg border border-black/[0.06] text-[var(--fog)] hover:text-[var(--mist)] hover:border-black/10">
                   <User className="w-3 h-3" /> {isZh ? '查看档案' : 'View Profile'} →
                 </Link>
@@ -599,7 +599,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                       {caseTraces.length} {isZh ? '个时间线事件' : 'timeline events'}
                     </span>
                     <Link
-                      href={`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`}
+                      href={withAgent(`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`)}
                       className="inline-flex items-center gap-1.5 rounded-full border border-indigo/18 bg-indigo/[0.06] px-3 py-1.5 font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
                     >
                       {isZh ? 'ProcedureRun 详情' : 'ProcedureRun detail'}

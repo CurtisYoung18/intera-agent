@@ -1,4 +1,4 @@
-// GET /api/ops/dashboard — Ops dashboard metrics for the active org.
+// GET /api/ops/dashboard — Legacy ops dashboard metrics for the selected agent.
 //
 // Migrated to defineRoute + repoForOrg (Wave 1 G1/G2).
 // All queries are org-scoped via the repo Proxy. Cross-model aggregate
@@ -7,19 +7,27 @@
 
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { resolveRequiredAgentCaseScope } from '@/app/api/_agent-scope'
+import { z } from 'zod'
 
-export const GET = defineRoute({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>>({
   method: 'GET',
-  handler: async ({ repo }) => {
+  inputSchema: querySchema,
+  parseQuery: true,
+  handler: async ({ input, repo }) => {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const scope = await resolveRequiredAgentCaseScope(repo, input)
 
-    // Resolve case IDs for the org (repo injects orgId on Case queries).
-    const allCaseIds = (
-      await repo.case.findMany({ select: { id: true } })
-    ).map((c) => c.id)
+    // Resolve case IDs for the selected agent.
+    const allCaseIds = scope.caseIds
     const recentCaseIds = (
       await repo.case.findMany({
-        where: { createdAt: { gte: yesterday } },
+        where: { id: { in: allCaseIds }, createdAt: { gte: yesterday } },
         select: { id: true },
       })
     ).map((c) => c.id)
@@ -32,12 +40,13 @@ export const GET = defineRoute({
     ] = await Promise.all([
       repo.case
         .count({
-          where: { status: { notIn: ['resolved', 'escalated'] } },
+          where: { id: { in: allCaseIds }, status: { notIn: ['resolved', 'escalated'] } },
         })
         .catch(() => 0),
       repo.case
         .findMany({
           where: {
+            id: { in: allCaseIds },
             resolvedAt: { not: null },
             createdAt: { gte: yesterday },
           },
@@ -59,6 +68,7 @@ export const GET = defineRoute({
         : ([] as { title: string }[]),
       repo.case
         .findMany({
+          where: { id: { in: allCaseIds } },
           orderBy: { createdAt: 'desc' as const },
           take: 10,
           select: { id: true, type: true, status: true, createdAt: true },

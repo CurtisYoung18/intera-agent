@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server'
 import { defineRoute, NotFoundError } from '@/lib/api/define-route'
 import { stripInternalMemoryKeys } from '@/lib/agent/memory'
 import { getRuntimeSourceTruth } from '@/lib/operate/runtime-truth'
+import { assertCaseInAgentScope, requireSelectedAgentFromInput } from '@/app/api/_agent-scope'
+import { z } from 'zod'
 
 function safeJson(raw: string | null | undefined): unknown {
   if (!raw) return null
@@ -37,28 +39,32 @@ function stripInternalKeysFromValue(value: unknown): unknown {
   )
 }
 
-export const GET = defineRoute<void, { id: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>, { id: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const agentConfigId = requireSelectedAgentFromInput(input)
+    const scopedRun = await assertCaseInAgentScope(repo, params.id, agentConfigId)
     const caseData = await repo.case.findUnique({ where: { id: params.id } })
     if (!caseData) throw new NotFoundError('ProcedureRun not found')
 
-    const [run, messages, traces, humanTasks, memory] = await Promise.all([
-      repo.raw.procedureRun.findFirst({
-        where: { orgId: repo.orgId, caseId: params.id },
-        orderBy: { updatedAt: 'desc' },
-        select: { id: true },
-      }),
+    const [messages, traces, humanTasks, memory] = await Promise.all([
       repo.raw.message.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'asc' } }),
       repo.raw.actionTrace.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'asc' } }),
       repo.raw.humanTask.findMany({ where: { orgId: repo.orgId, caseId: params.id }, orderBy: { createdAt: 'asc' } }),
       repo.raw.chatMemory.findFirst({ where: { orgId: repo.orgId, caseId: params.id } }),
     ])
 
-    const agentConfig = await repo.agentConfig.findFirst({ where: { isActive: true } })
+    const agentConfig = await repo.agentConfig.findUnique({ where: { id: agentConfigId } })
 
     const sections: string[] = []
-    const displayRunId = run?.id ?? params.id
+    const displayRunId = scopedRun.runId
     sections.push(`# Intera ProcedureRun Export — ${displayRunId}`)
     sections.push(`Exported at: ${new Date().toISOString()}`)
     sections.push('')

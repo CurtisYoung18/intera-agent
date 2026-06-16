@@ -5,6 +5,8 @@ import { defineRoute } from '@/lib/api/define-route'
 import { stripInternalMemoryKeys } from '@/lib/agent/memory'
 import { getRuntimeSourceTruth } from '@/lib/operate/runtime-truth'
 import { resolveProcedureRun } from '../../_lib'
+import { requireSelectedAgentFromInput } from '@/app/api/_agent-scope'
+import { z } from 'zod'
 
 function safeJson(raw: string | null | undefined): unknown {
   if (!raw) return null
@@ -31,10 +33,17 @@ function stripInternalKeysFromValue(value: unknown): unknown {
   return stripInternalMemoryKeys(value as Record<string, unknown>)
 }
 
-export const GET = defineRoute<void, { runId: string }>({
+const querySchema = z.object({
+  agentId: z.string().optional(),
+  agentConfigId: z.string().optional(),
+})
+
+export const GET = defineRoute<z.infer<typeof querySchema>, { runId: string }>({
   method: 'GET',
-  async handler({ params, repo }) {
-    const { run, caseData } = await resolveProcedureRun(repo, params.runId)
+  inputSchema: querySchema,
+  parseQuery: true,
+  async handler({ input, params, repo }) {
+    const { run, caseData } = await resolveProcedureRun(repo, params.runId, requireSelectedAgentFromInput(input))
     const [messages, traces, humanTasks, memory] = await Promise.all([
       repo.raw.message.findMany({ where: { orgId: repo.orgId, OR: [{ runId: run.id }, { caseId: run.caseId }] }, orderBy: { createdAt: 'asc' } }),
       repo.raw.actionTrace.findMany({ where: { orgId: repo.orgId, OR: [{ runId: run.id }, { caseId: run.caseId }] }, orderBy: { createdAt: 'asc' } }),
@@ -42,7 +51,7 @@ export const GET = defineRoute<void, { runId: string }>({
       repo.raw.chatMemory.findFirst({ where: { orgId: repo.orgId, OR: [{ runId: run.id }, { caseId: run.caseId }] } }),
     ])
 
-    const agentConfig = await repo.agentConfig.findFirst({ where: { isActive: true } })
+    const agentConfig = await repo.agentConfig.findUnique({ where: { id: run.agentConfigId } })
     const sections: string[] = []
     sections.push(`# Intera ProcedureRun Export — ${run.id}`)
     sections.push(`Exported at: ${new Date().toISOString()}`)
