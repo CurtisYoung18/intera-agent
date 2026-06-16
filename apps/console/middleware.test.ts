@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NextRequest } from 'next/server'
-import { mapLegacyRoute, redirectPreservingQuery } from './middleware'
+import { mapLegacyRoute, middleware, redirectPreservingQuery } from './middleware'
 
 describe('mapLegacyRoute', () => {
   const cases: Array<[string, string | null]> = [
@@ -64,6 +64,34 @@ describe('mapLegacyRoute', () => {
 
     expect(res.headers.get('location')).toBe(
       'https://demo.anytrans.ai/build/components/brain?mode=model&agentId=agent-1',
+    )
+  })
+
+  it('preserves selected agent query in unauthenticated login next URLs', async () => {
+    const req = new NextRequest('https://demo.anytrans.ai/operate?agentId=agent-1', {
+      headers: {
+        host: 'demo.anytrans.ai',
+        'x-forwarded-proto': 'https',
+      },
+    })
+    const res = await middleware(req)
+
+    expect(res.headers.get('location')).toBe(
+      'https://demo.anytrans.ai/login?next=%2Foperate%3FagentId%3Dagent-1',
+    )
+  })
+
+  it('preserves selected agent query through unauthenticated root redirects', async () => {
+    const req = new NextRequest('https://demo.anytrans.ai/?agentId=agent-1', {
+      headers: {
+        host: 'demo.anytrans.ai',
+        'x-forwarded-proto': 'https',
+      },
+    })
+    const res = await middleware(req)
+
+    expect(res.headers.get('location')).toBe(
+      'https://demo.anytrans.ai/login?next=%2Fbuild%2Fpilot-lab%3FagentId%3Dagent-1',
     )
   })
 })

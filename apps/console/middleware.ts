@@ -97,7 +97,7 @@ export async function middleware(req: NextRequest) {
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
     const proto = req.headers.get('x-forwarded-proto') || 'https'
     const loginUrl = new URL(`/login`, `${proto}://${host}`)
-    loginUrl.searchParams.set('next', '/build/pilot-lab')
+    loginUrl.searchParams.set('next', req.nextUrl.search ? `/build/pilot-lab${req.nextUrl.search}` : '/build/pilot-lab')
     return NextResponse.redirect(loginUrl)
   }
 
@@ -112,7 +112,7 @@ export async function middleware(req: NextRequest) {
     const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || ''
     const proto = req.headers.get('x-forwarded-proto') || 'https'
     const loginUrl = new URL(`${proto}://${host}/login`)
-    loginUrl.searchParams.set('next', pathname)
+    loginUrl.searchParams.set('next', `${pathname}${req.nextUrl.search}`)
     return NextResponse.redirect(loginUrl)
   }
 
