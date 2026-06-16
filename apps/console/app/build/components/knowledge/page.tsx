@@ -274,6 +274,12 @@ export default function BuildKnowledgePage() {
     () => sources.filter((source) => source.enabled && hasKnowledgeSourceGroupIds(source.groupIds)),
     [sources],
   )
+  const createSourceBlockReason = useMemo(() => {
+    if (gptConnected === false) {
+      return 'Add a GPTBots API key above before creating or binding a Knowledge source.'
+    }
+    return null
+  }, [gptConnected])
   const saveBlockReason = useMemo(() => {
     if (!editingSource) return null
     if (!editingSource.name.trim()) return 'Source name is required.'
@@ -517,8 +523,9 @@ export default function BuildKnowledgePage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setEditingSource(toEditingSource())}
-                    className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/84 px-3.5 py-2 text-[12px] font-semibold text-[var(--mist)] transition-colors hover:text-[var(--color-accent-primary)]"
+                    onClick={() => !createSourceBlockReason && setEditingSource(toEditingSource())}
+                    disabled={!!createSourceBlockReason}
+                    className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/84 px-3.5 py-2 text-[12px] font-semibold text-[var(--mist)] transition-colors hover:text-[var(--color-accent-primary)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-[var(--mist)]"
                   >
                     <Plus className="h-4 w-4" />
                     New source
@@ -533,14 +540,21 @@ export default function BuildKnowledgePage() {
                     Bind GPTBots source
                   </button>
                 </div>
+                {createSourceBlockReason ? (
+                  <p className="mt-2 text-[11px] text-[var(--fog)]">{createSourceBlockReason}</p>
+                ) : null}
               </div>
 
               {sources.length === 0 ? (
                 <EmptyState
                   icon={Search}
                   title="No Knowledge sources yet"
-                  description="Create a source manually or bind an existing GPTBots knowledge base for this Agent."
-                  action={{ label: 'New source', onClick: () => setEditingSource(toEditingSource()) }}
+                  description={
+                    createSourceBlockReason
+                      ? 'Add a GPTBots API key above to unlock Knowledge source creation and GPTBots binding for this Agent.'
+                      : 'Create a source by binding at least one GPTBots knowledge base for this Agent.'
+                  }
+                  action={createSourceBlockReason ? undefined : { label: 'New source', onClick: () => setEditingSource(toEditingSource()) }}
                   size="large"
                 />
               ) : (

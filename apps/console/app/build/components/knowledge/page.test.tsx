@@ -123,13 +123,27 @@ async function renderPage() {
 }
 
 describe('BuildKnowledgePage', () => {
-  it('does not allow saving a source until at least one knowledge base is selected', async () => {
+  it('blocks source creation when GPTBots is not configured and explains why', async () => {
+    mockSources = []
     await renderPage()
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'New source' })[0])
+    expect(screen.getByText('Add a GPTBots API key above before creating or binding a Knowledge source.')).toBeDefined()
+    expect(screen.getByText('Add a GPTBots API key above to unlock Knowledge source creation and GPTBots binding for this Agent.')).toBeDefined()
+    expect((screen.getByRole('button', { name: 'New source' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('heading', { name: 'New Knowledge source' })).toBeNull()
+  })
+
+  it('does not allow saving a source until at least one knowledge base is selected', async () => {
+    mockGptbotsPayload = {
+      knowledge_base: [{ id: 'kb-1', name: 'Account', desc: 'Account KB', chunk: 4, doc: 1 }],
+    }
+
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New source' }))
     fireEvent.change(screen.getByLabelText('Source name'), { target: { value: 'Temp FAQ' } })
 
-    expect(screen.getByText('Add a GPTBots API key above to load selectable knowledge bases, then choose at least one knowledge base.')).toBeDefined()
+    expect(screen.getByText('Select at least one GPTBots knowledge base to make this source searchable.')).toBeDefined()
     const saveButtons = screen.getAllByRole('button', { name: 'Save' })
     expect((saveButtons[saveButtons.length - 1] as HTMLButtonElement).disabled).toBe(true)
   })
