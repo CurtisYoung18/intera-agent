@@ -523,3 +523,15 @@ Use this format for each new item:
 - Production URL / screenshot / receipt: `https://demo.anytrans.ai/api/health` returned `status=ok` and `db=connected`. Strict LiveChat evidence receipt: `.artifacts/production-readiness/2026-06-16/livechat-form-tool-roundtrip-7d41e7d9/summary.md`.
 - Owner decision needed: None.
 - Follow-up owner: architect / delivery lead
+
+### 2026-06-17 - Knowledge Sources Now Require At Least One Bound KB
+
+- Area: Build / Components / Knowledge / new-agent CRUD
+- Status: owner-review
+- Severity: P1
+- Uncertainty: The production Knowledge workspace allowed a newly created Agent with no GPTBots API key to save a source with `groupIds=[]`, which immediately surfaced as a fake `kb_search_*` tool and let `Test retrieval` hit `/api/admin/knowledge/test`, ending in a `503` setup error. It was ambiguous whether empty sources were meant to be valid placeholders for future binding or simply a missing constraint.
+- Default action taken: Treated empty sources as invalid configuration. UI now blocks save until at least one GPTBots knowledge base is selected, retrieval testing is disabled until GPTBots is configured and at least one enabled source is truly testable, backend create/update routes reject empty `groupIds`, retrieval route rejects unbound sources, and runtime/tool listing skips legacy enabled rows that have no bound KBs.
+- Why this default: In the current product surface, a Knowledge source exists to back a `kb_search_*` tool. A source with no KB binding cannot answer retrieval requests truthfully, so allowing it creates broken tools and noisy 503s instead of a usable draft state.
+- Evidence: Reproduced on `https://demo.anytrans.ai/build/components/knowledge?agentId=cmqgvkmy30001qj6286ub0n3l` using temporary agent `Codex Temp 0617B`: source save succeeded with no KB selected, `POST /api/admin/knowledge/test` returned `503`, and UI only showed the setup message after the failed request. Focused regression suite after the fix passed: `apps/console/app/build/components/knowledge/page.test.tsx` (`4/4`), `apps/console/app/api/admin/knowledge/sources/__tests__/knowledge-sources-route.test.ts`, `apps/console/app/api/admin/knowledge/__tests__/knowledge-test-route.test.ts`, `apps/console/app/build/components/tools/page.test.tsx`, and `apps/console/lib/agent/__tests__/unit/knowledge-tool-names.test.ts` (`26/26` combined). `npm run build:console` passed in the clean hotfix worktree.
+- Owner decision needed: Confirm whether Product wants to keep this strict invariant long-term or introduce an explicit draft/placeholder state for knowledge sources before KB binding.
+- Follow-up owner: architect / knowledge UX owner

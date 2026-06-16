@@ -3,7 +3,8 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
-import { defineRoute, ConflictError } from '@/lib/api/define-route'
+import { defineRoute, ConflictError, ValidationError } from '@/lib/api/define-route'
+import { parseKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import { apiOk, apiCreated } from '@intera/shared/contracts/envelope'
 
 const stringifyMaybe = (val: unknown): string => {
@@ -50,13 +51,19 @@ export const POST = defineRoute<CreateInput>({
   inputSchema: createSchema,
   async handler({ input, repo, audit }) {
     const { agentConfigId, ...fields } = input
+    const groupIds = parseKnowledgeSourceGroupIds(fields.groupIds)
+    if (groupIds.length === 0) {
+      throw new ValidationError('Select at least one GPTBots knowledge base before saving this source.', {
+        groupIds: 'Select at least one knowledge base',
+      })
+    }
     try {
       const source = await repo.raw.knowledgeSource.create({
         data: {
           agentConfigId,
           name: fields.name,
           description: fields.description ?? null,
-          groupIds: stringifyMaybe(fields.groupIds),
+          groupIds: stringifyMaybe(groupIds),
           dataIds: fields.dataIds ? stringifyMaybe(fields.dataIds) : null,
           embeddingRate: fields.embeddingRate ?? 0.9,
           topK: fields.topK ?? 15,

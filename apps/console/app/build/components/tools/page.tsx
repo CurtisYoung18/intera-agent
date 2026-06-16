@@ -31,6 +31,7 @@ import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { useSession } from '@/lib/hooks/use-session'
+import { hasKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import type { ToolsListResponse, ToolCreateResponse } from '@intera/shared/contracts/tools'
 import { normalizeToolMode, type ToolItem as ContractToolItem } from '@intera/shared/contracts/tools'
 import { CHANNEL_TOOL_NAMES, SPECIAL_TOOL_NAMES, SYSTEM_TOOL_NAMES } from '@/lib/tool-classifications'
@@ -41,6 +42,7 @@ type KnowledgeSourceRow = {
   id: string
   name: string
   description: string | null
+  groupIds: string
   enabled: boolean
   topK: number
   rerankVersion: string | null
@@ -243,9 +245,10 @@ export default function BuildToolsPage() {
   const hasSearch = search.trim().length > 0
 
   const filteredKnowledgeSources = useMemo(() => {
+    const eligibleSources = knowledgeSources.filter((source) => source.enabled && hasKnowledgeSourceGroupIds(source.groupIds))
     const query = search.trim().toLowerCase()
-    if (!query) return knowledgeSources
-    return knowledgeSources.filter((source) => {
+    if (!query) return eligibleSources
+    return eligibleSources.filter((source) => {
       const generatedToolName = getToolName(source.name, source.id).toLowerCase()
       return (
         generatedToolName.includes(query) ||
@@ -563,7 +566,7 @@ export default function BuildToolsPage() {
                     </span>
                   </div>
                   <p className="mb-4 text-[12px] text-[var(--fog)]">
-                    Each enabled source generates a <code className="rounded bg-teal-500/[0.08] px-1 text-[11px]">kb_search_&lt;name&gt;</code> tool. Configure source details in{' '}
+                    Each enabled source with at least one bound knowledge base generates a <code className="rounded bg-teal-500/[0.08] px-1 text-[11px]">kb_search_&lt;name&gt;</code> tool. Configure source details in{' '}
                     <Link href="/build/components/knowledge" className="text-teal-600 underline">
                       Knowledge
                     </Link>.

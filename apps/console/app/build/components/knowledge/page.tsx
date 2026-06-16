@@ -25,6 +25,7 @@ import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { useSession } from '@/lib/hooks/use-session'
+import { hasKnowledgeSourceGroupIds, parseKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import type { CaseTypeItem } from '@intera/shared/contracts/case-types'
 
 type KnowledgeSource = {
@@ -87,22 +88,12 @@ const RERANK_OPTIONS = [
   { value: 'BCE-Rerank', label: 'BCE Rerank' },
 ]
 
-function parseJsonArray(raw: string | null | undefined): string[] {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 function toEditingSource(source?: KnowledgeSource | null): EditingSource {
   return {
     id: source?.id,
     name: source?.name || '',
     description: source?.description || '',
-    groupIds: parseJsonArray(source?.groupIds),
+    groupIds: parseKnowledgeSourceGroupIds(source?.groupIds),
     embeddingRate: source?.embeddingRate ?? 0.9,
     topK: source?.topK ?? 15,
     rerankVersion: source?.rerankVersion || 'BGE-Rerank',
@@ -273,12 +264,39 @@ export default function BuildKnowledgePage() {
   }, [load])
 
   const enabledCount = sources.filter((source) => source.enabled).length
-  const usedKbIds = useMemo(() => new Set(sources.flatMap((source) => parseJsonArray(source.groupIds))), [sources])
+  const usedKbIds = useMemo(() => new Set(sources.flatMap((source) => parseKnowledgeSourceGroupIds(source.groupIds))), [sources])
   const availableKbs = useMemo(() => gptKbs.filter((kb) => !usedKbIds.has(kb.id)), [gptKbs, usedKbIds])
   const procedureScopeOptions = useMemo(() => procedureTypes.map((item) => ({
     value: item.type,
     label: item.displayName || item.type,
   })), [procedureTypes])
+  const testableSources = useMemo(
+    () => sources.filter((source) => source.enabled && hasKnowledgeSourceGroupIds(source.groupIds)),
+    [sources],
+  )
+  const saveBlockReason = useMemo(() => {
+    if (!editingSource) return null
+    if (!editingSource.name.trim()) return 'Source name is required.'
+    if (editingSource.groupIds.length > 0) return null
+    return gptConnected
+      ? 'Select at least one GPTBots knowledge base before saving this source.'
+      : 'Add a GPTBots API key above to load selectable knowledge bases, then choose at least one knowledge base.'
+  }, [editingSource, gptConnected])
+  const testBlockReason = useMemo(() => {
+    if (gptConnected === false) {
+      return 'GPTBots API key is not configured for this Agent. Add it above before running retrieval tests.'
+    }
+    if (testableSources.length === 0) {
+      return 'Add at least one enabled knowledge source with a bound GPTBots knowledge base before testing retrieval.'
+    }
+    return null
+  }, [gptConnected, testableSources])
+
+  useEffect(() => {
+    if (testSourceId && !testableSources.some((source) => source.id === testSourceId)) {
+      setTestSourceId('')
+    }
+  }, [testSourceId, testableSources])
 
   const handleSave = useCallback(async () => {
     if (!editingSource?.name || !agentConfigId) return
@@ -373,6 +391,10 @@ export default function BuildKnowledgePage() {
 
   const runTest = useCallback(async () => {
     if (!testQuery.trim() || !agentConfigId) return
+    if (testBlockReason) {
+      setTestError(testBlockReason)
+      return
+    }
     setTesting(true)
     setTestError(null)
     setTestResults(null)
@@ -401,7 +423,7 @@ export default function BuildKnowledgePage() {
     } finally {
       setTesting(false)
     }
-  }, [agentConfigId, testQuery, testSourceId, testTopK])
+  }, [agentConfigId, testBlockReason, testQuery, testSourceId, testTopK])
 
   return (
     <BuildComponentsRouteShell
@@ -550,15 +572,21 @@ export default function BuildKnowledgePage() {
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {parseJsonArray(source.groupIds).map((groupId) => (
-                          <span
-                            key={groupId}
-                            className="rounded-full border border-black/[0.06] bg-white/84 px-2.5 py-1 text-[10px] font-medium text-[var(--fog)]"
-                            title={getKbName(gptKbs, groupId)}
-                          >
-                            {getKbName(gptKbs, groupId)}
+                        {parseKnowledgeSourceGroupIds(source.groupIds).length > 0 ? (
+                          parseKnowledgeSourceGroupIds(source.groupIds).map((groupId) => (
+                            <span
+                              key={groupId}
+                              className="rounded-full border border-black/[0.06] bg-white/84 px-2.5 py-1 text-[10px] font-medium text-[var(--fog)]"
+                              title={getKbName(gptKbs, groupId)}
+                            >
+                              {getKbName(gptKbs, groupId)}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="rounded-full border border-amber/20 bg-amber/[0.08] px-2.5 py-1 text-[10px] font-medium text-amber">
+                            No knowledge base bound
                           </span>
-                        ))}
+                        )}
                       </div>
 
                       <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--fog)]">
@@ -601,7 +629,10 @@ export default function BuildKnowledgePage() {
                     <span className="text-[11px] font-medium text-[var(--fog)]">Query</span>
                     <input
                       value={testQuery}
-                      onChange={(event) => setTestQuery(event.target.value)}
+                      onChange={(event) => {
+                        setTestQuery(event.target.value)
+                        if (testError) setTestError(null)
+                      }}
                       onKeyDown={(event) => event.key === 'Enter' && runTest()}
                       placeholder="Enter a retrieval test query"
                       className="glass-input-console w-full text-[13px]"
@@ -611,11 +642,14 @@ export default function BuildKnowledgePage() {
                     <span className="text-[11px] font-medium text-[var(--fog)]">Source</span>
                     <select
                       value={testSourceId}
-                      onChange={(event) => setTestSourceId(event.target.value)}
+                      onChange={(event) => {
+                        setTestSourceId(event.target.value)
+                        if (testError) setTestError(null)
+                      }}
                       className="glass-input-console w-full text-[13px]"
                     >
                       <option value="">All enabled sources</option>
-                      {sources.filter((source) => source.enabled).map((source) => (
+                      {testableSources.map((source) => (
                         <option key={source.id} value={source.id}>
                           {source.name}
                         </option>
@@ -629,14 +663,17 @@ export default function BuildKnowledgePage() {
                       min={1}
                       max={50}
                       value={testTopK}
-                      onChange={(event) => setTestTopK(Math.max(1, Math.min(50, Number(event.target.value) || 1)))}
+                      onChange={(event) => {
+                        setTestTopK(Math.max(1, Math.min(50, Number(event.target.value) || 1)))
+                        if (testError) setTestError(null)
+                      }}
                       className="glass-input-console w-full text-[13px]"
                     />
                   </label>
                   <button
                     type="button"
                     onClick={runTest}
-                    disabled={testing || !testQuery.trim()}
+                    disabled={testing || !testQuery.trim() || !!testBlockReason}
                     className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-[var(--color-accent-primary)] px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                   >
                     {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
@@ -644,6 +681,12 @@ export default function BuildKnowledgePage() {
                   </button>
                 </div>
               </div>
+
+              {!testError && testBlockReason ? (
+                <div className="rounded-[20px] border border-amber/20 bg-amber/[0.08] px-4 py-3 text-[12px] text-amber">
+                  {testBlockReason}
+                </div>
+              ) : null}
 
               {testError ? (
                 <div className="rounded-[20px] border border-vermillion/15 bg-vermillion/[0.06] px-4 py-3 text-[12px] text-vermillion">
@@ -798,6 +841,13 @@ export default function BuildKnowledgePage() {
                       </option>
                     ))}
                   </select>
+                  {editingSource.groupIds.length === 0 ? (
+                    <p className="text-[11px] text-[var(--fog)]">
+                      {gptConnected
+                        ? 'Select at least one GPTBots knowledge base to make this source searchable.'
+                        : 'Add a GPTBots API key above to load selectable knowledge bases, then choose at least one knowledge base.'}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -909,7 +959,7 @@ export default function BuildKnowledgePage() {
                 <button
                   type="button"
                   onClick={handleSave}
-                  disabled={saving || !editingSource.name.trim()}
+                  disabled={saving || !!saveBlockReason}
                   className="rounded-xl bg-[var(--color-accent-primary)] px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}

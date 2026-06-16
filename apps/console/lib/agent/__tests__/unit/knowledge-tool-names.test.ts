@@ -61,11 +61,24 @@ const sourceChineseName = {
   enabled: true,
 }
 
+const sourceEmpty = {
+  id: 'kb_empty_123456',
+  name: 'Empty source',
+  description: 'No bound knowledge base',
+  groupIds: JSON.stringify([]),
+  topK: 15,
+  embeddingRate: 0.9,
+  docCorrelation: 0.3,
+  rerankVersion: 'BGE-Rerank',
+  modelControlTopK: false,
+  enabled: true,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   h.toolFindMany.mockResolvedValue([])
   h.caseTypeFindMany.mockResolvedValue([])
-  h.knowledgeSourceFindMany.mockResolvedValue([sourceDefault, sourceDeposit, sourceChineseName])
+  h.knowledgeSourceFindMany.mockResolvedValue([sourceDefault, sourceDeposit, sourceChineseName, sourceEmpty])
   h.knowledgeSourceFindFirst.mockResolvedValue(sourceDefault)
   h.knowledgeSourceUpdate.mockResolvedValue({})
   h.agentConfigFindUnique.mockResolvedValue({ gptbotsApiKey: 'agent-key' })
@@ -84,6 +97,7 @@ describe('generated knowledge-search tool names', () => {
     expect(names).toContain('kb_search_default')
     expect(names).toContain('kb_search_deposit_bonus')
     expect(names).toContain('kb_search_kb_cn_abcdef')
+    expect(names).not.toContain('kb_search_empty_source')
     expect(names).not.toContain('kb_search_Default')
     expect(names.every((name) => /^[a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*$/.test(name))).toBe(true)
     expect(router.getTool('kb_search_default')?.knowledgeSourceId).toBe('kb_default_123456')

@@ -11,6 +11,7 @@ import type { ToolDefinition, ToolUse } from '@intera/shared/types'
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import { z } from 'zod'
 import { knowledgeSourceToolName, stableToolNameSegment } from './tool-names'
+import { hasKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import { RETIRED_TOOL_NAMES } from '@/lib/tool-classifications'
 
 /**
@@ -421,9 +422,9 @@ export class ToolRouter {
       }
 
       // Load knowledge sources and inject each as a kb_search_<name> tool.
-      const knowledgeSources = await prisma.knowledgeSource.findMany({
+      const knowledgeSources = (await prisma.knowledgeSource.findMany({
         where: { agentConfigId, enabled: true },
-      })
+      })).filter((source) => hasKnowledgeSourceGroupIds(source.groupIds))
 
       // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
       // Skipped entirely in dry-run (playground) so a turn performs ZERO DB writes.

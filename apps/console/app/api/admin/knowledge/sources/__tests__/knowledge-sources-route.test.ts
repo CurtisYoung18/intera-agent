@@ -148,6 +148,15 @@ describe('G1 — Uniform envelope', () => {
     expect(body.data.source.modelControlTopK).toBe(true)
     expect(res.status).toBe(201)
   })
+
+  it('POST rejects sources without bound knowledge bases', async () => {
+    const res = await POST(makeRequest({ agentConfigId: 'agent_default_v1', name: 'empty_source', groupIds: [] }))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(body.error.fields.groupIds).toBe('Select at least one knowledge base')
+    expect(res.status).toBe(400)
+  })
 })
 
 describe('G2 — Tenant isolation', () => {
@@ -183,6 +192,15 @@ describe('G3 — Mutations', () => {
     expect(body.ok).toBe(true)
     expect(body.data.source.description).toBe('Updated')
     expect(body.data.source.modelControlTopK).toBe(true)
+  })
+
+  it('PUT rejects clearing all bound knowledge bases', async () => {
+    const res = await PUT(makeRequestForAgent('agent_default_v1', { agentConfigId: 'agent_default_v1', groupIds: [] }), routeCtx('ks1'))
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('validation')
+    expect(body.error.fields.groupIds).toBe('Select at least one knowledge base')
+    expect(res.status).toBe(400)
   })
 })
 

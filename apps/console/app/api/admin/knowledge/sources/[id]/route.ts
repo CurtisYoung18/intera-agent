@@ -3,7 +3,8 @@
 // Scoped by agentConfigId (not orgId).
 
 import { z } from 'zod'
-import { defineRoute, NotFoundError } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
+import { parseKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 interface KnowledgeSourceParams { id: string }
@@ -60,7 +61,15 @@ export const PUT = defineRoute<UpdateInput, KnowledgeSourceParams>({
     const updateData: Record<string, unknown> = {}
     if (fields.name !== undefined) updateData.name = fields.name
     if (fields.description !== undefined) updateData.description = fields.description
-    if (fields.groupIds !== undefined) updateData.groupIds = stringifyMaybe(fields.groupIds)
+    if (fields.groupIds !== undefined) {
+      const groupIds = parseKnowledgeSourceGroupIds(fields.groupIds)
+      if (groupIds.length === 0) {
+        throw new ValidationError('Select at least one GPTBots knowledge base before saving this source.', {
+          groupIds: 'Select at least one knowledge base',
+        })
+      }
+      updateData.groupIds = stringifyMaybe(groupIds)
+    }
     if (fields.dataIds !== undefined) updateData.dataIds = fields.dataIds ? stringifyMaybe(fields.dataIds) : null
     if (fields.embeddingRate !== undefined) updateData.embeddingRate = fields.embeddingRate
     if (fields.topK !== undefined) updateData.topK = fields.topK

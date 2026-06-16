@@ -138,4 +138,51 @@ describe('POST /api/admin/knowledge/test', () => {
     expect(body.ok).toBe(false)
     expect(body.error.message).toContain('GPTBots API key is not configured')
   })
+
+  it('rejects a selected source with no bound knowledge base', async () => {
+    h.mockFindSource.mockResolvedValue({
+      id: 'source-1',
+      agentConfigId: 'agent-1',
+      name: 'Empty source',
+      groupIds: '[]',
+      embeddingRate: 0.8,
+      topK: 12,
+      rerankVersion: 'BGE-Rerank',
+      docCorrelation: 0.35,
+    })
+
+    const res = await POST(mkReq({
+      agentConfigId: 'agent-1',
+      query: 'deposit',
+      sourceId: 'source-1',
+      topK: 7,
+    }) as any)
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.ok).toBe(false)
+    expect(body.error.message).toContain('has no GPTBots knowledge base bound')
+  })
+
+  it('rejects all-sources retrieval when no enabled source is testable', async () => {
+    h.mockFindSources.mockResolvedValue([
+      {
+        id: 'source-empty',
+        agentConfigId: 'agent-1',
+        name: 'Empty source',
+        groupIds: '[]',
+        embeddingRate: 0.9,
+        topK: 15,
+        rerankVersion: 'BGE-Rerank',
+        docCorrelation: 0.3,
+      },
+    ])
+
+    const res = await POST(mkReq({ agentConfigId: 'agent-1', query: 'deposit' }) as any)
+    const body = await res.json()
+
+    expect(res.status).toBe(400)
+    expect(body.ok).toBe(false)
+    expect(body.error.message).toContain('No enabled knowledge source has a GPTBots knowledge base bound')
+  })
 })

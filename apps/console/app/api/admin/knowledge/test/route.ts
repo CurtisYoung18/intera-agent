@@ -2,7 +2,8 @@
 // Migrated to defineRoute (G1 contract seam + G2 tenant scoping).
 
 import { z } from 'zod'
-import { defineRoute, NotFoundError, RouteError } from '@/lib/api/define-route'
+import { defineRoute, NotFoundError, RouteError, ValidationError } from '@/lib/api/define-route'
+import { parseKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import { apiOk } from '@intera/shared/contracts/envelope'
 
 const GPTBOTS_API = 'https://api-sg.gptbots.ai/v1/vector/match'
@@ -21,16 +22,6 @@ async function getApiKey(repo: any, agentConfigId: string): Promise<string | nul
     if (config?.gptbotsApiKey) return config.gptbotsApiKey
   } catch { /* DB not ready */ }
   return process.env.GPTBOTS_API_KEY ?? null
-}
-
-function parseJsonArray(raw: string | null | undefined): string[] {
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-  } catch {
-    return []
-  }
 }
 
 function normalizeMatch(item: any) {
@@ -63,27 +54,41 @@ export const POST = defineRoute<TestInput>({
     if (input.sourceId) {
       const source = await repo.raw.knowledgeSource.findFirst({ where: { id: input.sourceId, agentConfigId: input.agentConfigId } })
       if (!source) throw new NotFoundError('Source not found')
+      const groupIds = parseKnowledgeSourceGroupIds(source.groupIds)
+      if (groupIds.length === 0) {
+        throw new ValidationError(`Knowledge source "${source.name}" has no GPTBots knowledge base bound. Add one in Knowledge -> Sources.`, {
+          sourceId: 'Source has no bound knowledge base',
+        })
+      }
       selectedSource = { id: source.id, name: source.name }
-      gptBody.group_ids = parseJsonArray(source.groupIds)
+      gptBody.group_ids = groupIds
       gptBody.embedding_rate = source.embeddingRate
       if (source.rerankVersion) gptBody.rerank_version = source.rerankVersion
       if (source.docCorrelation != null) gptBody.doc_correlation = source.docCorrelation
     } else {
       const sources = await repo.raw.knowledgeSource.findMany({ where: { agentConfigId: input.agentConfigId, enabled: true } })
       if (sources.length > 0) {
+        const validSources = sources
+          .map((source) => ({ source, groupIds: parseKnowledgeSourceGroupIds(source.groupIds) }))
+          .filter((entry) => entry.groupIds.length > 0)
+        if (validSources.length === 0) {
+          throw new ValidationError('No enabled knowledge source has a GPTBots knowledge base bound. Add one in Knowledge -> Sources.', {
+            sourceId: 'No enabled source has a bound knowledge base',
+          })
+        }
         const allGroupIds: string[] = []
         let avgRate = 0.9
         let minCorr: number | undefined
-        for (const s of sources) {
-          allGroupIds.push(...parseJsonArray(s.groupIds))
-          avgRate = s.embeddingRate
-          if (s.docCorrelation != null && (minCorr == null || s.docCorrelation < minCorr)) {
-            minCorr = s.docCorrelation
+        for (const entry of validSources) {
+          allGroupIds.push(...entry.groupIds)
+          avgRate = entry.source.embeddingRate
+          if (entry.source.docCorrelation != null && (minCorr == null || entry.source.docCorrelation < minCorr)) {
+            minCorr = entry.source.docCorrelation
           }
         }
         gptBody.group_ids = [...new Set(allGroupIds)]
         gptBody.embedding_rate = avgRate
-        if (sources[0]?.rerankVersion) gptBody.rerank_version = sources[0].rerankVersion
+        if (validSources[0]?.source.rerankVersion) gptBody.rerank_version = validSources[0].source.rerankVersion
         if (minCorr != null) gptBody.doc_correlation = minCorr
       }
     }

@@ -116,6 +116,7 @@ const knowledgeSources = [
     id: 'kb-1',
     name: 'account',
     description: 'Account knowledge',
+    groupIds: '["group-account"]',
     enabled: true,
     topK: 15,
     rerankVersion: 'BGE-v1',
@@ -124,6 +125,16 @@ const knowledgeSources = [
     id: 'kb-2',
     name: 'deposit',
     description: 'Deposit knowledge',
+    groupIds: '["group-deposit"]',
+    enabled: true,
+    topK: 15,
+    rerankVersion: 'BGE-v1',
+  },
+  {
+    id: 'kb-3',
+    name: 'empty',
+    description: 'Should not generate a tool',
+    groupIds: '[]',
     enabled: true,
     topK: 15,
     rerankVersion: 'BGE-v1',
@@ -201,6 +212,15 @@ describe('BuildToolsPage', () => {
       expect(screen.getByText('kb_search_deposit')).toBeDefined()
     })
     expect(screen.queryByText('kb_search_account')).toBeNull()
+    expect(screen.queryByText('kb_search_empty')).toBeNull()
+  })
+
+  it('hides enabled knowledge sources that are not bound to any knowledge base', async () => {
+    await renderPage()
+
+    expect(screen.getByText('kb_search_account')).toBeDefined()
+    expect(screen.getByText('kb_search_deposit')).toBeDefined()
+    expect(screen.queryByText('kb_search_empty')).toBeNull()
   })
 
   it('routes toggles and endpoint tests through backend APIs', async () => {
