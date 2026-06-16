@@ -6,12 +6,12 @@ import { zhSurfaces } from '../messages/zh'
 
 const INTEGRATED_SPLIT_SNAPSHOT = {
   en: {
-    count: 1654,
-    hash: '06e267641025df8324688665d9c27b186ce1975f17c2e79ded7718b1a066c51b',
+    count: 1657,
+    hash: '4a17d9297e780e4740f863ec2252c7715a175e737e5bab50910831e606c8725e',
   },
   zh: {
-    count: 1654,
-    hash: '47ef0c0790c0977a4af855ca2f080a5b27448b527b35c1cb7f0e28718d50da0b',
+    count: 1657,
+    hash: '627c8beec5ef9cc40c02aa5f0a4a01ab51200321653595c2201e94f8ae70fd60',
   },
 }
 

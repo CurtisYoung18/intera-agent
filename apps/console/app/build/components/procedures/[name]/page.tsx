@@ -1244,6 +1244,11 @@ export default function BuildProcedureDetailPage() {
 
   const save = useCallback(async () => {
     if (!agentConfigId || !item) return
+    if (!draft.displayName.trim()) {
+      setSaveSuccess(null)
+      setSaveError(t('procedureEditor.error.displayNameRequired'))
+      return
+    }
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(null)

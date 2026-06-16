@@ -229,16 +229,11 @@ export default function BuildProceduresPage() {
                         onClick={() => router.push(`/build/components/procedures/${encodeURIComponent(item.type)}`)}
                         className="min-w-0 flex-1 text-left"
                       >
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-[16px] border border-white/70 bg-white/80 text-[18px] shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]">
-                            {item.icon || '\u{1F4CB}'}
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-[14px] font-semibold text-[var(--mist)]">
-                              {item.displayName || item.type}
-                            </p>
-                            <p className="truncate font-mono text-[11px] text-[var(--fog)]">{item.type}</p>
-                          </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-[14px] font-semibold text-[var(--mist)]">
+                            {item.displayName || item.type}
+                          </p>
+                          <p className="truncate font-mono text-[11px] text-[var(--fog)]">{item.type}</p>
                         </div>
                       </button>
                       <button
