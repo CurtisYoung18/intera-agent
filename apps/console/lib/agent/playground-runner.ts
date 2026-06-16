@@ -20,7 +20,6 @@ import { getProcedureRuntime, recordInitialInputEvent } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
-import { classifyExplicitJ1BCaseType } from './money-movement-routing'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 import {
@@ -257,15 +256,6 @@ function schemaFromCaseTypeRow(caseType: {
   }
 }
 
-async function resolvePlaygroundCaseSchema(agentConfigId: string, message: string): Promise<CaseSchemaConfig | null> {
-  const caseType = classifyExplicitJ1BCaseType(message)
-  if (!caseType) return null
-  const row = await prisma.caseType.findUnique({
-    where: { agentConfigId_type: { agentConfigId, type: caseType } },
-  }).catch(() => null)
-  return row ? schemaFromCaseTypeRow(row) : null
-}
-
 function enrichTraceRecord(
   record: TraceRecord,
   toolDefinitions: Map<string, ToolDefinition>,
@@ -435,7 +425,7 @@ export async function* runPlaygroundTurn(input: {
   let caseId: string
   let effectiveChatId: string
   let bootstrapNewCase: boolean
-  let caseSchema: CaseSchemaConfig | null = formResult ? null : await resolvePlaygroundCaseSchema(agentConfigId, input.message)
+  let caseSchema: CaseSchemaConfig | null = null
 
   if (inputChatId) {
     // start_procedure mutates Case.type to the real case type, so Playground

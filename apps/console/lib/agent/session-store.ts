@@ -67,7 +67,6 @@ import {
   findHandoffMatch,
   findLatestPersistedHandoffEvidence,
   hasPersistedHandoffEvidence,
-  promisesHumanHandoff,
 } from '@intera/runtime-core/procedure-run-finalization'
 import {
   assessProcedureToolOutcome,
@@ -685,25 +684,19 @@ export function recordProcedureTextReply(caseId: string, input: {
     run.needsReconcile = true
     run.blockers = [...new Set([...run.blockers, 'A customer-visible reply was based on stale input.'])]
   }
-  if (!stale && promisesHumanHandoff(input.text) && !hasPersistedHandoffEvidence(run)) {
-    blockedReason = 'A customer-facing human-handoff promise was drafted before create_human_task produced persisted evidence.'
-    run.blockers = [...new Set([...run.blockers, blockedReason])]
-  } else if (!stale) {
+  if (!stale) {
     blockedReason = pendingRequiredRuntimeActionBlocker(run)
   }
   if (blockedReason) {
     run.blockers = [...new Set([...run.blockers, blockedReason])]
   }
-  const blockedLabel = blockedReason?.includes('human-handoff promise')
-    ? 'Unsafe human-handoff promise withheld'
-    : 'Unsafe ProcedureRun text reply withheld'
   upsertEvidence(run, {
     id: `text:${recordedAt}:${basedOn}`,
     kind: 'text_reply',
     label: stale
       ? 'Stale customer-facing reply withheld'
       : blockedReason
-        ? blockedLabel
+        ? 'Unsafe ProcedureRun text reply withheld'
         : 'Customer-facing reply drafted',
     state: stale || blockedReason ? 'stale' : 'canonical',
     createdAt: recordedAt,
@@ -721,7 +714,7 @@ export function recordProcedureTextReply(caseId: string, input: {
     summary: stale
       ? `Stale text reply${input.alreadyStreamed ? ' already streamed' : ''}`
       : blockedReason
-        ? 'Unsafe human-handoff promise withheld'
+        ? 'Unsafe ProcedureRun text reply withheld'
         : `Current text reply${input.alreadyStreamed ? ' already streamed' : ''}`,
     metadata: {
       textPreview: input.text.slice(0, 240),

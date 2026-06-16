@@ -402,12 +402,19 @@ describe('POST /api/messages runtime session guards', () => {
     }))
   })
 
-  it('routes explicit withdrawal follow-up text to the withdrawal case before LLM routing', async () => {
+  it('routes follow-up text through the LLM router without deterministic overrides', async () => {
     mockExistingCase({ id: 'case-deposit', status: 'investigating' })
     h.prisma.case.findMany.mockResolvedValue([
       { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
       { id: 'case-withdrawal', type: 'withdrawal_not_credited', status: 'investigating' },
     ])
+    h.createAgentClient.mockReturnValue({
+      messages: {
+        create: vi.fn(async () => ({
+          content: [{ text: 'case-withdrawal' }],
+        })),
+      },
+    })
     const loop = mockLoop()
     h.agentLoopCreate.mockResolvedValue(loop)
     h.createAgentClient.mockClear()
@@ -421,7 +428,7 @@ describe('POST /api/messages runtime session guards', () => {
     }))
     await readSse(res)
 
-    expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.createAgentClient).toHaveBeenCalled()
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
       caseId: 'case-withdrawal',
       chatId: 'chat-1',
@@ -429,11 +436,18 @@ describe('POST /api/messages runtime session guards', () => {
     }))
   })
 
-  it('starts a fresh case when explicit withdrawal text is not covered by active cases', async () => {
+  it('starts a fresh case when the LLM router classifies the message as a new topic', async () => {
     mockExistingCase({ id: 'case-deposit', status: 'investigating' })
     h.prisma.case.findMany.mockResolvedValue([
       { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
     ])
+    h.createAgentClient.mockReturnValue({
+      messages: {
+        create: vi.fn(async () => ({
+          content: [{ text: 'new' }],
+        })),
+      },
+    })
     const loop = mockLoop()
     h.agentLoopCreate.mockResolvedValue(loop)
     h.createAgentClient.mockClear()
@@ -447,7 +461,7 @@ describe('POST /api/messages runtime session guards', () => {
     }))
     await readSse(res)
 
-    expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.createAgentClient).toHaveBeenCalled()
     expect(h.prisma.case.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         orgId: 'org-a',

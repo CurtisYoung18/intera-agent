@@ -312,7 +312,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('withholds a human-handoff promise until create_human_task produces persisted evidence', () => {
+  it('withholds a reply while a required human-handoff action lacks persisted evidence', () => {
     const caseId = 'r3-human-promise-gate'
     recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
     startProcedureRun(caseId, {
@@ -341,78 +341,29 @@ describe('R3 runtime event protocol', () => {
     })
 
     const reply = recordProcedureTextReply(caseId, {
-      text: '已安排人工客服为您继续处理，请稍候。',
+      text: 'I will route this to the support team.',
       basedOnInputEpoch: 1,
     })
 
     expect(reply.stale).toBe(false)
-    expect(reply.blockedReason).toContain('human-handoff promise')
+    expect(reply.blockedReason).toContain('requires a persisted create_human_task before replying')
     expect(reply.run?.blockers).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('human-handoff promise'),
+        expect.stringContaining('requires a persisted create_human_task before replying'),
       ]),
     )
     expect(reply.run?.evidence.at(-1)).toMatchObject({
       kind: 'text_reply',
-      label: 'Unsafe human-handoff promise withheld',
+      label: 'Unsafe ProcedureRun text reply withheld',
       state: 'stale',
       metadata: expect.objectContaining({
-        blockedReason: expect.stringContaining('human-handoff promise'),
+        blockedReason: expect.stringContaining('requires a persisted create_human_task before replying'),
       }),
     })
     closeSession(caseId)
   })
 
-  it('withholds softer Chinese manual-processing promises without persisted handoff evidence', () => {
-    const caseId = 'r3-human-promise-soft-zh'
-    recordInitialInputEvent(caseId, { content: '我忘了提款密码，请人工帮我重置。' })
-    startProcedureRun(caseId, {
-      procedureId: 'withdrawal_password_reset',
-      displayName: 'Forgot withdrawal password',
-      procedure: {
-        version: 'v2',
-        whenToUse: 'Use when withdrawal-password recovery needs help.',
-        steps: [
-          {
-            id: 'handoff',
-            title: 'Request manual reset help',
-            guidance: 'Create a persisted human handoff before promising manual handling.',
-            actions: [
-              {
-                id: 'handoff_now',
-                kind: 'request_human_handoff',
-                label: 'Request human help',
-                queue: 'account_security',
-              },
-            ],
-            branches: [],
-          },
-        ],
-      },
-    })
-
-    for (const text of [
-      '您已提供会员ID和登录账号，正在为您人工处理提款密码重置，请稍候。',
-      '若需要进一步身份验证，客服会联系您。',
-      '专员会尽快联系您继续处理。',
-      '我已经为您提交了人工重置登录密码的申请，请耐心等待。',
-      '我已经为您转接人工客服，请稍等，人工客服将直接协助您修改账户资料。',
-      '我们已将您的情况转交人工复核，稍后会有客服人员与您联系。',
-    ]) {
-      const reply = recordProcedureTextReply(caseId, { text, basedOnInputEpoch: 1 })
-      expect(reply.stale).toBe(false)
-      expect(reply.blockedReason).toContain('human-handoff promise')
-      expect(reply.run?.evidence.at(-1)).toMatchObject({
-        kind: 'text_reply',
-        label: 'Unsafe human-handoff promise withheld',
-        state: 'stale',
-      })
-    }
-
-    closeSession(caseId)
-  })
-
-  it('allows a human-handoff promise after persisted create_human_task evidence exists', () => {
+  it('allows a reply after persisted create_human_task evidence exists', () => {
     const caseId = 'r3-human-promise-allowed'
     recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
     startProcedureRun(caseId, {
