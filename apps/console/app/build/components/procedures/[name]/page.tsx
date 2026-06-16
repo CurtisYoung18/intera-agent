@@ -12,6 +12,7 @@ import {
   GitBranch,
   ListChecks,
   Loader2,
+  Lock,
   Play,
   Plus,
   Settings,
@@ -244,6 +245,12 @@ function simulationStepStatusLabel(t: TranslateFn, status: 'active' | 'completed
     case 'skipped':
       return t('procedureEditor.simulation.stepStatus.skipped')
   }
+}
+
+// tool_event / form_field / runtime_signal are deterministic completion gates;
+// llm_eval is a soft AI judgment that needs a runtime evaluator receipt.
+function conditionGateKind(kind: BranchDraft['conditionKind']): 'hard' | 'soft' {
+  return kind === 'llm_eval' ? 'soft' : 'hard'
 }
 
 function summarizeCondition(t: TranslateFn, branch: ProcedureV2BranchContract) {
@@ -788,6 +795,33 @@ function BranchEditor({
               </option>
             ))}
           </select>
+          {branch.kind !== 'else' ? (
+            <>
+              <select
+                value={branch.conditionKind}
+                onChange={(event) => onChange({ conditionKind: event.target.value as BranchDraft['conditionKind'] })}
+                className="h-9 rounded-full border border-black/[0.07] bg-white px-3 text-[12px] font-medium text-[var(--mist)] outline-none focus:border-[#357f7c]/40"
+                aria-label={t('procedureEditor.form.conditionType')}
+              >
+                {PROCEDURE_CONDITION_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {conditionKindLabel(t, kind)}
+                  </option>
+                ))}
+              </select>
+              {conditionGateKind(branch.conditionKind) === 'hard' ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#0f6e56]/[0.09] px-2.5 py-1 text-[11px] font-medium text-[#0f6e56]">
+                  <Lock className="h-3 w-3" />
+                  {t('procedureEditor.gate.hard')}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#b6791f]/[0.12] px-2.5 py-1 text-[11px] font-medium text-[#8a5d11]">
+                  <Sparkles className="h-3 w-3" />
+                  {t('procedureEditor.gate.soft')}
+                </span>
+              )}
+            </>
+          ) : null}
           <input
             value={branch.label}
             onChange={(event) => onChange({ label: event.target.value })}
@@ -842,29 +876,14 @@ function BranchEditor({
 
             {branch.kind !== 'else' ? (
               <>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <MetaField label={t('procedureEditor.form.conditionType')}>
-                    <select
-                      value={branch.conditionKind}
-                      onChange={(event) => onChange({ conditionKind: event.target.value as BranchDraft['conditionKind'] })}
-                      className="glass-input-console text-[13px]"
-                    >
-                      {PROCEDURE_CONDITION_KINDS.map((kind) => (
-                        <option key={kind} value={kind}>
-                          {conditionKindLabel(t, kind)}
-                        </option>
-                      ))}
-                    </select>
-                  </MetaField>
-                  <MetaField label={t('procedureEditor.form.conditionLabel')}>
-                    <input
-                      value={branch.conditionLabel}
-                      onChange={(event) => onChange({ conditionLabel: event.target.value })}
-                      className="glass-input-console text-[13px]"
-                      placeholder={t('procedureEditor.placeholder.conditionLabel')}
-                    />
-                  </MetaField>
-                </div>
+                <MetaField label={t('procedureEditor.form.conditionLabel')}>
+                  <input
+                    value={branch.conditionLabel}
+                    onChange={(event) => onChange({ conditionLabel: event.target.value })}
+                    className="glass-input-console text-[13px]"
+                    placeholder={t('procedureEditor.placeholder.conditionLabel')}
+                  />
+                </MetaField>
 
                 {branch.conditionKind === 'llm_eval' ? (
                   <MetaField label={t('procedureEditor.form.llmPrompt')}>
