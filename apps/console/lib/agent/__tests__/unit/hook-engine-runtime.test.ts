@@ -178,6 +178,44 @@ describe('HookEngine bindings and handlers', () => {
     ])
   })
 
+  it('accepts legacy runtime tool names without crashing HookContext evaluation', async () => {
+    h.toolFindMany.mockResolvedValue([{ id: 'tool_legacy', name: 'CheckLatestDepositStatus' }])
+    h.hookBindingFindMany.mockResolvedValue([
+      {
+        scopeType: 'tool',
+        scopeKey: 'tool:CheckLatestDepositStatus',
+        toolId: 'tool_legacy',
+        enabled: true,
+        hook: staticHook(
+          'legacy_tool_hook',
+          'PreToolUse',
+          { kind: 'rule', always: true },
+          { decision: 'warn', guidance: 'legacy tool observed' },
+        ),
+      },
+    ])
+
+    const engine = await HookEngine.create('agent_1')
+    const result = await engine.evaluate('PreToolUse', {
+      checkpoint: 'PreToolUse',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      tool: { name: 'CheckLatestDepositStatus', input: { member_id: 'JAYA11A4241' } },
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [
+        { name: 'CheckLatestDepositStatus', output: { ok: true } },
+      ],
+      traceSummary: [],
+    })
+
+    expect(result.summary).toBe('warn')
+    expect(result.results[0]).toMatchObject({
+      hookName: 'legacy_tool_hook',
+      action: 'warn',
+    })
+  })
+
   it('dispatches restricted JavaScript and HTTP Hook handlers', async () => {
     const engine = new HookEngine('agent_1')
     engine.setHook({

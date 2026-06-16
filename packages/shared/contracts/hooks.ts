@@ -8,6 +8,11 @@ export const stableNameSchema = z.string()
   .min(1, 'stable name is required')
   .regex(STABLE_NAME_PATTERN, 'Use a stable lowercase name such as investigate_before_resolve')
 
+// Runtime-observed tool names can include legacy customer config such as
+// `CheckLatestDepositStatus`. Keep authoring contracts strict, but do not crash
+// Hook evaluation when replaying or executing already-shipped tool names.
+const runtimeToolNameSchema = z.string().min(1, 'tool name is required')
+
 export const HOOK_CHECKPOINTS = ['PreToolUse', 'PostToolUse', 'Stop'] as const
 export const hookCheckpointSchema = z.enum(HOOK_CHECKPOINTS)
 export type HookCheckpoint = z.infer<typeof hookCheckpointSchema>
@@ -138,7 +143,7 @@ export const hookContextSchema = z.object({
   procedureStepIds: z.array(z.string()).default([]),
   tool: z.object({
     id: z.string().optional(),
-    name: stableNameSchema,
+    name: runtimeToolNameSchema,
     input: z.unknown().optional(),
     output: z.unknown().optional(),
     error: z.string().optional(),
@@ -146,7 +151,7 @@ export const hookContextSchema = z.object({
   caseFacts: z.record(z.unknown()).default({}),
   missingFacts: z.array(z.string()).default([]),
   previousToolCalls: z.array(z.object({
-    name: stableNameSchema,
+    name: runtimeToolNameSchema,
     input: z.unknown().optional(),
     output: z.unknown().optional(),
   }).passthrough()).default([]),

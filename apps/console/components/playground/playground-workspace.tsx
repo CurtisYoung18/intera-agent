@@ -86,17 +86,6 @@ interface TurnDebugDigest {
   latestReply: string | null
 }
 
-/** Per-tool status — driven by real `tool_executing` / `tool_result` SSE events. */
-/* ── Constants ── */
-
-const QUICK_STARTS = [
-  { label: 'My deposit still has not arrived. Please check it.', hint: 'Procedure start + evidence lookup' },
-  { label: 'What evidence do you still need before a human handoff?', hint: 'Hook + handoff reasoning' },
-  { label: 'Please reconcile the new payment amount before you continue.', hint: 'Reconcile + stale evidence path' },
-  { label: 'I uploaded the receipt screenshot. What can you confirm from it?', hint: 'Image input capability test' },
-]
-
-
 /* ── Helpers ── */
 
 function formatMemoryModeLabel(raw: unknown): string {
@@ -914,15 +903,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   )
   const toolPairingLabel = latestTurnDigest ? summarizeToolPairing(latestTurnDigest.toolCalls, latestTurnDigest.toolResults, responding) : (isZh ? '暂无工具事件' : 'No tool events yet')
   const operateBridgeLabel = isZh ? '仅导出评审副本' : 'Synthetic export only'
-  const quickStarts = isZh
-    ? [
-        { label: '我的充值还没到账，请帮我查一下。', hint: 'Procedure 启动 + 证据查询' },
-        { label: '在转人工前，你还缺哪些证据？', hint: 'Hook + 转人工推理' },
-        { label: '继续之前，请先对齐我刚补充的支付金额。', hint: 'Reconcile + 陈旧证据路径' },
-        { label: '我上传了回单截图，你现在能确认什么？', hint: '图片输入能力测试' },
-      ]
-    : QUICK_STARTS
-
   /* ── Image helpers ── */
 
   const handleImageAttach = useCallback(async (files: FileList | File[]) => {
@@ -1143,8 +1123,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   }, [selectedAgentId, debugMode, canAttachImages, visionSupport.status, snapshot?.resolvedModelLabel])
 
   const canSubmitManualTurn = message.trim().length > 0 || attachedImages.length > 0
-  const showEmptyQuickStarts = chatMessages.length === 0 && !responding && !error && !isRestoringSession
-  const showCompactQuickStarts = !showEmptyQuickStarts && !responding && !isRestoringSession && !message.trim() && attachedImages.length === 0
 
   const submitManualTurn = useCallback(() => {
     const trimmed = message.trim()
@@ -1549,39 +1527,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
-            {/* ── Empty state ── */}
-            {showEmptyQuickStarts && (
-              <div className="pg-empty-state">
-                <div className="pg-quickstarts-grid">
-                  {quickStarts.map(q => (
-                    <button
-                      className="pg-quickstart-card"
-                      key={q.label}
-                      onClick={() => { runTurn(q.label); setMessage('') }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.borderColor = 'var(--border-hover)'
-                        e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'
-                        e.currentTarget.style.transform = 'translateY(-1px)'
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.borderColor = 'var(--border-subtle)'
-                        e.currentTarget.style.boxShadow = 'none'
-                        e.currentTarget.style.transform = 'translateY(0)'
-                      }}
-                    >
-                      <div className="pg-quickstart-title">
-                        {q.label}
-                      </div>
-                      <div className="pg-quickstart-hint">
-                        {q.hint}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-
-              </div>
-            )}
-
             {/* ── Chat messages ── */}
             {chatMessages.map((m, i) => (
               <div key={i} style={{ alignSelf: m.role === 'system' ? 'center' : m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: m.role === 'system' ? '100%' : '85%' }}>
@@ -1880,26 +1825,6 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             position: 'relative', zIndex: 1, flexShrink: 0,
             width: '100%', padding: '12px 16px 12px 24px',
           }}>
-            {showCompactQuickStarts && (
-              <div className="pg-quickstart-rail" aria-label={isZh ? '快速测试提示词' : 'Quick test prompts'}>
-                <div className="pg-quickstart-rail-kicker">{isZh ? '快速测试' : 'Quick tests'}</div>
-                <div className="pg-quickstart-rail-scroll">
-                  {quickStarts.map((q) => (
-                    <button
-                      key={q.label}
-                      type="button"
-                      className="pg-quickstart-chip"
-                      onClick={() => { runTurn(q.label); setMessage('') }}
-                      title={q.hint}
-                    >
-                      <span>{q.label}</span>
-                      <small>{q.hint}</small>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* ── Attached image previews ── */}
             {attachedImages.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
