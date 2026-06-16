@@ -43,6 +43,15 @@ interface AttachedImage {
   name: string
 }
 
+export interface PlaygroundFormField {
+  key: string
+  label: string
+  type: string
+  required?: boolean
+  placeholder?: string
+  options?: string[]
+}
+
 interface AgentListItem {
   id: string
   name: string
@@ -120,6 +129,61 @@ const PLAYGROUND_STARTER_PROMPTS = [
     promptEn: 'I uploaded the receipt screenshot. What can you confirm from it?',
   },
 ]
+
+const IMAGE_UPLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+
+async function fileToAttachedImage(file: File): Promise<AttachedImage> {
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '')
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+
+  return {
+    base64,
+    mimeType: file.type,
+    name: file.name,
+  }
+}
+
+export async function extractPlaygroundFormAnswers(input: {
+  fields: PlaygroundFormField[]
+  formData: FormData
+}): Promise<{ answers: Record<string, string>; images: AttachedImage[]; oversizedFileName: string | null }> {
+  const answers: Record<string, string> = {}
+  const images: AttachedImage[] = []
+
+  for (const field of input.fields) {
+    const raw = input.formData.get(field.key)
+    if (field.type === 'file') {
+      if (raw instanceof File && raw.size > 0) {
+        answers[field.key] = raw.name
+        if (raw.type.startsWith('image/')) {
+          if (raw.size > IMAGE_UPLOAD_LIMIT_BYTES) {
+            return {
+              answers,
+              images,
+              oversizedFileName: raw.name,
+            }
+          }
+          images.push(await fileToAttachedImage(raw))
+        }
+      } else {
+        answers[field.key] = ''
+      }
+      continue
+    }
+
+    answers[field.key] = typeof raw === 'string' ? raw : ''
+  }
+
+  return {
+    answers,
+    images,
+    oversizedFileName: null,
+  }
+}
 
 /* ── Helpers ── */
 
@@ -417,7 +481,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [models, setModels] = useState<ModelInfo[]>([])
   const [snapshot, setSnapshot] = useState<AgentSnapshot | null>(null)
   const [snapshotReloadKey, setSnapshotReloadKey] = useState(0)
-  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: Array<{ key: string; label: string; type: string; required?: boolean; placeholder?: string; options?: string[] }>; skillCallId: string } | null>(null)
+  const [formRequest, setFormRequest] = useState<{ title: string; description?: string; fields: PlaygroundFormField[]; skillCallId: string } | null>(null)
   const [debugMode, setDebugMode] = useState(false)
   const [toolExecutionMode, setToolExecutionMode] = useState<ToolExecutionMode>(() => {
     try { return localStorage.getItem('pg_toolExecutionMode') === 'dry_run' ? 'dry_run' : 'runtime' } catch { return 'runtime' }
@@ -497,6 +561,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   const [queuedMessages, setQueuedMessages] = useState<Array<{ text: string; images: AttachedImage[] }>>([])
   const queuedMessagesRef = useRef<Array<{ text: string; images: AttachedImage[] }>>([])
   useEffect(() => { queuedMessagesRef.current = queuedMessages }, [queuedMessages])
+  const pendingFormSubmissionRef = useRef<{
+    displayMessage: string
+    images: AttachedImage[]
+    requestOverride: { formResult: { answers: Record<string, string> } }
+  } | null>(null)
 
   const syncComposerHeight = useCallback(() => {
     const composer = composerRef.current
@@ -515,7 +584,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   // Auto-send next queued message when current turn finishes
   const respondingRef = useRef(false)
   useEffect(() => {
-    if (!responding && respondingRef.current && queuedMessagesRef.current.length > 0) {
+    if (!responding && respondingRef.current && pendingFormSubmissionRef.current) {
+      const pending = pendingFormSubmissionRef.current
+      pendingFormSubmissionRef.current = null
+      runTurn(pending.displayMessage, pending.images, pending.requestOverride)
+    } else if (!responding && respondingRef.current && queuedMessagesRef.current.length > 0) {
       const next = queuedMessagesRef.current[0]
       setQueuedMessages(prev => prev.slice(1))
       runTurn(next.text, next.images)
@@ -949,18 +1022,11 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
       setTimeout(() => setToastMessage(''), 4000)
       return
     }
-    const limit = 5 * 1024 * 1024 // 5MB
     const newImages: AttachedImage[] = []
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue
-      if (file.size > limit) { setToastMessage(isZh ? `“${file.name}” 超过 5MB 限制` : `"${file.name}" exceeds 5MB limit`); setTimeout(() => setToastMessage(''), 3000); continue }
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve((reader.result as string).split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
-      newImages.push({ base64, mimeType: file.type, name: file.name })
+      if (file.size > IMAGE_UPLOAD_LIMIT_BYTES) { setToastMessage(isZh ? `“${file.name}” 超过 5MB 限制` : `"${file.name}" exceeds 5MB limit`); setTimeout(() => setToastMessage(''), 3000); continue }
+      newImages.push(await fileToAttachedImage(file))
     }
     setAttachedImages(prev => [...prev, ...newImages])
   }, [canAttachImages, snapshot?.resolvedModelLabel, visionSupport.status])
@@ -1895,38 +1961,67 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
                 {formRequest.description && (
                   <p style={{ fontSize: 13.5, color: '#8a7e74', margin: '0 0 12px', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>{formRequest.description}</p>
                 )}
-                <form onSubmit={e => {
+                <form onSubmit={async e => {
                   e.preventDefault()
                   const formData = new FormData(e.currentTarget)
-                  const answers: Record<string, string> = {}
-                  formData.forEach((v, k) => { answers[k] = String(v) })
+                  const { answers, images: formImages, oversizedFileName } = await extractPlaygroundFormAnswers({
+                    fields: formRequest.fields,
+                    formData,
+                  })
+                  if (oversizedFileName) {
+                    setToastMessage(isZh ? `“${oversizedFileName}” 超过 5MB 限制` : `"${oversizedFileName}" exceeds 5MB limit`)
+                    setTimeout(() => setToastMessage(''), 3000)
+                    return
+                  }
                   const answerText = Object.entries(answers)
                     .filter(([, v]) => v.trim())
                     .map(([k, v]) => `${k}: ${v}`)
                     .join('\n')
+                  const displayMessage = answerText ? `[Form submission]\n${answerText}` : '[Form submission]'
                   setFormRequest(null)
-                  if (answerText) {
-                    runTurn(`[Form submission]\n${answerText}`, undefined, {
-                      formResult: { answers },
-                    })
+                  if (answerText || formImages.length > 0) {
+                    const requestOverride = { formResult: { answers } }
+                    if (runningRef.current) {
+                      pendingFormSubmissionRef.current = {
+                        displayMessage,
+                        images: formImages,
+                        requestOverride,
+                      }
+                      return
+                    }
+                    runTurn(displayMessage, formImages, requestOverride)
                   }
                 }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {formRequest.fields.map(f => (
                     <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#8a7e74', letterSpacing: '0.02em', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+                      <label htmlFor={f.key} style={{ fontSize: 12, fontWeight: 600, color: '#8a7e74', letterSpacing: '0.02em', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
                         {f.label}{f.required ? ' *' : ''}
                       </label>
                       {f.type === 'select' ? (
-                        <select name={f.key} required={f.required}
+                        <select id={f.key} name={f.key} required={f.required}
                           style={{ padding: '11px 14px', fontSize: 14, borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', background: '#faf8f5', color: '#3d3833', outline: 'none', appearance: 'none', cursor: 'pointer', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
                           <option value="">--</option>
                           {f.options?.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>
                       ) : f.type === 'textarea' ? (
-                        <textarea name={f.key} required={f.required} placeholder={f.placeholder}
+                        <textarea id={f.key} name={f.key} required={f.required} placeholder={f.placeholder}
                           rows={3} style={{ padding: '11px 14px', fontSize: 14, borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', background: '#faf8f5', color: '#3d3833', resize: 'vertical', outline: 'none', minHeight: 80, fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} />
+                      ) : f.type === 'file' ? (
+                        <div style={{
+                          padding: '11px 14px',
+                          borderRadius: 10,
+                          border: '1.5px dashed rgba(0,0,0,0.14)',
+                          background: '#faf8f5',
+                          color: '#3d3833',
+                        }}>
+                          <input id={f.key} name={f.key} type="file" required={f.required} accept="image/*"
+                            style={{ width: '100%', fontSize: 13, color: '#3d3833', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} />
+                          <p style={{ margin: '8px 0 0', fontSize: 11.5, lineHeight: 1.5, color: '#8a7e74', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+                            {isZh ? '这里上传的图片会作为当前这轮的视觉输入一起发送给 runtime。' : 'Images uploaded here are forwarded into this runtime turn as vision input.'}
+                          </p>
+                        </div>
                       ) : (
-                        <input name={f.key} type={f.type === 'number' ? 'number' : 'text'} required={f.required} placeholder={f.placeholder}
+                        <input id={f.key} name={f.key} type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'} required={f.required} placeholder={f.placeholder}
                           style={{ padding: '11px 14px', fontSize: 14, borderRadius: 10, border: '1.5px solid rgba(0,0,0,0.08)', background: '#faf8f5', color: '#3d3833', outline: 'none', fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }} />
                       )}
                     </div>

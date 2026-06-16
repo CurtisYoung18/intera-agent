@@ -483,6 +483,127 @@ describe('PlaygroundPage snapshot truth', () => {
     })
   })
 
+  it('renders file fields in form requests as upload inputs', async () => {
+    currentAgentPayload = {
+      data: {
+        resolvedModel: 'openai/gpt-4o',
+        config: {
+          name: 'Gaming Support Draft',
+          model: 'openai/gpt-4o',
+          temperature: 0.2,
+          memoryStrategy: shortMemory,
+          coreSystemPrompt: 'Vision prompt',
+        },
+      },
+    }
+
+    const runBodies: any[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url === '/api/admin/agent-configs') {
+        return jsonResponse({
+          data: {
+            configs: [{ id: 'agent-1', name: 'Gaming Support Draft', version: 3, isActive: true }],
+          },
+        })
+      }
+      if (url === '/api/admin/models') {
+        return jsonResponse({
+          data: {
+            models,
+          },
+        })
+      }
+      if (url === '/api/admin/playground/sessions?configId=agent-1') {
+        return jsonResponse({
+          data: {
+            sessions: [],
+          },
+        })
+      }
+      if (url === '/api/admin/playground/run') {
+        runBodies.push(JSON.parse(String(init?.body)))
+        if (runBodies.length === 1) {
+          return sseResponse([
+            {
+              type: 'form_request',
+              data: {
+                title: 'Receipt and Member ID Required',
+                description: 'Please provide your member ID and upload the receipt screenshot for verification.',
+                fields: [
+                  { key: 'member_id', type: 'text', label: 'Member ID', required: true, placeholder: 'Enter your member ID here.' },
+                  { key: 'receipt', type: 'file', label: 'Receipt Screenshot', required: true },
+                ],
+              },
+              timestamp: '2026-06-16T00:00:00.000Z',
+            },
+            { type: 'message_stop', data: { transition: 'waiting_form' }, timestamp: '2026-06-16T00:00:00.100Z' },
+          ])
+        }
+        return sseResponse([
+          { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: '2026-06-16T00:00:01.000Z' },
+        ])
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }))
+
+    await renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Receipt screenshot check/i })).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Receipt screenshot check/i }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Receipt and Member ID Required')).toBeDefined()
+    })
+
+    expect((screen.getByLabelText(/Receipt Screenshot/i) as HTMLInputElement).type).toBe('file')
+    expect(runBodies).toHaveLength(1)
+  })
+
+  it('extracts uploaded image fields into form answers and vision attachments', async () => {
+    vi.stubGlobal('FileReader', class {
+      result: string | ArrayBuffer | null = null
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null
+      onerror: (() => void) | null = null
+
+      readAsDataURL() {
+        this.result = 'data:image/png;base64,abc123'
+        this.onload?.({ target: this } as unknown as ProgressEvent<FileReader>)
+      }
+    } as unknown as typeof FileReader)
+
+    const { extractPlaygroundFormAnswers } = await import('@/components/playground/playground-workspace')
+    const formData = new FormData()
+    formData.set('member_id', 'JAYA113C88F')
+    formData.set('receipt', new File(['image-bytes'], 'receipt.png', { type: 'image/png' }))
+
+    const result = await extractPlaygroundFormAnswers({
+      fields: [
+        { key: 'member_id', type: 'text', label: 'Member ID', required: true },
+        { key: 'receipt', type: 'file', label: 'Receipt Screenshot', required: true },
+      ],
+      formData,
+    })
+
+    expect(result).toMatchObject({
+      answers: {
+        member_id: 'JAYA113C88F',
+        receipt: 'receipt.png',
+      },
+      images: [{
+        base64: 'abc123',
+        mimeType: 'image/png',
+        name: 'receipt.png',
+      }],
+      oversizedFileName: null,
+    })
+  })
+
   it('keeps the debug entry truthful and hides the hook pill details when hook data is unavailable', async () => {
     failHooksRequest = true
     currentAgentPayload = {

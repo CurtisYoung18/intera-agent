@@ -1,6 +1,6 @@
 # Delivery Uncertainty And Defaults Log
 
-**Last updated:** 2026-06-12
+**Last updated:** 2026-06-16
 **Audience:** founder, architect, delivery lead, coding-team leads, QA lead
 **Purpose:** record uncertain decisions, temporary defaults, blockers, and owner-review items discovered during the commercial delivery push.
 
@@ -38,6 +38,19 @@ Use this format for each new item:
 ---
 
 ## Open Items
+
+### 2026-06-16 - Playground Form File Fields Default To Vision Images
+
+- Area: Playground / ask_user_questions / multimodal runtime
+- Status: default-applied
+- Severity: P2
+- Uncertainty: `ask_user_questions` can request `type=file`, but the current Playground runtime contract only carries inline `contentBlocks` for images, not arbitrary binary uploads. The failing production path was specifically "receipt screenshot" collection inside Playground, where the field rendered as plain text and no image reached the model.
+- Default action taken: Updated Playground form rendering to use a real file input for `type=file`, and when the uploaded file is an image, forward it into the next runtime turn as the same vision `contentBlocks` shape used by the composer. Non-image files are still recorded as filenames in `formResult.answers` only.
+- Why this default: It closes the real customer-facing screenshot bug with the smallest truthful behavior change and matches the existing multimodal runtime surface, which already supports image blocks but not generic file transport.
+- Evidence: `apps/console/components/playground/playground-workspace.tsx`; `apps/console/app/admin/playground/page.test.tsx`
+- Production URL / screenshot / receipt: Production repro on `https://demo.anytrans.ai/build/pilot-lab?tab=playground&agentId=cmq4q82mx0001qj32gt8htfiq` showed `Receipt Screenshot *` as `input[type=text]` during the "Receipt screenshot check" starter flow.
+- Owner decision needed: Confirm whether generic non-image file fields should later gain a first-class upload contract in Playground/runtime, or whether `type=file` should be narrowed to image-only semantics on this surface.
+- Follow-up owner: founder / architect / delivery lead
 
 ### 2026-06-12 - CONS-M2 Production Restart Receipt Proved Durable Resume
 
