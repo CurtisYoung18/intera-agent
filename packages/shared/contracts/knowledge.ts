@@ -13,6 +13,7 @@ export const knowledgeSourceItemSchema = z.object({
   topK: z.number(),
   rerankVersion: z.string().nullable().optional(),
   docCorrelation: z.number().nullable().optional(),
+  modelControlTopK: z.boolean().optional().default(false),
   caseTypeTag: z.string().nullable().optional(),
   enabled: z.boolean(),
   createdAt: z.date().or(z.string()).optional(),
@@ -37,6 +38,7 @@ export const knowledgeSourceCreateRequestSchema = z.object({
   topK: z.number().optional().default(15),
   rerankVersion: z.string().nullable().optional(),
   docCorrelation: z.number().optional().default(0.3),
+  modelControlTopK: z.boolean().optional().default(false),
   caseTypeTag: z.string().nullable().optional(),
   enabled: z.boolean().optional().default(true),
 })
@@ -64,6 +66,7 @@ export const knowledgeSourceUpdateRequestSchema = z.object({
   topK: z.number().optional(),
   rerankVersion: z.string().nullable().optional(),
   docCorrelation: z.number().nullable().optional(),
+  modelControlTopK: z.boolean().optional(),
   caseTypeTag: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
 })

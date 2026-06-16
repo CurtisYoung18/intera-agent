@@ -38,6 +38,7 @@ const createSchema = z.object({
   topK: z.number().optional().default(15),
   rerankVersion: z.string().nullable().optional(),
   docCorrelation: z.number().optional().default(0.3),
+  modelControlTopK: z.boolean().optional().default(false),
   caseTypeTag: z.string().nullable().optional(),
   enabled: z.boolean().optional().default(true),
 })
@@ -61,6 +62,7 @@ export const POST = defineRoute<CreateInput>({
           topK: fields.topK ?? 15,
           rerankVersion: fields.rerankVersion ?? 'BGE-Rerank',
           docCorrelation: fields.docCorrelation ?? 0.3,
+          modelControlTopK: fields.modelControlTopK ?? false,
           caseTypeTag: fields.caseTypeTag ?? null,
           enabled: fields.enabled ?? true,
         },

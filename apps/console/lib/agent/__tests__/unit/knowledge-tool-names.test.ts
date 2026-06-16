@@ -87,6 +87,9 @@ describe('generated knowledge-search tool names', () => {
     expect(names).not.toContain('kb_search_Default')
     expect(names.every((name) => /^[a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*$/.test(name))).toBe(true)
     expect(router.getTool('kb_search_default')?.knowledgeSourceId).toBe('kb_default_123456')
+    expect((router.getTool('kb_search_default')?.inputSchema as any)?.properties).not.toHaveProperty('topK')
+    expect((router.getTool('kb_search_deposit_bonus')?.inputSchema as any)?.properties).toHaveProperty('topK')
+    expect(router.getTool('kb_search_deposit_bonus')?.description).toContain('Number of results to return')
   })
 
   it('executes a sanitized knowledge tool through its source id instead of reverse-parsing the display name', async () => {
@@ -120,6 +123,36 @@ describe('generated knowledge-search tool names', () => {
       top_k: 15,
       group_ids: ['group-default'],
       embedding_rate: 0.9,
+    })
+  })
+
+  it('lets model-controlled knowledge sources override topK within the runtime clamp', async () => {
+    const { ToolRouter } = await import('../../tools')
+    const { StreamingToolExecutor } = await import('../../streaming-tool-executor')
+    const router = await ToolRouter.create('agent-a', true)
+    const definition = router.getTool('kb_search_deposit_bonus')
+
+    expect(definition).toBeDefined()
+    h.knowledgeSourceFindFirst.mockResolvedValue(sourceDeposit)
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => (
+      new Response(JSON.stringify({ list: [{ score: 0.8 }] }), { status: 200 })
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await StreamingToolExecutor.executeAll(
+      [definition!],
+      [{ id: 'tool-1', name: 'kb_search_deposit_bonus', input: { query: 'deposit status', topK: 4 } }],
+      undefined,
+      false,
+      'agent-a',
+    )
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body).toMatchObject({
+      prompt: 'deposit status',
+      top_k: 4,
+      group_ids: ['group-deposit'],
+      embedding_rate: 0.8,
     })
   })
 

@@ -74,6 +74,7 @@ type EditingSource = {
   topK: number
   rerankVersion: string
   docCorrelation: number
+  modelControlTopK: boolean
   caseTypeTag: string
   enabled: boolean
 }
@@ -106,6 +107,7 @@ function toEditingSource(source?: KnowledgeSource | null): EditingSource {
     topK: source?.topK ?? 15,
     rerankVersion: source?.rerankVersion || 'BGE-Rerank',
     docCorrelation: source?.docCorrelation ?? 0.3,
+    modelControlTopK: source?.modelControlTopK ?? false,
     caseTypeTag: source?.caseTypeTag || '',
     enabled: source?.enabled ?? true,
   }
@@ -298,6 +300,7 @@ export default function BuildKnowledgePage() {
           topK: editingSource.topK,
           rerankVersion: editingSource.rerankVersion || null,
           docCorrelation: editingSource.docCorrelation,
+          modelControlTopK: editingSource.modelControlTopK,
           caseTypeTag: editingSource.caseTypeTag || null,
           enabled: editingSource.enabled,
         },
@@ -356,6 +359,7 @@ export default function BuildKnowledgePage() {
           topK: 15,
           rerankVersion: 'BGE-Rerank',
           docCorrelation: 0.3,
+          modelControlTopK: false,
           enabled: true,
         },
       })
@@ -559,6 +563,9 @@ export default function BuildKnowledgePage() {
 
                       <div className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--fog)]">
                         <span>topK: {source.topK}</span>
+                        <span className={source.modelControlTopK ? 'text-[var(--color-accent-primary)]' : ''}>
+                          agent topK: {source.modelControlTopK ? 'allowed' : 'locked'}
+                        </span>
                         <span>embed: {source.embeddingRate}</span>
                         {source.rerankVersion ? <span>rerank: {source.rerankVersion}</span> : null}
                         {source.docCorrelation != null ? <span>min score: {source.docCorrelation}</span> : null}
@@ -589,39 +596,48 @@ export default function BuildKnowledgePage() {
           ) : (
             <div className="space-y-4">
               <div className="rounded-[24px] border border-black/[0.06] bg-white/[0.74] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                <div className="flex gap-2">
-                  <input
-                    value={testQuery}
-                    onChange={(event) => setTestQuery(event.target.value)}
-                    onKeyDown={(event) => event.key === 'Enter' && runTest()}
-                    placeholder="Enter a retrieval test query"
-                    className="glass-input-console flex-1 text-[13px]"
-                  />
-                  <select
-                    value={testSourceId}
-                    onChange={(event) => setTestSourceId(event.target.value)}
-                    className="glass-input-console text-[13px]"
-                  >
-                    <option value="">All enabled sources</option>
-                    {sources.filter((source) => source.enabled).map((source) => (
-                      <option key={source.id} value={source.id}>
-                        {source.name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={testTopK}
-                    onChange={(event) => setTestTopK(Math.max(1, Math.min(50, Number(event.target.value) || 1)))}
-                    className="glass-input-console w-24 text-[13px]"
-                  />
+                <div className="grid items-end gap-3 lg:grid-cols-[minmax(320px,1fr)_minmax(220px,360px)_96px_auto]">
+                  <label className="min-w-0 space-y-1.5">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">Query</span>
+                    <input
+                      value={testQuery}
+                      onChange={(event) => setTestQuery(event.target.value)}
+                      onKeyDown={(event) => event.key === 'Enter' && runTest()}
+                      placeholder="Enter a retrieval test query"
+                      className="glass-input-console w-full text-[13px]"
+                    />
+                  </label>
+                  <label className="min-w-0 space-y-1.5">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">Source</span>
+                    <select
+                      value={testSourceId}
+                      onChange={(event) => setTestSourceId(event.target.value)}
+                      className="glass-input-console w-full text-[13px]"
+                    >
+                      <option value="">All enabled sources</option>
+                      {sources.filter((source) => source.enabled).map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-[11px] font-medium text-[var(--fog)]">Top K</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={testTopK}
+                      onChange={(event) => setTestTopK(Math.max(1, Math.min(50, Number(event.target.value) || 1)))}
+                      className="glass-input-console w-full text-[13px]"
+                    />
+                  </label>
                   <button
                     type="button"
                     onClick={runTest}
                     disabled={testing || !testQuery.trim()}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--color-accent-primary)] px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                    className="inline-flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl bg-[var(--color-accent-primary)] px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                   >
                     {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                     Search
@@ -808,6 +824,29 @@ export default function BuildKnowledgePage() {
                       className="glass-input-console text-[13px]"
                     />
                   </label>
+                </div>
+
+                <div className="rounded-[20px] border border-black/[0.06] bg-white/[0.66] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-[var(--mist)]">Allow agent to choose Top K</p>
+                      <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
+                        Off locks retrieval to this source&apos;s default Top K. On exposes optional <code className="rounded bg-black/[0.04] px-1 py-0.5">topK</code> to the agent tool schema so the model can request 1-30 matches when it needs broader evidence.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditingSource((current) => current ? { ...current, modelControlTopK: !current.modelControlTopK } : current)}
+                      className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-[12px] font-semibold transition-colors ${
+                        editingSource.modelControlTopK
+                          ? 'border border-[var(--color-accent-primary)]/20 bg-[var(--color-accent-primary)]/[0.10] text-[var(--color-accent-primary)]'
+                          : 'border border-black/[0.08] bg-white/80 text-[var(--fog)] hover:text-[var(--mist)]'
+                      }`}
+                    >
+                      {editingSource.modelControlTopK ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
+                      {editingSource.modelControlTopK ? 'Agent override on' : 'Agent override off'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">

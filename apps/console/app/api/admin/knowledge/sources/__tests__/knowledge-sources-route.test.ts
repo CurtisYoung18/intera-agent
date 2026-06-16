@@ -6,11 +6,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => {
   const sourcesByAgent: Record<string, Record<string, unknown>[]> = {
     'agent_default_v1': [
-      { id: 'ks1', agentConfigId: 'agent_default_v1', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
-      { id: 'ks2', agentConfigId: 'agent_default_v1', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ks1', agentConfigId: 'agent_default_v1', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, modelControlTopK: false, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ks2', agentConfigId: 'agent_default_v1', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, modelControlTopK: false, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
     ],
     'test-agent': [
-      { id: 'ks3', agentConfigId: 'test-agent', name: 'org_b_source', description: 'Test agent only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+      { id: 'ks3', agentConfigId: 'test-agent', name: 'org_b_source', description: 'Test agent only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, modelControlTopK: false, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
     ],
   }
   const agentConfigs: Record<string, { id: string; orgId: string }> = {
@@ -116,11 +116,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'staff' })
   h.sourcesByAgent['agent_default_v1'] = [
-    { id: 'ks1', agentConfigId: 'agent_default_v1', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
-    { id: 'ks2', agentConfigId: 'agent_default_v1', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ks1', agentConfigId: 'agent_default_v1', name: 'deposit_faq', description: 'Deposit FAQ', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 15, rerankVersion: 'BGE-Rerank', docCorrelation: 0.3, modelControlTopK: false, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ks2', agentConfigId: 'agent_default_v1', name: 'withdraw_guide', description: 'Withdraw guide', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 10, rerankVersion: null, docCorrelation: 0.3, modelControlTopK: false, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
   ]
   h.sourcesByAgent['test-agent'] = [
-    { id: 'ks3', agentConfigId: 'test-agent', name: 'org_b_source', description: 'Test agent only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'ks3', agentConfigId: 'test-agent', name: 'org_b_source', description: 'Test agent only', groupIds: '[]', dataIds: null, embeddingRate: 0.9, topK: 5, rerankVersion: null, docCorrelation: 0.3, modelControlTopK: false, caseTypeTag: null, enabled: true, createdAt: new Date(), updatedAt: new Date() },
   ]
 })
 
@@ -141,10 +141,11 @@ describe('G1 — Uniform envelope', () => {
   })
 
   it('POST with valid input returns ApiOk<{source}> (201)', async () => {
-    const res = await POST(makeRequest({ agentConfigId: 'agent_default_v1', name: 'new_source', groupIds: ['g1'] }))
+    const res = await POST(makeRequest({ agentConfigId: 'agent_default_v1', name: 'new_source', groupIds: ['g1'], modelControlTopK: true }))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.source.name).toBe('new_source')
+    expect(body.data.source.modelControlTopK).toBe(true)
     expect(res.status).toBe(201)
   })
 })
@@ -177,10 +178,11 @@ describe('G3 — Mutations', () => {
   })
 
   it('PUT updates source', async () => {
-    const res = await PUT(makeRequestForAgent('agent_default_v1', { agentConfigId: 'agent_default_v1', description: 'Updated' }), routeCtx('ks1'))
+    const res = await PUT(makeRequestForAgent('agent_default_v1', { agentConfigId: 'agent_default_v1', description: 'Updated', modelControlTopK: true }), routeCtx('ks1'))
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(body.data.source.description).toBe('Updated')
+    expect(body.data.source.modelControlTopK).toBe(true)
   })
 })
 

@@ -40,6 +40,7 @@ const updateSchema = z.object({
   topK: z.number().optional(),
   rerankVersion: z.string().nullable().optional(),
   docCorrelation: z.number().nullable().optional(),
+  modelControlTopK: z.boolean().optional(),
   caseTypeTag: z.string().nullable().optional(),
   enabled: z.boolean().optional(),
 })
@@ -65,6 +66,7 @@ export const PUT = defineRoute<UpdateInput, KnowledgeSourceParams>({
     if (fields.topK !== undefined) updateData.topK = fields.topK
     if (fields.rerankVersion !== undefined) updateData.rerankVersion = fields.rerankVersion
     if (fields.docCorrelation !== undefined) updateData.docCorrelation = fields.docCorrelation
+    if (fields.modelControlTopK !== undefined) updateData.modelControlTopK = fields.modelControlTopK
     if (fields.caseTypeTag !== undefined) updateData.caseTypeTag = fields.caseTypeTag
     if (fields.enabled !== undefined) updateData.enabled = fields.enabled
     const result = await repo.raw.knowledgeSource.updateMany({

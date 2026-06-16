@@ -86,6 +86,41 @@ interface TurnDebugDigest {
   latestReply: string | null
 }
 
+const PLAYGROUND_STARTER_PROMPTS = [
+  {
+    titleZh: '查充值未到账',
+    hintZh: 'Procedure 启动 + 证据查询',
+    promptZh: '我的充值还没到账，请帮我查一下。',
+    titleEn: 'Check missing deposit',
+    hintEn: 'Procedure start + evidence lookup',
+    promptEn: 'My deposit has not arrived yet. Please help me check it.',
+  },
+  {
+    titleZh: '转人工前还缺什么',
+    hintZh: 'Hook + 转人工推理',
+    promptZh: '在转人工前，你还缺哪些证据？',
+    titleEn: 'Before human handoff',
+    hintEn: 'Hook + handoff reasoning',
+    promptEn: 'Before handing this to a human, what evidence are you still missing?',
+  },
+  {
+    titleZh: '对齐补充金额',
+    hintZh: 'Reconcile + 陈旧证据路径',
+    promptZh: '继续之前，请先对齐我刚补充的支付金额。',
+    titleEn: 'Reconcile new amount',
+    hintEn: 'Reconcile + stale evidence path',
+    promptEn: 'Before continuing, align with the payment amount I just added.',
+  },
+  {
+    titleZh: '回单截图确认',
+    hintZh: '图片输入能力 + 证据提取',
+    promptZh: '我上传了回单截图，你现在能确认什么？',
+    titleEn: 'Receipt screenshot check',
+    hintEn: 'Vision input + evidence extraction',
+    promptEn: 'I uploaded the receipt screenshot. What can you confirm from it?',
+  },
+]
+
 /* ── Helpers ── */
 
 function formatMemoryModeLabel(raw: unknown): string {
@@ -1123,6 +1158,17 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
   }, [selectedAgentId, debugMode, canAttachImages, visionSupport.status, snapshot?.resolvedModelLabel])
 
   const canSubmitManualTurn = message.trim().length > 0 || attachedImages.length > 0
+  const showStarterPrompts = !isRestoringSession
+    && chatMessages.length === 0
+    && !responding
+    && !reply
+    && !formRequest
+    && !error
+  const starterPrompts = useMemo(() => PLAYGROUND_STARTER_PROMPTS.map((prompt) => ({
+    title: isZh ? prompt.titleZh : prompt.titleEn,
+    hint: isZh ? prompt.hintZh : prompt.hintEn,
+    message: isZh ? prompt.promptZh : prompt.promptEn,
+  })), [isZh])
 
   const submitManualTurn = useCallback(() => {
     const trimmed = message.trim()
@@ -1527,6 +1573,88 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
             overflowY: 'auto',
             display: 'flex', flexDirection: 'column',
           }}>
+            {showStarterPrompts && (
+              <div className="pg-empty-state" style={{ width: '100%', maxWidth: 760, margin: 'auto' }}>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '7px 12px', borderRadius: 999,
+                  background: 'rgba(212,118,78,0.08)',
+                  border: '1px solid rgba(212,118,78,0.12)',
+                  color: '#b87347',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}>
+                  <Sparkles size={13} />
+                  {isZh ? '试点问题' : 'Starter prompts'}
+                </div>
+                <h2 style={{
+                  margin: '18px 0 0',
+                  fontFamily: "'Literata', Georgia, serif",
+                  fontSize: 'clamp(26px, 4vw, 44px)',
+                  fontWeight: 650,
+                  lineHeight: 1.05,
+                  color: 'var(--mist)',
+                  textAlign: 'center',
+                }}>
+                  {isZh ? '选择一轮真实运行时测试' : 'Start with a real runtime question'}
+                </h2>
+                <p style={{
+                  maxWidth: 560,
+                  margin: '12px auto 0',
+                  textAlign: 'center',
+                  fontSize: 13,
+                  lineHeight: 1.7,
+                  color: 'var(--fog)',
+                }}>
+                  {isZh
+                    ? '这些问题只在空白会话显示。进入对话后，输入框上方不会再出现引导卡片。'
+                    : 'These prompts only appear before the first turn. Once the conversation starts, no guidance chips sit above the composer.'}
+                </p>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+                  gap: 12,
+                  width: '100%',
+                  marginTop: 24,
+                }}>
+                  {starterPrompts.map((prompt) => (
+                    <button
+                      key={prompt.message}
+                      type="button"
+                      onClick={() => runTurn(prompt.message)}
+                      style={{
+                        minHeight: 92,
+                        textAlign: 'left',
+                        padding: '16px 18px',
+                        borderRadius: 22,
+                        border: '1px solid rgba(0,0,0,0.06)',
+                        background: 'linear-gradient(145deg, rgba(255,255,255,0.86), rgba(255,251,244,0.68))',
+                        boxShadow: '0 14px 36px rgba(55,43,31,0.08), inset 0 1px 0 rgba(255,255,255,0.72)',
+                        cursor: 'pointer',
+                        transition: 'transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease',
+                      }}
+                      onMouseEnter={(event) => {
+                        event.currentTarget.style.transform = 'translateY(-2px)'
+                        event.currentTarget.style.borderColor = 'rgba(212,118,78,0.18)'
+                        event.currentTarget.style.boxShadow = '0 18px 44px rgba(55,43,31,0.12), inset 0 1px 0 rgba(255,255,255,0.78)'
+                      }}
+                      onMouseLeave={(event) => {
+                        event.currentTarget.style.transform = 'translateY(0)'
+                        event.currentTarget.style.borderColor = 'rgba(0,0,0,0.06)'
+                        event.currentTarget.style.boxShadow = '0 14px 36px rgba(55,43,31,0.08), inset 0 1px 0 rgba(255,255,255,0.72)'
+                      }}
+                    >
+                      <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: 'var(--mist)' }}>{prompt.title}</span>
+                      <span style={{ display: 'block', marginTop: 5, fontSize: 11.5, color: 'var(--fog)' }}>{prompt.hint}</span>
+                      <span style={{ display: 'block', marginTop: 10, fontSize: 12.5, lineHeight: 1.55, color: '#6f6258' }}>{prompt.message}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ── Chat messages ── */}
             {chatMessages.map((m, i) => (
               <div key={i} style={{ alignSelf: m.role === 'system' ? 'center' : m.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: m.role === 'system' ? '100%' : '85%' }}>
