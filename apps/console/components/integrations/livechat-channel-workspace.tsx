@@ -502,12 +502,12 @@ export default function LiveChatChannelWorkspace({
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <label className={labelCls}>{t('livechat.licenseId')} <span className="text-vermillion">*</span></label>
-                  <input type="text" value={config.licenseId} onChange={(event) => setConfig((current) => ({ ...current, licenseId: event.target.value }))} className={inputCls} placeholder="e.g. 12345678" />
+                  <input type="text" autoComplete="off" value={config.licenseId} onChange={(event) => setConfig((current) => ({ ...current, licenseId: event.target.value }))} className={inputCls} placeholder="e.g. 12345678" />
                 </div>
                 <div className="md:col-span-2">
                   <label className={labelCls}>{t('livechat.botToken')} <span className="text-vermillion">*</span></label>
                   <div className="relative">
-                    <input type={showToken ? 'text' : 'password'} value={config.botAccessToken} onChange={(event) => setConfig((current) => ({ ...current, botAccessToken: event.target.value }))} className={`${inputCls} pr-10`} />
+                    <input type={showToken ? 'text' : 'password'} autoComplete="new-password" value={config.botAccessToken} onChange={(event) => setConfig((current) => ({ ...current, botAccessToken: event.target.value }))} className={`${inputCls} pr-10`} />
                     <button
                       type="button"
                       onClick={() => setShowToken((current) => !current)}
@@ -519,7 +519,7 @@ export default function LiveChatChannelWorkspace({
                 </div>
                 <div className="md:col-span-2">
                   <label className={labelCls}>{t('livechat.webhookSecret')} <span className="text-vermillion">*</span></label>
-                  <input type="password" value={config.webhookSecret ?? ''} onChange={(event) => setConfig((current) => ({ ...current, webhookSecret: event.target.value }))} className={inputCls} />
+                  <input type="password" autoComplete="new-password" value={config.webhookSecret ?? ''} onChange={(event) => setConfig((current) => ({ ...current, webhookSecret: event.target.value }))} className={inputCls} />
                 </div>
               </div>
             </section>
@@ -531,11 +531,11 @@ export default function LiveChatChannelWorkspace({
               <div className="grid gap-4">
                 <div>
                   <label className={labelCls}>{t('livechat.accountId')}</label>
-                  <input type="text" value={config.accountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, accountId: event.target.value }))} className={inputCls} placeholder="28e53566-..." />
+                  <input type="text" autoComplete="off" value={config.accountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, accountId: event.target.value }))} className={inputCls} placeholder="28e53566-..." />
                 </div>
                 <div>
                   <label className={labelCls}>{t('livechat.agentAccountId')}</label>
-                  <input type="text" value={config.agentAccountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, agentAccountId: event.target.value }))} className={inputCls} placeholder="agent@email.com" />
+                  <input type="text" autoComplete="off" value={config.agentAccountId ?? ''} onChange={(event) => setConfig((current) => ({ ...current, agentAccountId: event.target.value }))} className={inputCls} placeholder="agent@email.com" />
                 </div>
                 <div>
                   <label className={labelCls}>{t('livechat.region')}</label>

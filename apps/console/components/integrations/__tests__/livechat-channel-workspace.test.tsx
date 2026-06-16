@@ -77,5 +77,6 @@ describe('LiveChatChannelWorkspace', () => {
     const passwordFields = Array.from(container.querySelectorAll('input[type="password"]'))
     expect(passwordFields.length).toBeGreaterThan(0)
     expect(passwordFields.every((field) => field.closest('form'))).toBe(true)
+    expect(passwordFields.every((field) => field.getAttribute('autocomplete') === 'new-password')).toBe(true)
   })
 })
