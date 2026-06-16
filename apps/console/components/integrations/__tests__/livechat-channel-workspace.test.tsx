@@ -65,13 +65,17 @@ describe('LiveChatChannelWorkspace', () => {
     })
   })
 
-  it('shows the stable family webhook URL and the correct stability copy', async () => {
+  it('shows the stable family webhook URL and keeps password fields inside a form', async () => {
     const { default: LiveChatChannelWorkspace } = await import('@/components/integrations/livechat-channel-workspace')
 
-    render(<LiveChatChannelWorkspace agentConfigId="agent_v2" onBack={() => {}} />)
+    const { container } = render(<LiveChatChannelWorkspace agentConfigId="agent_v2" onBack={() => {}} />)
 
     expect(await screen.findByText(/\/api\/livechat\/webhook\/org_default\/agent_root_v1$/)).toBeDefined()
     expect(screen.getByText('Keep this webhook URL fixed in LiveChat. Publish/version changes should continue routing through this same URL.')).toBeDefined()
     expect(screen.queryByText('Bound to the current Agent version')).toBeNull()
+
+    const passwordFields = Array.from(container.querySelectorAll('input[type="password"]'))
+    expect(passwordFields.length).toBeGreaterThan(0)
+    expect(passwordFields.every((field) => field.closest('form'))).toBe(true)
   })
 })

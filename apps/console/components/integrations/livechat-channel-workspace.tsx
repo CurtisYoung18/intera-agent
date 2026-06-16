@@ -481,13 +481,20 @@ export default function LiveChatChannelWorkspace({
             </section>
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <form
+            className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]"
+            onSubmit={(event) => event.preventDefault()}
+          >
             <section className={cardCls}>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.credentials')}</p>
                 <div className="flex items-center gap-2 rounded-full border border-black/[0.06] bg-black/[0.02] px-3 py-1.5">
                   <span className="text-[11px] font-medium text-[var(--fog)]">{t('livechat.enabled')}</span>
-                  <button onClick={() => setConfig((current) => ({ ...current, enabled: !current.enabled }))} className={`relative h-5 w-9 rounded-full transition-colors ${config.enabled ? 'bg-indigo' : 'bg-black/[0.08]'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setConfig((current) => ({ ...current, enabled: !current.enabled }))}
+                    className={`relative h-5 w-9 rounded-full transition-colors ${config.enabled ? 'bg-indigo' : 'bg-black/[0.08]'}`}
+                  >
                     <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all ${config.enabled ? 'left-[18px]' : 'left-0.5'}`} />
                   </button>
                 </div>
@@ -501,7 +508,11 @@ export default function LiveChatChannelWorkspace({
                   <label className={labelCls}>{t('livechat.botToken')} <span className="text-vermillion">*</span></label>
                   <div className="relative">
                     <input type={showToken ? 'text' : 'password'} value={config.botAccessToken} onChange={(event) => setConfig((current) => ({ ...current, botAccessToken: event.target.value }))} className={`${inputCls} pr-10`} />
-                    <button onClick={() => setShowToken((current) => !current)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--fog)] hover:text-[var(--mist)]">
+                    <button
+                      type="button"
+                      onClick={() => setShowToken((current) => !current)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--fog)] hover:text-[var(--mist)]"
+                    >
                       {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
@@ -543,7 +554,7 @@ export default function LiveChatChannelWorkspace({
                 </div>
               </div>
             </section>
-          </div>
+          </form>
         </div>
       ) : null}
 
