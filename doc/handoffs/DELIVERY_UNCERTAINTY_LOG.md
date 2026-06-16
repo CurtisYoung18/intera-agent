@@ -39,6 +39,19 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-17 - API Keys Binding Defaults To Wrong Agent And Version
+
+- Area: Integrations / API Keys / agent version binding
+- Status: default-applied
+- Severity: P1
+- Uncertainty: Production `Build -> Components -> Integrations -> API Keys` was creating keys against the wrong `agentConfigId`. The form defaulted to the first `/api/admin/agent-configs` row instead of the agent currently selected in the version bar, and the dropdown also deduped rows by `name`, which collapsed multi-version agents down to the earliest version (for example, `J1B` showing `v1` instead of the currently active newer version). The product question is whether this surface should expose every concrete version or intentionally collapse to one family-level target.
+- Default action taken: Removed the name-based dedupe on the API key binding dropdown and made the create form default to the currently selected `agentConfigId` when it exists in the fetched config list; otherwise it falls back to the first available config.
+- Why this default: The backend contract persists a concrete `ApiKey.agentConfigId` and API-key auth resolves that exact config id at runtime, so showing all concrete versions is the most truthful short-term behavior and prevents silently binding new keys to stale versions or neighboring agents.
+- Evidence: `apps/console/components/integrations/integrations-workspace.tsx`; `apps/console/components/integrations/__tests__/integrations-workspace.test.tsx`
+- Production URL / screenshot / receipt: Reproduced on `https://demo.anytrans.ai/build/components/integrations?tab=apiKeys&agentId=cmqh0q7et000dqjql79a5x32h` before fix: opening `New Key` on `Codex Temp 0617C` preselected `Codex Temp 0617B · v1 (Active)` instead of the current page agent, and the options list also showed stale version labels such as `J1B · v1`.
+- Owner decision needed: Confirm whether the long-term UX should keep exposing every concrete version in this dropdown, or switch to an explicit family-level model with backend/runtime changes to match.
+- Follow-up owner: founder / architect / delivery lead
+
 ### 2026-06-16 - Playground Form File Fields Default To Vision Images
 
 - Area: Playground / ask_user_questions / multimodal runtime

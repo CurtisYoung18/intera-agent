@@ -53,6 +53,20 @@ type AgentOption = {
   isActive: boolean
 }
 
+function resolvePreferredAgentConfigId({
+  agents,
+  explicitAgentConfigId,
+  selectedAgentConfigId,
+}: {
+  agents: AgentOption[]
+  explicitAgentConfigId: string
+  selectedAgentConfigId: string | null | undefined
+}) {
+  if (explicitAgentConfigId && agents.some((agent) => agent.id === explicitAgentConfigId)) return explicitAgentConfigId
+  if (selectedAgentConfigId && agents.some((agent) => agent.id === selectedAgentConfigId)) return selectedAgentConfigId
+  return agents[0]?.id || ''
+}
+
 const CHANNELS: ChannelInfo[] = [
   {
     id: 'livechat',
@@ -239,6 +253,7 @@ function ChannelsTab({
 function ApiKeysTab() {
   const { t, locale } = useConsoleLocale()
   const isZh = locale === 'zh'
+  const selectedAgentConfigId = useSelectedAgentId()
   const [keys, setKeys] = useState<ApiKeyRow[]>([])
   const [agents, setAgents] = useState<AgentOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -312,14 +327,7 @@ function ApiKeysTab() {
     try {
       const result = await apiClient<{ configs: AgentOption[] }>('/api/admin/agent-configs')
       if (!result.data.configs) return
-      const seen = new Set<string>()
-      const next: AgentOption[] = []
-      for (const config of result.data.configs) {
-        if (seen.has(config.name)) continue
-        seen.add(config.name)
-        next.push(config)
-      }
-      setAgents(next)
+      setAgents(result.data.configs)
     } catch {
       // non-critical
     }
@@ -332,7 +340,11 @@ function ApiKeysTab() {
 
   const handleCreate = async () => {
     const name = newName.trim() || 'default'
-    const agentConfigId = newAgentConfigId || agents[0]?.id
+    const agentConfigId = resolvePreferredAgentConfigId({
+      agents,
+      explicitAgentConfigId: newAgentConfigId,
+      selectedAgentConfigId,
+    })
     if (!agentConfigId) {
       setError(t('common.failedSave', { status: '' }))
       return
@@ -390,7 +402,11 @@ function ApiKeysTab() {
     return config ? `${config.name} v${config.version}` : `${agentConfigId.slice(0, 8)}…`
   }
 
-  const selectedNewAgentConfigId = newAgentConfigId || agents[0]?.id || ''
+  const selectedNewAgentConfigId = resolvePreferredAgentConfigId({
+    agents,
+    explicitAgentConfigId: newAgentConfigId,
+    selectedAgentConfigId,
+  })
 
   return (
     <>
