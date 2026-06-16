@@ -1035,6 +1035,7 @@ export default function BuildProcedureDetailPage() {
   const [hookStepDrafts, setHookStepDrafts] = useState<Record<string, string>>({})
   const [newHookDrafts, setNewHookDrafts] = useState<Record<string, string>>({})
   const [draft, setDraft] = useState<ProcedureEditorDraft>(() => createEmptyDraft(t))
+  const [selectedKey, setSelectedKey] = useState<string>('')
   const [rightPanelMode, setRightPanelMode] = useState<'preview' | 'simulation'>('simulation')
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [simulation, setSimulation] = useState<ProcedureSimulationInputContract>({
@@ -1411,6 +1412,11 @@ export default function BuildProcedureDetailPage() {
 
   const saveStateLabel = saving ? t('procedureEditor.status.saving') : dirty ? t('procedureEditor.status.unsaved') : t('common.saved')
 
+  const stepIds = draft.steps.map((step) => step.id)
+  const selected = selectedKey && (selectedKey === 'overview' || stepIds.includes(selectedKey))
+    ? selectedKey
+    : (stepIds[0] ?? 'overview')
+
   return (
     <BuildComponentsRouteShell
       currentLabelKey="sidebar.procedures"
@@ -1466,14 +1472,6 @@ export default function BuildProcedureDetailPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setRightPanelMode('simulation')}
-                  className="inline-flex items-center gap-2 rounded-full bg-black/[0.04] px-4 py-2 text-[13px] font-semibold text-[var(--mist)] transition hover:bg-black/[0.07]"
-                >
-                  <Play className="h-4 w-4" />
-                  {t('procedureEditor.actions.test')}
-                </button>
-                <button
-                  type="button"
                   onClick={save}
                   disabled={saving || !dirty}
                   className="inline-flex items-center gap-2 rounded-full bg-[#128a20] px-4 py-2 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(18,138,32,0.22)] transition hover:bg-[#0f7a1c] disabled:bg-black/[0.08] disabled:text-[var(--fog)] disabled:shadow-none"
@@ -1506,9 +1504,58 @@ export default function BuildProcedureDetailPage() {
             ) : null}
           </div>
 
-          <div className="grid xl:grid-cols-[minmax(0,1fr)_390px]">
-            <main className="min-w-0 border-r border-black/[0.08] bg-[#fffefa]">
+          <div className="grid xl:grid-cols-[300px_minmax(0,1fr)]">
+            <aside className="min-w-0 border-r border-black/[0.08] bg-[#fbfaf6]">
+              <div className="sticky top-[73px] max-h-[calc(100vh-73px)] overflow-y-auto px-4 py-6">
+                <p className="px-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{t('procedureEditor.section.orderedSteps')}</p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedKey('overview')}
+                  className={`mt-2 flex w-full items-center gap-2 rounded-[14px] border px-3 py-2.5 text-left text-[13px] font-medium transition ${selected === 'overview' ? 'border-[#357f7c]/30 bg-[#357f7c]/[0.08] text-[var(--mist)]' : 'border-transparent text-[var(--fog)] hover:bg-black/[0.03]'}`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {t('procedureEditor.form.whenToUse')}
+                </button>
+                <div className="mt-3 space-y-1.5">
+                  {draft.steps.map((step, index) => {
+                    const stepBindings = getStepBindings(step.id)
+                    const active = selected === step.id
+                    return (
+                      <button
+                        key={step.id}
+                        type="button"
+                        onClick={() => setSelectedKey(step.id)}
+                        className={`flex w-full items-start gap-2.5 rounded-[14px] border px-3 py-2.5 text-left transition ${active ? 'border-[#5b8af7]/30 bg-[#5b8af7]/[0.08]' : 'border-transparent hover:bg-black/[0.03]'}`}
+                      >
+                        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px] font-medium ${active ? 'bg-[#bcd3f6] text-[#0c447c]' : 'bg-black/[0.05] text-[var(--fog)]'}`}>{index + 1}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-[var(--mist)]">{step.title || t('procedureEditor.defaults.stepTitle', { n: index + 1 })}</span>
+                          <span className="mt-1 flex flex-wrap gap-1">
+                            {step.branches.length > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-[#357f7c]/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-[#357f7c]"><GitBranch className="h-3 w-3" />{step.branches.length}</span>
+                            ) : null}
+                            {stepBindings.length > 0 ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-[#b6791f]/[0.12] px-1.5 py-0.5 text-[10px] font-medium text-[#8a5d11]"><Lock className="h-3 w-3" />{stepBindings.length}</span>
+                            ) : null}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={addStep}
+                  className="mt-3 flex w-full items-center gap-1.5 rounded-[14px] border border-dashed border-black/[0.12] bg-white px-3 py-2.5 text-[13px] font-medium text-[var(--fog)] transition hover:border-[#357f7c]/30 hover:text-[#357f7c]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('procedureEditor.actions.addStep')}
+                </button>
+              </div>
+            </aside>
+            <main className="min-w-0 bg-[#fffefa]">
               <div className="mx-auto max-w-[1020px] px-4 py-8 md:px-8 lg:px-12">
+                {selected === 'overview' ? (
                 <section className="grid gap-5 md:grid-cols-[72px_minmax(0,1fr)]">
                   <div className="hidden justify-end pt-9 md:flex">
                     <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-black/[0.04] text-[var(--mist)]">
@@ -1669,12 +1716,15 @@ export default function BuildProcedureDetailPage() {
                     </details>
                   </div>
                 </section>
+                ) : null}
 
+                {selected !== 'overview' && (
                 <section className="mt-14 space-y-10">
                   {draft.steps.map((step, index) => {
                     const bindings = getStepBindings(step.id)
                     const availableHooks = availableHooksForStep(step.id)
                     const busy = hookBusyStepId === step.id
+                    if (selected !== step.id) return null
                     return (
                       <div key={step.id} className="grid gap-4 md:grid-cols-[72px_minmax(0,1fr)]">
                         <div className="pt-3 text-right text-[13px] font-medium text-[var(--fog)]">
@@ -1932,261 +1982,11 @@ export default function BuildProcedureDetailPage() {
                     </button>
                   </div>
                 </section>
+                )}
               </div>
             </main>
 
-            <aside className="min-w-0 bg-white">
-              <div className="sticky top-[73px] max-h-[calc(100vh-73px)] overflow-y-auto">
-                <div className="border-b border-black/[0.08] px-6 py-4">
-                  <div className="flex items-center gap-6">
-                    <button
-                      type="button"
-                      onClick={() => setRightPanelMode('preview')}
-                      className={`border-b-2 pb-3 text-[14px] font-semibold transition ${
-                        rightPanelMode === 'preview'
-                          ? 'border-[#f05a28] text-[var(--mist)]'
-                          : 'border-transparent text-[var(--fog)] hover:text-[var(--mist)]'
-                      }`}
-                    >
-                      {t('procedureEditor.panel.preview')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRightPanelMode('simulation')}
-                      className={`border-b-2 pb-3 text-[14px] font-semibold transition ${
-                        rightPanelMode === 'simulation'
-                          ? 'border-[#f05a28] text-[var(--mist)]'
-                          : 'border-transparent text-[var(--fog)] hover:text-[var(--mist)]'
-                      }`}
-                    >
-                      {t('procedureEditor.panel.simulations')}
-                    </button>
-                  </div>
-                </div>
 
-                {rightPanelMode === 'preview' ? (
-                  <div className="space-y-4 p-6">
-                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
-                      <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.preview.title')}</p>
-                      <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedure.whenToUse}</p>
-                      {procedure.overview ? (
-                        <p className="mt-3 text-[12px] leading-6 text-[var(--fog)]">{procedure.overview}</p>
-                      ) : null}
-                    </div>
-                    {procedure.steps.map((step) => (
-                      <div key={step.id} className="rounded-[20px] border border-black/[0.08] bg-white p-5">
-                        <p className="text-[14px] font-semibold text-[var(--mist)]">{step.title}</p>
-                        <p className="mt-2 text-[12px] leading-6 text-[var(--fog)]">{step.guidance}</p>
-                        {step.actions.length > 0 ? (
-                          <div className="mt-3 space-y-1 text-[11px] text-[var(--fog)]">
-                            {step.actions.map((action) => (
-                              <div key={action.id}>{t('procedureEditor.preview.actionLine', { summary: summarizeAction(t, action) })}</div>
-                            ))}
-                          </div>
-                        ) : null}
-                        {step.branches.length > 0 ? (
-                          <div className="mt-3 space-y-1 text-[11px] text-[var(--fog)]">
-                            {step.branches.map((branch) => (
-                              <div key={branch.id}>
-                                {t('procedureEditor.preview.branchLine', { kind: branchKindLabel(t, branch.kind), summary: summarizeCondition(t, branch) })}
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-4 p-6">
-                    <div className="flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setSimulation({
-                          signals: [],
-                          toolNames: [],
-                          knowledgeToolNames: [],
-                          formFields: [],
-                          matchedLlmConditionIds: [],
-                          knowledgeSearches: 0,
-                          handoffRequested: false,
-                          ended: false,
-                        })}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.07] bg-white px-3 py-2 text-[13px] font-semibold text-[var(--mist)] transition hover:bg-black/[0.03]"
-                      >
-                        <Plus className="h-4 w-4" />
-                        {t('procedureEditor.actions.newSimulation')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSimulation((current) => ({ ...current, ended: true }))}
-                        className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-[var(--mist)] transition hover:bg-black/[0.04]"
-                      >
-                        <Square className="h-3.5 w-3.5 fill-current" />
-                        {t('procedureEditor.actions.stopAll')}
-                      </button>
-                    </div>
-
-                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.simulation.title')}</p>
-                          <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
-                            {t('procedureEditor.simulation.description')}
-                          </p>
-                        </div>
-                        <span className="rounded-full border border-[#357f7c]/18 bg-[#357f7c]/[0.08] px-2.5 py-1 text-[11px] font-medium text-[#357f7c]">
-                          {simulationStatusLabel(t, simulationReceipt.status)}
-                        </span>
-                      </div>
-                      <div className="mt-3 rounded-[16px] border border-amber-500/20 bg-amber-500/[0.08] px-3 py-3 text-[11px] leading-5 text-[var(--mist)]">
-                        {t('procedureEditor.simulation.previewWarning')}
-                      </div>
-                    </div>
-
-                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.activeSignals')}</p>
-                          <div className="flex flex-wrap gap-2">
-                            {PROCEDURE_RUNTIME_SIGNALS.map((signal) => {
-                              const active = simulation.signals.includes(signal)
-                              return (
-                                <button
-                                  key={signal}
-                                  type="button"
-                                  onClick={() => setSimulation((current) => ({
-                                    ...current,
-                                    signals: active
-                                      ? current.signals.filter((value) => value !== signal)
-                                      : [...current.signals, signal],
-                                  }))}
-                                  className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
-                                    active
-                                      ? 'border border-[#357f7c]/18 bg-[#357f7c]/[0.10] text-[#357f7c]'
-                                      : 'border border-black/[0.06] bg-white text-[var(--fog)] hover:text-[var(--mist)]'
-                                  }`}
-                                >
-                                  {runtimeSignalLabel(t, signal)}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.toolNames')}</p>
-                          <ChipInput
-                            values={simulation.toolNames}
-                            onChange={(values) => setSimulation((current) => ({ ...current, toolNames: values }))}
-                            placeholder={t('procedureEditor.placeholder.simulationToolNames')}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.knowledgeToolNames')}</p>
-                          <ChipInput
-                            values={simulation.knowledgeToolNames || []}
-                            onChange={(values) => setSimulation((current) => ({ ...current, knowledgeToolNames: values }))}
-                            placeholder={t('procedureEditor.placeholder.simulationKnowledgeToolNames')}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.formFields')}</p>
-                          <ChipInput
-                            values={simulation.formFields}
-                            onChange={(values) => setSimulation((current) => ({ ...current, formFields: values }))}
-                            placeholder={t('procedureEditor.placeholder.simulationFormFields')}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-medium text-[var(--fog)]">{t('procedureEditor.simulation.llmConditionIds')}</p>
-                          <ChipInput
-                            values={simulation.matchedLlmConditionIds || []}
-                            onChange={(values) => setSimulation((current) => ({ ...current, matchedLlmConditionIds: values }))}
-                            placeholder={t('procedureEditor.placeholder.llmConditionIds')}
-                          />
-                          <p className="text-[11px] text-[var(--fog)]">
-                            {t('procedureEditor.simulation.llmConditionIdsHint')}
-                          </p>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-                          <MetaField label={t('procedureEditor.simulation.knowledgeSearches')}>
-                            <input
-                              type="number"
-                              min={0}
-                              value={simulation.knowledgeSearches}
-                              onChange={(event) => setSimulation((current) => ({ ...current, knowledgeSearches: Number(event.target.value || 0) }))}
-                              className="glass-input-console text-[13px]"
-                            />
-                          </MetaField>
-                          <div className="space-y-2 text-[12px] text-[var(--mist)]">
-                            <label className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={simulation.handoffRequested}
-                                onChange={(event) => setSimulation((current) => ({ ...current, handoffRequested: event.target.checked }))}
-                                className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
-                              />
-                              {t('procedureEditor.simulation.handoffRequested')}
-                            </label>
-                            <label className="inline-flex items-center gap-2">
-                              <input
-                                type="checkbox"
-                                checked={simulation.ended}
-                                onChange={(event) => setSimulation((current) => ({ ...current, ended: event.target.checked }))}
-                                className="h-4 w-4 rounded border-[var(--color-border-subtle)]"
-                              />
-                              {t('procedureEditor.simulation.ended')}
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-[20px] border border-black/[0.08] bg-white p-5">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-[13px] font-semibold text-[var(--mist)]">{t('procedureEditor.simulation.receipt')}</p>
-                        <span className="text-[11px] text-[var(--fog)]">{t('procedureEditor.simulation.activeStep', { stepId: simulationReceipt.activeStepId || t('procedureEditor.simulation.none') })}</span>
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        {simulationReceipt.steps.map((step) => (
-                          <div key={step.stepId} className="rounded-[16px] border border-black/[0.08] bg-[#fbfaf6] px-4 py-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-[13px] font-semibold text-[var(--mist)]">{step.title}</p>
-                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] text-[var(--fog)]">
-                                {simulationStepStatusLabel(t, step.status)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="border-t border-black/[0.08] p-6">
-                  <div className="rounded-[20px] border border-black/[0.08] bg-[#fbfaf6] p-5">
-                    <p className="text-[12px] font-semibold text-[var(--mist)]">{t('procedureEditor.section.currentStatus')}</p>
-                    <div className="mt-3 space-y-2 text-[12px] text-[var(--fog)]">
-                      <div className="flex items-center justify-between">
-                        <span>{t('procedureEditor.status.routing')}</span>
-                        <span className="font-medium text-[var(--mist)]">{draft.enabled ? t('common.enabled') : t('common.disabled')}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>{t('procedureEditor.status.steps')}</span>
-                        <span className="font-medium text-[var(--mist)]">{draft.steps.length}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>{t('procedureEditor.status.branches')}</span>
-                        <span className="font-medium text-[var(--mist)]">{draft.steps.reduce((count, step) => count + step.branches.length, 0)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>{t('procedureEditor.status.saveState')}</span>
-                        <span className="font-medium text-[var(--mist)]">{saveStateLabel}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </aside>
           </div>
         </div>
       </PageLoader>
