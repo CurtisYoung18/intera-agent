@@ -153,6 +153,8 @@ export const zhBuild: Record<string, string> = {
   'hooks.error.save': '保存失败',
   'hooks.error.delete': '删除失败',
   'hooks.error.bindingSave': '绑定保存失败',
+  'hooks.error.nameRequired': 'Hook 名称不能为空。',
+  'hooks.error.nameInvalid': '请使用稳定的小写名称，例如 investigate_before_resolve。',
   'hooks.error.promptRequired': '评估提示词不能为空。',
   'hooks.error.ruleObject': '规则 JSON 必须是对象。',
   'hooks.error.ruleToolRequired': '这个规则条件至少要选择一个 Tool。',

@@ -22,7 +22,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import { ApiClientError, apiClient, bustConfigCache } from '@/lib/api/client'
 import { useSession } from '@/lib/hooks/use-session'
 import type { TranslateFn } from '@/lib/i18n/types'
-import type { HookHandler } from '@intera/shared/contracts/hooks'
+import { STABLE_NAME_PATTERN, type HookHandler } from '@intera/shared/contracts/hooks'
 
 type HookCheckpoint = 'PreToolUse' | 'PostToolUse' | 'Stop'
 type HookSeverity = 'low' | 'medium' | 'high' | 'critical'
@@ -175,6 +175,19 @@ function emptyDraft(): HookDraft {
 function humanizeStableName(name: string): string {
   const compact = name.trim().replace(/[_.-]+/g, ' ')
   return compact ? compact.replace(/\b\w/g, (ch) => ch.toUpperCase()) : ''
+}
+
+function parseStableHookName(name: string, t?: TranslateFn): string {
+  const trimmed = name.trim()
+  if (!trimmed) {
+    if (t) throw new Error(t('hooks.error.nameRequired'))
+    return ''
+  }
+  if (!STABLE_NAME_PATTERN.test(trimmed)) {
+    if (t) throw new Error(t('hooks.error.nameInvalid'))
+    return trimmed
+  }
+  return trimmed
 }
 
 function checkpointLabel(checkpoint: HookCheckpoint, t: TranslateFn) {
@@ -457,8 +470,14 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     () => hooks.find((hook) => hook.name === selectedName) ?? null,
     [hooks, selectedName],
   )
+  const stableHookName = useMemo(() => parseStableHookName(draft.name), [draft.name])
+  const nameError = useMemo(() => {
+    if (!draft.name.trim()) return null
+    return STABLE_NAME_PATTERN.test(stableHookName) ? null : t('hooks.error.nameInvalid')
+  }, [draft.name, stableHookName, t])
   const saveDisabled = saving
-    || !draft.name.trim()
+    || !stableHookName
+    || !!nameError
     || (draft.evaluatorMode === 'llm' && !draft.evaluationPrompt.trim())
     || (draft.evaluatorMode === 'rule' && !isRuleDraftComplete(draft.rule))
 
@@ -553,11 +572,12 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
     setSaving(true)
     setError(null)
     try {
+      const stableName = parseStableHookName(draft.name, t)
       const handler = handlerFromDraft(draft, t)
       const body = {
         agentConfigId,
-        name: draft.name,
-        displayName: humanizeStableName(draft.name) || null,
+        name: stableName,
+        displayName: humanizeStableName(stableName) || null,
         description: draft.description || null,
         checkpoint: draft.checkpoint,
         handlerKind: 'declarative' as const,
@@ -565,7 +585,7 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
         enabled: draft.enabled,
         severity: draft.severity,
       }
-      const url = isNew ? '/api/admin/hooks' : `/api/admin/hooks/${encodeURIComponent(selectedName ?? draft.name)}`
+      const url = isNew ? '/api/admin/hooks' : `/api/admin/hooks/${encodeURIComponent(selectedName ?? stableName)}`
       const result = await apiClient<{ hook: HookItem }>(url, {
         method: isNew ? 'POST' : 'PUT',
         body,
@@ -921,10 +941,12 @@ export default function HookBuilder({ embedded = false }: { embedded?: boolean }
                     <input
                       value={draft.name}
                       onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                      className="glass-input-console text-[13px]"
+                      aria-invalid={nameError ? true : undefined}
+                      className={`glass-input-console text-[13px] ${nameError ? 'border-red-500/30 bg-red-500/[0.04]' : ''}`}
                       placeholder={t('hooks.namePlaceholder')}
                     />
                     <p className="text-[11px] text-[var(--fog)]">{t('hooks.nameHint')}</p>
+                    {nameError ? <p className="text-[11px] text-red-600">{nameError}</p> : null}
                   </label>
                   <label className="space-y-1.5 lg:col-span-2">
                     <span className="text-[12px] font-medium text-[var(--fog)]">{t('hooks.note')}</span>

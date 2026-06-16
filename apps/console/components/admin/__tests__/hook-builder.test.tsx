@@ -143,6 +143,21 @@ describe('HookBuilder', () => {
     expect(createCall[1].body.handler.effect.decision).toBe('block')
   })
 
+  it('blocks invalid Hook names before calling the API', async () => {
+    await renderHookBuilder()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /New Hook/ }))
+    })
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText('investigate_before_transfer'), { target: { value: 'Bad Hook' } })
+    })
+
+    expect(screen.getByText('Use a stable lowercase name such as investigate_before_resolve.')).toBeDefined()
+    expect((screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect(mockApiClient.mock.calls.some(([url, options]) => url === '/api/admin/hooks' && options?.method === 'POST')).toBe(false)
+  })
+
   it('builds Rule checks from structured fields instead of raw JSON input', async () => {
     await renderHookBuilder()
 

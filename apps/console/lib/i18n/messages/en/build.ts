@@ -126,6 +126,8 @@ export const enBuild: Record<string, string> = {
   'hooks.error.save': 'Save failed',
   'hooks.error.delete': 'Delete failed',
   'hooks.error.bindingSave': 'Binding save failed',
+  'hooks.error.nameRequired': 'Hook name is required.',
+  'hooks.error.nameInvalid': 'Use a stable lowercase name such as investigate_before_resolve.',
   'hooks.error.promptRequired': 'Evaluation prompt is required.',
   'hooks.error.ruleObject': 'Rule JSON must be an object.',
   'hooks.error.ruleToolRequired': 'Select at least one Tool for this rule condition.',
