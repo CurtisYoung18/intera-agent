@@ -25,6 +25,16 @@ Standing rule going forward:
 
 > **Every lane that introduces a new center must contain the old center's remove list and execute it in the same lane.** A plan without a deletion section is not dispatchable.
 
+### 0.1 Data Scope Contract
+
+The ownership ladder is **Account -> Org -> Agent**:
+
+- Account owns one or more org workspaces.
+- Org is the membership, billing, and admin boundary.
+- AgentConfig/Agent version is the unit for operational data.
+
+All customer-facing runtime/config evidence must be addressable by `agentConfigId`: Chats, Runtime shells, ProcedureRuns, Messages, Traces, HumanTasks, Memory, Scenario receipts, Operate queues, and Operate metrics. Org/account views may aggregate only through explicit roll-ups and must label themselves as roll-ups; they must not masquerade as the selected Agent's data. Legacy rows without `agentConfigId` are unattributed legacy data and are excluded from agent-scoped truth unless a migration/backfill assigns them to a specific Agent.
+
 Seven modules, two priorities:
 
 | Module | Name | Priority | Depends on |
@@ -78,7 +88,7 @@ Additional risks on the same surface:
 - `loop.ts` is 2,037 lines (was 1,352 at the 2026-06-08 review); `session-store.ts` is 2,213 lines; `/api/messages/route.ts` is 966 lines; the v2 editor page `app/build/components/procedures/[name]/page.tsx` is ~1,980 lines.
 - 91 API route files; 34 Prisma models, 11 of them Pilot-cockpit persistence.
 - Old orchestrator/sub-agent/react-loop/stage files are physically gone (R2 confirmed). `ConversationLoop`/`CaseAgentLoop` remain as per-iteration strategies called from `loop.ts`.
-- Tenant isolation: `assertAgentInOrg()` wired into the 11 admin sub-module routes (L5 fix, `5bd7326b`); enforcement is per-route convention, not a mechanized seam.
+- Tenant isolation and data scope: `assertAgentInOrg()` wired into the 11 admin sub-module routes (L5 fix, `5bd7326b`); enforcement is per-route convention, not a mechanized seam. Runtime, Operate, and config read paths must resolve the selected Agent before querying agent-owned data.
 - `dictionaries.ts` is 3,772 lines (was 3,037), still the #1 churn file.
 - Deploy: single host, systemd `intera-console.service` + Caddy; runtime lives inside the Next.js process.
 
@@ -279,6 +289,8 @@ Since the agent-scoped pivot, isolation is enforced by convention: each admin su
 ### 6.2 Decision
 
 - `defineRoute` gains a scope declaration: `scope: 'agent'` runs `assertAgentInOrg(orgId, agentConfigId)` before the handler; `scope: 'org'` requires the org-scoped repo only.
+- `scope: 'agent'` is the default for config/runtime/operate data: Procedure types, Procedures, Tools, Hooks, Knowledge, Integrations, Chats, Runtime shells, ProcedureRuns, Messages, Traces, HumanTasks, Memory, Scenario receipts, queues, and metrics.
+- `scope: 'org'` is reserved for org profile, members, account/org preferences, agent list/switcher data, and explicitly labeled aggregate roll-ups.
 - CI guard: under `apps/console/app/api/admin/**`, any file containing `repo.raw` or direct `prisma.` access must either declare `scope: 'agent'` via `defineRoute` or appear in a reviewed allowlist. The gate ships red against a deliberate canary first, then green.
 - `cross-org-isolation.test.ts` becomes the template: every new admin sub-module lane must add its red→green cross-org case before merge.
 
@@ -298,8 +310,8 @@ The platform can author, simulate, and guard procedures, but cannot answer "whic
 ### 7.2 Decision
 
 - `ProcedureRun.outcome` (schema in M2): `resolved_by_agent` (finalize passed safety checks), `handed_off` (human task created), `abandoned` (cancelled/expired/evicted), recorded by the runtime at the terminal transition.
-- API: `GET /api/operate/procedures/metrics?from&to` → per `procedureId`: runs, resolution rate, handoff rate, abandonment, top blockers (from `state.blockers` frequency), median turns-to-terminal.
-- Operate UI: per-procedure table → drill to run list → run detail (timeline, evidence, receipts, transcript link) → "Open playbook" CTA into the v2 editor. The loop closes: production failure → transcript → edit guidance → re-simulate → publish.
+- API: `GET /api/operate/procedures/metrics?agentConfigId&from&to` -> per `procedureId` for the selected Agent: runs, resolution rate, handoff rate, abandonment, top blockers (from `state.blockers` frequency), median turns-to-terminal.
+- Operate UI: selected-Agent procedure table -> drill to run list -> run detail (timeline, evidence, receipts, transcript link) -> "Open playbook" CTA into the v2 editor. The loop closes: production failure -> transcript -> edit guidance -> re-simulate -> publish.
 
 ### 7.3 Out of scope
 
@@ -308,6 +320,7 @@ The platform can author, simulate, and guard procedures, but cannot answer "whic
 ### 7.4 Acceptance gates
 
 - Metrics endpoint verified against a seeded fixture of known runs (counts match by hand).
+- Switching the selected Agent changes the metrics; rows without `agentConfigId` do not count unless a migration/backfill attributes them.
 - Production receipt: a real J1B handed-off run appears with the correct outcome and drill-down path; screenshots per the delivery audit bar.
 
 ---

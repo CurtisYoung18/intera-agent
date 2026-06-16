@@ -1,6 +1,6 @@
 # Intera Harness Architecture
 
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-16
 **Status:** CURRENT source of truth for product architecture and domain language
 **Audience:** founder, architect, delivery lead, and AI coding teams
 **Related plan:** [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md)
@@ -15,6 +15,8 @@ This document replaces the older mixed Harness/Procedure notes as the current ar
 Intera is a customer-service AgentOps platform.
 
 The Console should let a delivery person build, adapt, validate, deploy, and maintain a customer-service AI Agent for a real enterprise account. The first commercial slice is not a generic chatbot builder. It is a practical delivery chain for one customer:
+
+Data ownership follows **Account -> Org -> Agent**. Account and Org are parent boundaries for commercial ownership, membership, billing, and administration. AgentConfig/Agent version is the unit for runtime/config data: Chats, Runtime shells, ProcedureRuns, Messages, Traces, HumanTasks, Memory, Scenario receipts, Operate queues, and Operate metrics must all be addressable by `agentConfigId`. Org/account screens may show explicit aggregate roll-ups, but selected-Agent surfaces must never silently read all org data.
 
 ```text
 Import starter template
@@ -40,6 +42,9 @@ High-risk business actions can exist as Tool/Hook concepts, but should be gated 
 
 | Term | Meaning |
 |---|---|
+| `Account` | Commercial owner. An account can own one or more org workspaces. |
+| `Org` | Workspace, membership, billing, and admin boundary. It is the parent of Agents, not the unit of runtime truth. |
+| `Agent` / `AgentConfig` | The build/deploy unit and the data ownership unit. Configuration, runtime evidence, Operate queues, and metrics belong to an Agent version/config under an org. |
 | `Runtime shell` | Transitional durable persistence record where current storage still requires it. Product copy and future APIs should prefer Chat, User, ProcedureRun, HumanTask, Trace, and Memory. |
 | `Procedure type` | Configurable issue category and routing target, such as `deposit_issue` or `account_access`. |
 | `Procedure` | Soft business process attached to a Procedure type. It guides the Agent; it is not a rigid flowchart. |
@@ -158,7 +163,7 @@ Target state shape:
 ```ts
 type ProcedureRunState = {
   runId: string
-  agentConfigId?: string
+  agentConfigId: string
   procedureId: string
   status: 'active' | 'paused' | 'completed' | 'cancelled'
   inputEpoch: number
@@ -190,6 +195,8 @@ type ProcedureRunState = {
   }>
 }
 ```
+
+Target-state `ProcedureRunState` requires `agentConfigId`. Existing rows or archival receipts without it are unattributed legacy data; they can be displayed only as explicit legacy/unknown roll-ups or after a backfill maps them to a concrete Agent.
 
 Runtime owns the timeline. The model may propose actions, but runtime is the judge for:
 

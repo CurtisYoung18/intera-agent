@@ -109,10 +109,11 @@ graph LR
 **Tasks:**
 
 - [ ] T1. `defineRoute` accepts `scope: 'agent' | 'org'`; `'agent'` resolves `agentConfigId` from params/query/body conventionally and runs `assertAgentInOrg` before the handler (404 on mismatch, same semantics as today).
-- [ ] T2. Migrate the 11 routes to declare `scope: 'agent'`; delete their hand-rolled assert calls.
-- [ ] T3. CI guard `scripts/check-isolation-seam.mjs`: under `apps/console/app/api/admin/**`, any file containing `repo.raw` or direct `prisma.` access must declare `scope: 'agent'` in its `defineRoute` call or appear in a reviewed allowlist in the script. Wire into the standard test command.
-- [ ] T4. Prove the gate red-first: add a temporary unguarded canary route, show the script fails CI, remove the canary, show green. Record both runs in the lane receipt.
-- [ ] T5. Note in `GENERIC_HANDOFF`/lane-template docs: every new admin sub-module must ship a red→green cross-org test modeled on `cross-org-isolation.test.ts`.
+- [ ] T2. Codify the data ownership ladder in route docs/tests: Account -> Org -> Agent; Agent is the unit for runtime/config/operate data, while org/account endpoints are parent boundaries or explicit roll-ups.
+- [ ] T3. Migrate the 11 routes to declare `scope: 'agent'`; delete their hand-rolled assert calls.
+- [ ] T4. CI guard `scripts/check-isolation-seam.mjs`: under `apps/console/app/api/admin/**`, any file containing `repo.raw` or direct `prisma.` access must declare `scope: 'agent'` in its `defineRoute` call or appear in a reviewed allowlist in the script. Wire into the standard test command.
+- [ ] T5. Prove the gate red-first: add a temporary unguarded canary route, show the script fails CI, remove the canary, show green. Record both runs in the lane receipt.
+- [ ] T6. Note in `GENERIC_HANDOFF`/lane-template docs: every new admin sub-module must ship a red→green cross-org test modeled on `cross-org-isolation.test.ts`.
 
 **Gates:** typecheck · keyless tests (isolation suite green) · CI guard red-on-canary/green-after receipt · no behavior change on existing routes (route tests pass unmodified except the scope migration).
 
@@ -241,18 +242,19 @@ typecheck · keyless tests · clean build · migration verified on snapshot · p
 **Spec section:** M6 (§7). **Owned files:**
 
 - terminal-transition call sites in `packages/runtime-core` session-store adapter (`finalizeProcedureRun`, handoff pause, eviction/close) — coordinate the exact three functions with M3B owner before starting
-- `apps/console/app/api/operate/procedures/metrics/route.ts` (new, `defineRoute` with org scoping per M5)
+- `apps/console/app/api/operate/procedures/metrics/route.ts` (new, `defineRoute` with agent scoping per M5; org/account metrics only through explicit roll-ups)
 - `apps/console/app/operate/**`, `apps/console/components/operate/**`
 - fixture + tests for the metrics endpoint
 
 **Tasks:**
 
 - [ ] T1. Outcome recording: `resolved_by_agent` (finalize passes safety checks), `handed_off` (human task created), `abandoned` (cancelled/expired/evicted) written to `ProcedureRun.outcome` at the terminal transition (column exists from M2).
-- [ ] T2. Metrics API `GET /api/operate/procedures/metrics?from&to`: per `procedureId` — runs, resolution rate, handoff rate, abandonment, top blockers (frequency over `state.blockers`), median turns-to-terminal. Verified against a seeded fixture with hand-checked counts.
-- [ ] T3. Operate UI: per-procedure table → run list → run detail (timeline, evidence, receipts, transcript link) → "Open playbook" CTA into the v2 editor.
-- [ ] T4. Production receipt: a real handed-off J1B run shows the correct outcome and full drill-down path (screenshots per delivery-audit bar).
+- [ ] T2. Metrics API `GET /api/operate/procedures/metrics?agentConfigId&from&to`: per `procedureId` for the selected Agent — runs, resolution rate, handoff rate, abandonment, top blockers (frequency over `state.blockers`), median turns-to-terminal. Verified against a seeded fixture with hand-checked counts.
+- [ ] T3. Operate UI: selected-Agent procedure table → run list → run detail (timeline, evidence, receipts, transcript link) → "Open playbook" CTA into the v2 editor.
+- [ ] T4. Agent-switch regression: changing the selected Agent changes the metrics; unattributed legacy rows do not appear unless backfilled to an Agent.
+- [ ] T5. Production receipt: a real handed-off J1B run shows the correct outcome and full drill-down path (screenshots per delivery-audit bar).
 
-**Gates:** fixture counts match by hand · typecheck/tests/build · production drill-down receipt.
+**Gates:** fixture counts match by hand · selected-Agent switch proof · typecheck/tests/build · production drill-down receipt.
 
 ---
 

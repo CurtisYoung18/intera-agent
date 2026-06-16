@@ -1,6 +1,6 @@
 # Intera UI/UX Design System
 
-**Last updated:** 2026-06-10
+**Last updated:** 2026-06-16
 **Status:** CURRENT companion source of truth for the Console UI/UX reset
 **Audience:** founder, architect, UI/UX lead, frontend lanes, AI coding teams
 **Related architecture:** [`Intera_Harness_架构梳理.md`](./Intera_Harness_架构梳理.md)
@@ -24,6 +24,7 @@ This document freezes the owner-approved UI/UX direction for Intera before the c
 - `Agent versions` belongs under `Build -> Release`.
 - `Blueprint` is removed as a product concept for the first launch.
 - `Case` is not a standalone product concept for first launch. Conversation and handoff detail should show Chat, User, ProcedureRun, HumanTask, Trace, and Memory context.
+- Data ownership follows Account -> Org -> Agent. Build and Operate surfaces use the selected Agent by default; org/account views are parent administration or explicitly labeled aggregate roll-ups.
 
 ### 0.2 Build structure
 
@@ -170,9 +171,11 @@ Use this as the UI refactor target after the Foundation Reset contracts and Hook
 | Build | `/build/components/hooks` | Hook library, builder, and binding manager across agent / Procedure / step / Tool scopes. |
 | Build | `/build/components/knowledge` | GPTBots connection, source CRUD, optional Procedure scope, retrieval test. |
 | Build | `/build/components/integrations` | Channels, Web Chat embed setup, API access, and handoff destinations. |
-| Operate | `/operate/conversations` | Inbox, conversation detail, ProcedureRun context, Trace. |
-| Operate | `/operate/handoff` | Human task queue, handoff metrics, handoff detail. |
+| Operate | `/operate/conversations` | Selected-Agent inbox, conversation detail, ProcedureRun context, Trace. |
+| Operate | `/operate/handoff` | Selected-Agent human task queue, handoff metrics, handoff detail. |
 | Settings | `/settings/organization` | Organization profile, members, default locale, workspace-level preferences. |
+
+All runtime/config evidence in this IA is Agent-scoped unless the screen explicitly says it is an org/account roll-up. Switching the selected Agent must change Operate queues, metrics, traces, receipts, and runtime context; unattributed legacy rows belong in an explicit legacy/unknown roll-up, not selected-Agent truth.
 
 ### 2.2 Current-to-target route migration
 
@@ -493,11 +496,11 @@ Human handoff configuration points:
 
 ### 3.4 Operate -> Conversations
 
-Use an Inbox + Detail + Trace layout.
+Use an Inbox + Detail + Trace layout scoped to the selected Agent.
 
 Required structure:
 
-- Left: conversation inbox, statuses `active`, `waiting_human`, `resolved`.
+- Left: selected-Agent conversation inbox, statuses `active`, `waiting_human`, `resolved`.
 - Center: transcript.
 - Right: ProcedureRun context, current Procedure type, Procedure step, handoff task if any.
 - Expandable trace: Tool calls, Hook results, Knowledge hits, Procedure notes.
@@ -510,12 +513,12 @@ The page should answer:
 
 ### 3.5 Operate -> Human Handoff
 
-Keep first launch lightweight: Queue + Metrics + Detail.
+Keep first launch lightweight: Queue + Metrics + Detail, all scoped to the selected Agent.
 
 Required structure:
 
-- Queue of `waiting_human` tasks.
-- Metrics: handoff rate, average wait, top triggering Hooks, top ProcedureSteps.
+- Queue of selected-Agent `waiting_human` tasks.
+- Metrics: selected-Agent handoff rate, average wait, top triggering Hooks, top ProcedureSteps.
 - Detail: linked conversation, ProcedureRun context, handoff reason, target group/operator.
 - Configuration shortcuts to Build pages.
 
