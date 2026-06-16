@@ -40,6 +40,28 @@ const DEFAULT_MEMORY_UI: Pick<
   factExtractionModel: DEFAULT_MEMORY.compactModel,
 }
 
+function coerceNumeric(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed) {
+      const parsed = Number(trimmed)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return fallback
+}
+
+function coerceBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase()
+    if (trimmed === 'true') return true
+    if (trimmed === 'false') return false
+  }
+  return fallback
+}
+
 export function normalizeMemoryStrategy(raw: unknown): MemoryStrategyUi {
   let parsed: Record<string, unknown> = {}
   if (typeof raw === 'string') {
@@ -68,6 +90,16 @@ export function normalizeMemoryStrategy(raw: unknown): MemoryStrategyUi {
     ...parsed,
     compactableTools,
   } as MemoryStrategyUi
+  const mutableMerged = merged as unknown as Record<string, unknown>
+
+  for (const [key, defaultValue] of Object.entries(DEFAULT_MEMORY)) {
+    const typedKey = key as keyof MemoryStrategy
+    if (typeof defaultValue === 'number') {
+      mutableMerged[typedKey] = coerceNumeric(merged[typedKey], defaultValue)
+    } else if (typeof defaultValue === 'boolean') {
+      mutableMerged[typedKey] = coerceBoolean(merged[typedKey], defaultValue)
+    }
+  }
 
   if (!merged.factExtractionModel) merged.factExtractionModel = merged.compactModel
 

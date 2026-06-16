@@ -47,14 +47,17 @@ const models = [
   },
 ]
 
+let agentMemoryStrategyRaw = '{}'
+
 beforeEach(() => {
   vi.clearAllMocks()
+  agentMemoryStrategyRaw = '{}'
   mockApiClient.mockImplementation(async (url: string, options?: any) => {
     if (url.startsWith('/api/admin/agent?') && options?.method === 'PUT') {
       return { data: { config: { memoryStrategy: options.body.memoryStrategy } } }
     }
     if (url.startsWith('/api/admin/agent?')) {
-      return { data: { config: { memoryStrategy: '{}' } } }
+      return { data: { config: { memoryStrategy: agentMemoryStrategyRaw } } }
     }
     if (url === '/api/admin/models') {
       return { data: { models } }
@@ -128,5 +131,20 @@ describe('MemoryStrategyWorkspace', () => {
     expect(screen.getAllByText('10 messages / approx 5 turns').length).toBeGreaterThan(0)
     expect(screen.getByText('24 messages / approx 12 turns')).toBeDefined()
     expect(screen.getAllByText('Keep at least').length).toBe(4)
+  })
+
+  it('treats stringified long-preset thresholds as Long instead of Custom', async () => {
+    agentMemoryStrategyRaw = JSON.stringify({
+      autocompactThresholdTokens: '80000',
+      compactionKeepMin: '30',
+      l1MaxMessages: '30',
+      compactMaxMessages: '56',
+      enableAutocompact: 'true',
+    })
+
+    await renderWorkspace()
+
+    expect(screen.getAllByText('Long').length).toBe(2)
+    expect((screen.getByRole('checkbox', { name: /Auto compact/ }) as HTMLInputElement).checked).toBe(true)
   })
 })
