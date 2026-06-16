@@ -59,10 +59,9 @@ export function classifyExplicitJ1BCaseType(userMessage: string): ExplicitJ1BCas
   const normalized = userMessage.toLowerCase()
   const has = (...patterns: RegExp[]) => patterns.some((pattern) => pattern.test(normalized))
   const topic = classifyExplicitMoneyMovementTopic(userMessage)
-
-  if (has(/人工/, /真人/, /客服/, /\bhuman\b/, /\bagent\b/) && has(/转|接|找|要|需要|帮忙|处理|联系|客服/)) {
-    return 'human_support_requested'
-  }
+  const explicitHumanSupportRequested =
+    has(/人工/, /真人/, /客服/, /\bhuman\b/, /\bagent\b/) &&
+    has(/转|接|找|要|需要|帮忙|处理|联系|客服/)
 
   if (has(/提款密码/, /取款密码/, /提现密码/, /出款密码/, /\bwithdraw(?:al)? password\b/)) {
     return 'withdrawal_password_reset'
@@ -100,6 +99,10 @@ export function classifyExplicitJ1BCaseType(userMessage: string): ExplicitJ1BCas
 
   if (has(/账号|账户|钱包|account|wallet/) && has(/冻结|被冻|安全审核|审核|锁定|封|frozen|locked|security review/)) {
     return 'account_wallet_frozen'
+  }
+
+  if (explicitHumanSupportRequested) {
+    return 'human_support_requested'
   }
 
   return null

@@ -351,6 +351,7 @@ describe('R3 runtime event protocol', () => {
       '您已提供会员ID和登录账号，正在为您人工处理提款密码重置，请稍候。',
       '若需要进一步身份验证，客服会联系您。',
       '专员会尽快联系您继续处理。',
+      '我已经为您提交了人工重置登录密码的申请，请耐心等待。',
     ]) {
       const reply = recordProcedureTextReply(caseId, { text, basedOnInputEpoch: 1 })
       expect(reply.stale).toBe(false)

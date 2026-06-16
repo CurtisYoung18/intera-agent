@@ -70,6 +70,8 @@ export function promisesHumanHandoff(text: string): boolean {
     /(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)/i,
     /已为您创建工单/,
     /已经为您创建工单/,
+    /(?:已|已经)?(?:为您)?提交(?:了)?人工(?:处理|重置|审核|申请)?/,
+    /(?:人工|客服|专员)(?:处理|重置|审核|申请)(?:已|已经)?提交/,
     /已安排人工/,
     /将安排人工/,
     /正在(?:为您|帮您)?人工处理/,

@@ -7,6 +7,10 @@ const LEGACY_ACTIONS = new Set(['use', 'read', 'ask', 'decide', 'tag', 'escalate
 const V2_ACTIONS = new Set(['ask', 'search_knowledge', 'call_tool', 'request_human_handoff', 'end'])
 const DEFAULT_WHEN_TO_USE = 'Migrated from a legacy Procedure v1 definition. Review and refine before production use.'
 const DEFAULT_OVERVIEW = 'Auto-migrated from the legacy Procedure v1 shape.'
+const REQUIRED_TOOL_OVERRIDES_BY_CASE_TYPE = new Map([
+  ['login_password_reset', new Set(['get_account_status'])],
+  ['withdrawal_password_reset', new Set(['get_account_status'])],
+])
 
 function isRecord(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -213,8 +217,16 @@ function looksLikeSkipOnly(text) {
   return value.includes('skip') || value.includes('unless') || value.includes('otherwise')
 }
 
+function legacyStepIsRequired(step, context) {
+  if (step.required === true) return true
+  const caseType = asNonEmptyString(context?.caseTypeType)
+  const target = asNonEmptyString(step.target)
+  return REQUIRED_TOOL_OVERRIDES_BY_CASE_TYPE.get(caseType)?.has(target) === true
+}
+
 function buildActionFromLegacyStep(step, index, context) {
   const target = asNonEmptyString(step.target)
+  const required = legacyStepIsRequired(step, context)
   switch (step.action) {
     case 'ask':
       return {
@@ -222,7 +234,7 @@ function buildActionFromLegacyStep(step, index, context) {
         kind: 'ask',
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
-        required: !!step.required,
+        required,
         fields: resolveAskFields(splitFields(target, `field_${index + 1}`), [`field_${index + 1}`], {
           ...context,
           askStepFields: collectAskStepFields(step),
@@ -234,7 +246,7 @@ function buildActionFromLegacyStep(step, index, context) {
         kind: 'call_tool',
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
-        required: !!step.required,
+        required,
         toolName: target || `tool_${step.id}`,
       }
     case 'read':
@@ -244,7 +256,7 @@ function buildActionFromLegacyStep(step, index, context) {
           kind: 'search_knowledge',
           label: legacyStepTitle(step, index),
           guidance: asNonEmptyString(step.guidance),
-          required: !!step.required,
+          required,
           suggestedSources: target ? [target] : [],
         }
       }
@@ -253,7 +265,7 @@ function buildActionFromLegacyStep(step, index, context) {
         kind: 'call_tool',
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
-        required: !!step.required,
+        required,
         toolName: target || `tool_${step.id}`,
       }
     case 'escalate':
@@ -281,8 +293,9 @@ function buildActionFromLegacyStep(step, index, context) {
 
 function buildStepFromLegacy(step, index, context) {
   const action = buildActionFromLegacyStep(step, index, context)
+  const required = legacyStepIsRequired(step, context)
   const completionGuidance =
-    step.required && (step.action === 'use' || step.action === 'read')
+    required && (step.action === 'use' || step.action === 'read')
       ? `Only continue after ${asNonEmptyString(step.target, 'the required tool')} succeeds.`
       : ''
   const skipGuidance = step.when && looksLikeSkipOnly(step.when) ? step.when : ''
@@ -496,6 +509,7 @@ export function migrateCaseTypeRows(rows) {
     try {
       normalized = normalizeStoredProcedure(row?.procedure, {
         caseTypeRequiredFacts: parseStringArray(row?.requiredFacts),
+        caseTypeType: rowType,
       })
     } catch (error) {
       summary.invalid += 1
@@ -571,7 +585,7 @@ async function runDatabaseMode({ dryRun }) {
   try {
     const rows = await prisma.caseType.findMany({
       where: { NOT: { procedure: null } },
-      select: { id: true, type: true, procedure: true },
+      select: { id: true, type: true, requiredFacts: true, procedure: true },
       orderBy: { type: 'asc' },
     })
 

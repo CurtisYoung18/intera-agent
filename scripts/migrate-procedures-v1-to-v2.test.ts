@@ -359,6 +359,52 @@ describe('migrate-procedures-v1-to-v2', () => {
     expect(collectSyntheticBucketReferences(repaired)).toEqual([])
   })
 
+  it('upgrades account-status lookup to required for password reset procedure rows', () => {
+    const { summary, normalizedRows } = migrateCaseTypeRows([
+      {
+        id: 'login_reset_required_tool',
+        type: 'login_password_reset',
+        requiredFacts: '["member_id","login_name"]',
+        procedure: JSON.stringify({
+          steps: [
+            {
+              id: 'lookup_account_status',
+              action: 'use',
+              target: 'get_account_status',
+              guidance: 'Check basic account status before routing a login-password reset.',
+            },
+          ],
+        }),
+      },
+      {
+        id: 'withdraw_reset_required_tool',
+        type: 'withdrawal_password_reset',
+        requiredFacts: '["member_id","login_name"]',
+        procedure: JSON.stringify({
+          steps: [
+            {
+              id: 'lookup_account_status',
+              action: 'use',
+              target: 'get_account_status',
+              guidance: 'Check whether the account is active enough for a withdrawal-password reset.',
+            },
+          ],
+        }),
+      },
+    ])
+
+    expect(summary.invalid).toBe(0)
+    for (const row of normalizedRows) {
+      const migrated = JSON.parse(row.procedure)
+      expect(migrated.steps[0].actions[0]).toMatchObject({
+        kind: 'call_tool',
+        toolName: 'get_account_status',
+        required: true,
+      })
+      expect(migrated.steps[0].completionGuidance).toBe('Only continue after get_account_status succeeds.')
+    }
+  })
+
   it('fails migration when a synthetic ask bucket has no case-type requiredFacts to expand from', () => {
     const { summary, normalizedRows } = migrateCaseTypeRows([
       {
