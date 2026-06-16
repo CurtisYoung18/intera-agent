@@ -240,6 +240,20 @@ export default function BuildToolsPage() {
       displayToolDescription(tool).toLowerCase().includes(query),
     )
   }, [search, tools])
+  const hasSearch = search.trim().length > 0
+
+  const filteredKnowledgeSources = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return knowledgeSources
+    return knowledgeSources.filter((source) => {
+      const generatedToolName = getToolName(source.name, source.id).toLowerCase()
+      return (
+        generatedToolName.includes(query) ||
+        source.name.toLowerCase().includes(query) ||
+        (source.description ?? '').toLowerCase().includes(query)
+      )
+    })
+  }, [knowledgeSources, search])
 
   const systemTools = filtered.filter((tool) => tool.isSystem || SYSTEM_TOOL_NAMES.has(tool.name))
   const channelTools = filtered.filter((tool) => tool.isChannel || CHANNEL_TOOL_NAMES.has(tool.name))
@@ -443,7 +457,7 @@ export default function BuildToolsPage() {
             />
           </div>
 
-          {filtered.length === 0 && knowledgeSources.length === 0 ? (
+          {filtered.length === 0 && filteredKnowledgeSources.length === 0 ? (
             <EmptyState
               icon={Puzzle}
               title="No Tools yet"
@@ -540,58 +554,60 @@ export default function BuildToolsPage() {
                 </section>
               ) : null}
 
-              <section>
-                <div className="mb-3 flex items-center gap-2">
-                  <h2 className="text-[15px] font-semibold text-[var(--mist)]">Knowledge search tools</h2>
-                  <span className="rounded-full border border-teal-500/20 bg-teal-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-teal-600">
-                    Auto-generated
-                  </span>
-                </div>
-                <p className="mb-4 text-[12px] text-[var(--fog)]">
-                  Each enabled source generates a <code className="rounded bg-teal-500/[0.08] px-1 text-[11px]">kb_search_&lt;name&gt;</code> tool. Configure source details in{' '}
-                  <Link href="/build/components/knowledge" className="text-teal-600 underline">
-                    Knowledge
-                  </Link>.
-                </p>
-                {knowledgeSources.length === 0 ? (
-                  <div className="rounded-xl border border-teal-500/15 bg-teal-500/[0.04] p-4 text-[12px] text-[var(--fog)]">
-                    No Knowledge sources configured yet.
+              {!hasSearch || filteredKnowledgeSources.length > 0 ? (
+                <section>
+                  <div className="mb-3 flex items-center gap-2">
+                    <h2 className="text-[15px] font-semibold text-[var(--mist)]">Knowledge search tools</h2>
+                    <span className="rounded-full border border-teal-500/20 bg-teal-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-teal-600">
+                      Auto-generated
+                    </span>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    {knowledgeSources.map((source) => (
-                      <div key={source.id} className="rounded-[24px] border border-teal-500/[0.12] bg-white/[0.72] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
-                        <div className="mb-3 flex items-start gap-3">
-                          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-teal-500/[0.08]">
-                            <BookOpen className="h-5 w-5 text-teal-500" />
+                  <p className="mb-4 text-[12px] text-[var(--fog)]">
+                    Each enabled source generates a <code className="rounded bg-teal-500/[0.08] px-1 text-[11px]">kb_search_&lt;name&gt;</code> tool. Configure source details in{' '}
+                    <Link href="/build/components/knowledge" className="text-teal-600 underline">
+                      Knowledge
+                    </Link>.
+                  </p>
+                  {filteredKnowledgeSources.length === 0 ? (
+                    <div className="rounded-xl border border-teal-500/15 bg-teal-500/[0.04] p-4 text-[12px] text-[var(--fog)]">
+                      No Knowledge sources configured yet.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {filteredKnowledgeSources.map((source) => (
+                        <div key={source.id} className="rounded-[24px] border border-teal-500/[0.12] bg-white/[0.72] p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
+                          <div className="mb-3 flex items-start gap-3">
+                            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-teal-500/[0.08]">
+                              <BookOpen className="h-5 w-5 text-teal-500" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[13px] font-semibold text-[var(--mist)]">
+                                {getToolName(source.name, source.id)}
+                              </p>
+                              <span className="mt-0.5 inline-block rounded-full bg-teal-500/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-teal-600">
+                                KB source
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleKnowledgeSource(source)}
+                              aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getToolName(source.name, source.id)}`}
+                              className="flex-shrink-0 transition-opacity hover:opacity-80"
+                            >
+                              {source.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}
+                            </button>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[13px] font-semibold text-[var(--mist)]">
-                              {getToolName(source.name, source.id)}
-                            </p>
-                            <span className="mt-0.5 inline-block rounded-full bg-teal-500/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-teal-600">
-                              KB source
-                            </span>
+                          {source.description ? <p className="line-clamp-2 text-[12px] text-[var(--fog)]">{source.description}</p> : null}
+                          <div className="mt-3 flex gap-2 text-[10px] text-[var(--smoke)]">
+                            {source.rerankVersion ? <span className="rounded bg-teal-500/[0.06] px-1.5 py-0.5">{source.rerankVersion.split('-')[0]}</span> : null}
+                            <span className="rounded bg-black/[0.04] px-1.5 py-0.5">topK {source.topK}</span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleKnowledgeSource(source)}
-                            aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getToolName(source.name, source.id)}`}
-                            className="flex-shrink-0 transition-opacity hover:opacity-80"
-                          >
-                            {source.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}
-                          </button>
                         </div>
-                        {source.description ? <p className="line-clamp-2 text-[12px] text-[var(--fog)]">{source.description}</p> : null}
-                        <div className="mt-3 flex gap-2 text-[10px] text-[var(--smoke)]">
-                          {source.rerankVersion ? <span className="rounded bg-teal-500/[0.06] px-1.5 py-0.5">{source.rerankVersion.split('-')[0]}</span> : null}
-                          <span className="rounded bg-black/[0.04] px-1.5 py-0.5">topK {source.topK}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ) : null}
 
               {specialTools.length > 0 ? (
                 <section>

@@ -120,6 +120,14 @@ const knowledgeSources = [
     topK: 15,
     rerankVersion: 'BGE-v1',
   },
+  {
+    id: 'kb-2',
+    name: 'deposit',
+    description: 'Deposit knowledge',
+    enabled: true,
+    topK: 15,
+    rerankVersion: 'BGE-v1',
+  },
 ]
 
 beforeEach(() => {
@@ -173,6 +181,26 @@ describe('BuildToolsPage', () => {
     expect(within(customSection).queryByText('start_procedure')).toBeNull()
     expect(screen.getByText('Custom tools')).toBeDefined()
     expect(screen.queryByText('Business tools')).toBeNull()
+  })
+
+  it('filters generated knowledge search tools with the main search box', async () => {
+    await renderPage()
+
+    const search = screen.getByPlaceholderText('Search tools...')
+    fireEvent.change(search, { target: { value: '__missing_tool__' } })
+
+    await waitFor(() => {
+      expect(screen.getByText('No tools match the current search.')).toBeDefined()
+    })
+    expect(screen.queryByText('kb_search_account')).toBeNull()
+    expect(screen.queryByText('kb_search_deposit')).toBeNull()
+
+    fireEvent.change(search, { target: { value: 'deposit' } })
+
+    await waitFor(() => {
+      expect(screen.getByText('kb_search_deposit')).toBeDefined()
+    })
+    expect(screen.queryByText('kb_search_account')).toBeNull()
   })
 
   it('routes toggles and endpoint tests through backend APIs', async () => {
