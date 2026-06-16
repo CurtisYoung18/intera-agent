@@ -445,7 +445,7 @@ describe('AgentLoop Hook checkpoints', () => {
             id: 'lookup_latest',
             kind: 'call_tool',
             label: 'Lookup latest deposit',
-            toolName: 'get_latest_deposit',
+            toolName: 'test_lookup',
             required: true,
           }],
         }],
@@ -468,15 +468,21 @@ describe('AgentLoop Hook checkpoints', () => {
         summary: 'Reviewed the latest customer input before continuing.',
       }, 'tool_reconcile'),
       mockTextStream('请访问官网并点击 Sign Up 完成注册。'),
+      mockToolUseStream('test_lookup', { memberId: 'JAYA11C5184' }, 'tool_lookup_after_required_nudge'),
+      mockTextStream('请访问官网并点击 Sign Up 完成注册。'),
     ], config(), caseId)
 
     const result = await loop.run('怎么注册', sendEvent)
 
     expect(result.transition).toBe('next_turn')
-    expect(client.messages.stream).toHaveBeenCalledTimes(3)
+    expect(client.messages.stream).toHaveBeenCalledTimes(5)
     expect(events.some((event) =>
       event.type === 'message_stop' &&
       (event.data as { reason?: string }).reason === 'procedure_reconcile_nudge',
+    )).toBe(true)
+    expect(events.some((event) =>
+      event.type === 'tool_executing' &&
+      (event.data as { name?: string }).name === 'test_lookup',
     )).toBe(true)
     const streamedText = events
       .filter((event) => event.type === 'text_delta')

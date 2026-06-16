@@ -11,6 +11,10 @@ const REQUIRED_TOOL_OVERRIDES_BY_CASE_TYPE = new Map([
   ['login_password_reset', new Set(['get_account_status'])],
   ['withdrawal_password_reset', new Set(['get_account_status'])],
 ])
+const HANDOFF_PROMPT_OVERRIDES_BY_CASE_TYPE = new Map([
+  ['login_password_reset', 'Use this handoff only after get_account_status has been called and produced evidence. If account status has not been checked yet, call get_account_status first. After account-status evidence exists, hand off when the customer cannot complete self-service login-password reset because the bound phone, email, recovery path, or account status prevents reset; when manual identity verification is needed; or when the customer explicitly requests manual password reset. Do not promise a human reset unless create_human_task is called and persisted.'],
+  ['withdrawal_password_reset', 'Use this handoff only after get_account_status has been called and produced evidence. If account status has not been checked yet, call get_account_status first. After account-status evidence exists, hand off when the withdrawal password/PIN reset cannot be handled self-service because bound phone, verification path, payout security, or account status requires manual identity verification; or when the customer explicitly requests manual reset. Do not promise a human reset unless create_human_task is called and persisted.'],
+])
 
 function isRecord(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -224,6 +228,14 @@ function legacyStepIsRequired(step, context) {
   return REQUIRED_TOOL_OVERRIDES_BY_CASE_TYPE.get(caseType)?.has(target) === true
 }
 
+function legacyStepConditionPrompt(step, context) {
+  const caseType = asNonEmptyString(context?.caseTypeType)
+  if (step.action === 'escalate' && HANDOFF_PROMPT_OVERRIDES_BY_CASE_TYPE.has(caseType)) {
+    return HANDOFF_PROMPT_OVERRIDES_BY_CASE_TYPE.get(caseType)
+  }
+  return step.when
+}
+
 function buildActionFromLegacyStep(step, index, context) {
   const target = asNonEmptyString(step.target)
   const required = legacyStepIsRequired(step, context)
@@ -294,13 +306,14 @@ function buildActionFromLegacyStep(step, index, context) {
 function buildStepFromLegacy(step, index, context) {
   const action = buildActionFromLegacyStep(step, index, context)
   const required = legacyStepIsRequired(step, context)
+  const conditionPrompt = legacyStepConditionPrompt(step, context)
   const completionGuidance =
     required && (step.action === 'use' || step.action === 'read')
       ? `Only continue after ${asNonEmptyString(step.target, 'the required tool')} succeeds.`
       : ''
   const skipGuidance = step.when && looksLikeSkipOnly(step.when) ? step.when : ''
   const branches =
-    step.when && !skipGuidance && action
+    conditionPrompt && !skipGuidance && action
       ? [{
           id: `${step.id}_when`,
           kind: 'if',
@@ -308,7 +321,7 @@ function buildStepFromLegacy(step, index, context) {
           condition: {
             id: `${step.id}_when_eval`,
             kind: 'llm_eval',
-            prompt: step.when,
+            prompt: conditionPrompt,
           },
           actions: [{ ...action, id: `${action.id}_conditional` }],
         }]

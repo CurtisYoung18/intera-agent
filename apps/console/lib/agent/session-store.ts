@@ -688,14 +688,22 @@ export function recordProcedureTextReply(caseId: string, input: {
   if (!stale && promisesHumanHandoff(input.text) && !hasPersistedHandoffEvidence(run)) {
     blockedReason = 'A customer-facing human-handoff promise was drafted before create_human_task produced persisted evidence.'
     run.blockers = [...new Set([...run.blockers, blockedReason])]
+  } else if (!stale) {
+    blockedReason = pendingRequiredRuntimeActionBlocker(run)
   }
+  if (blockedReason) {
+    run.blockers = [...new Set([...run.blockers, blockedReason])]
+  }
+  const blockedLabel = blockedReason?.includes('human-handoff promise')
+    ? 'Unsafe human-handoff promise withheld'
+    : 'Unsafe ProcedureRun text reply withheld'
   upsertEvidence(run, {
     id: `text:${recordedAt}:${basedOn}`,
     kind: 'text_reply',
     label: stale
       ? 'Stale customer-facing reply withheld'
       : blockedReason
-        ? 'Unsafe human-handoff promise withheld'
+        ? blockedLabel
         : 'Customer-facing reply drafted',
     state: stale || blockedReason ? 'stale' : 'canonical',
     createdAt: recordedAt,
@@ -724,6 +732,22 @@ export function recordProcedureTextReply(caseId: string, input: {
   })
   scheduleRunPersist(session, run)
   return { stale, blockedReason, run: cloneRun(run) }
+}
+
+function pendingRequiredRuntimeActionBlocker(run: ProcedureRunState): string | undefined {
+  const step = currentStep(run)
+  const action = step?.actions?.find((candidate) =>
+    candidate.required !== false &&
+    candidate.status !== 'completed' &&
+    candidate.status !== 'skipped' &&
+    ['call_tool', 'search_knowledge', 'request_human_handoff'].includes(candidate.kind),
+  )
+  if (!step || !action) return undefined
+  if (action.kind === 'request_human_handoff') {
+    if (hasPersistedHandoffEvidence(run)) return undefined
+    return `Procedure step "${step.title || step.id}" requires a persisted create_human_task before replying.`
+  }
+  return `Procedure step "${step.title || step.id}" requires ${action.target || action.label} before replying.`
 }
 
 export function reconcileProcedureInput(caseId: string, input: {

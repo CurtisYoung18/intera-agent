@@ -373,6 +373,13 @@ describe('migrate-procedures-v1-to-v2', () => {
               target: 'get_account_status',
               guidance: 'Check basic account status before routing a login-password reset.',
             },
+            {
+              id: 'handoff_login_reset',
+              action: 'escalate',
+              target: 'create_human_task',
+              guidance: 'Escalate when manual reset is needed.',
+              when: 'Use when the reset path cannot be handled self-service.',
+            },
           ],
         }),
       },
@@ -388,6 +395,13 @@ describe('migrate-procedures-v1-to-v2', () => {
               target: 'get_account_status',
               guidance: 'Check whether the account is active enough for a withdrawal-password reset.',
             },
+            {
+              id: 'handoff_withdraw_password',
+              action: 'escalate',
+              target: 'create_human_task',
+              guidance: 'Escalate when manual reset is needed.',
+              when: 'Use when policy or account state requires manual handling.',
+            },
           ],
         }),
       },
@@ -402,6 +416,11 @@ describe('migrate-procedures-v1-to-v2', () => {
         required: true,
       })
       expect(migrated.steps[0].completionGuidance).toBe('Only continue after get_account_status succeeds.')
+      expect(migrated.steps[1].branches[0].condition.prompt).toContain('only after get_account_status has been called')
+      expect(migrated.steps[1].branches[0].actions[0]).toMatchObject({
+        kind: 'request_human_handoff',
+        required: true,
+      })
     }
   })
 

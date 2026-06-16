@@ -268,6 +268,50 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('withholds customer replies while a required runtime tool action is still pending', () => {
+    const caseId = 'r3-required-tool-before-reply'
+    recordInitialInputEvent(caseId, { content: 'I sent money to an old order.' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_old_order',
+      displayName: 'Deposit sent to old order',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use when funds were sent to an old order.',
+        steps: [
+          {
+            id: 'review_recent_transactions',
+            title: 'Review recent transactions',
+            guidance: 'Call transaction history before telling the customer what will happen next.',
+            actions: [
+              {
+                id: 'review_recent_transactions_tool',
+                kind: 'call_tool',
+                label: 'Review recent transactions',
+                toolName: 'get_transaction_history',
+                required: true,
+              },
+            ],
+            branches: [],
+          },
+        ],
+      },
+    })
+
+    const reply = recordProcedureTextReply(caseId, {
+      text: '我已经记录您的旧订单信息，请稍等，我将为您进行处理。',
+      basedOnInputEpoch: 1,
+    })
+
+    expect(reply.stale).toBe(false)
+    expect(reply.blockedReason).toContain('requires get_transaction_history before replying')
+    expect(reply.run?.evidence.at(-1)).toMatchObject({
+      kind: 'text_reply',
+      label: 'Unsafe ProcedureRun text reply withheld',
+      state: 'stale',
+    })
+    closeSession(caseId)
+  })
+
   it('withholds a human-handoff promise until create_human_task produces persisted evidence', () => {
     const caseId = 'r3-human-promise-gate'
     recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
@@ -352,6 +396,8 @@ describe('R3 runtime event protocol', () => {
       '若需要进一步身份验证，客服会联系您。',
       '专员会尽快联系您继续处理。',
       '我已经为您提交了人工重置登录密码的申请，请耐心等待。',
+      '我已经为您转接人工客服，请稍等，人工客服将直接协助您修改账户资料。',
+      '我们已将您的情况转交人工复核，稍后会有客服人员与您联系。',
     ]) {
       const reply = recordProcedureTextReply(caseId, { text, basedOnInputEpoch: 1 })
       expect(reply.stale).toBe(false)
