@@ -8,9 +8,11 @@ export async function redirectWithSearch(
   searchParams?: Promise<SearchParamsRecord> | SearchParamsRecord,
 ): Promise<never> {
   const resolved = searchParams ? await searchParams : {}
-  const query = new URLSearchParams()
+  const [targetPath, targetQuery = ''] = pathname.split('?', 2)
+  const query = new URLSearchParams(targetQuery)
 
   for (const [key, value] of Object.entries(resolved)) {
+    if (query.has(key)) continue
     if (typeof value === 'string') {
       query.set(key, value)
       continue
@@ -21,5 +23,5 @@ export async function redirectWithSearch(
   }
 
   const queryString = query.toString()
-  return redirect(queryString ? `${pathname}?${queryString}` : pathname)
+  return redirect(queryString ? `${targetPath}?${queryString}` : targetPath)
 }

@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation'
+import { redirectWithSearch } from '@/app/_lib/legacy-redirect'
 
-export default function OpsChatsRedirectPage() {
-  redirect('/operate/conversations')
+export default async function OpsChatsRedirectPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
+  return redirectWithSearch('/operate/conversations', searchParams)
 }

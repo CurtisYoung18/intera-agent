@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation'
+import { redirectWithSearch } from '@/app/_lib/legacy-redirect'
 
-export default function OpsUsersRedirectPage() {
-  redirect('/operate/handoff')
+export default async function OpsUsersRedirectPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
+  return redirectWithSearch('/operate/handoff', searchParams)
 }

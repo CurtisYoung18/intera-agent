@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation'
+import { redirectWithSearch } from '@/app/_lib/legacy-redirect'
 
-export default function BuildPlaygroundPage() {
-  redirect('/build/pilot-lab?tab=playground')
+export default async function BuildPlaygroundPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
+  return redirectWithSearch('/build/pilot-lab?tab=playground', searchParams)
 }

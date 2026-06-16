@@ -17,7 +17,13 @@ describe('AdminOrganizationRedirectPage', () => {
     mockRedirect.mockClear()
   })
 
-  it('redirects to the native organization settings route', () => {
-    expect(() => AdminOrganizationRedirectPage()).toThrow('REDIRECT:/settings/organization')
+  it('redirects to the native organization settings route', async () => {
+    await expect(AdminOrganizationRedirectPage({})).rejects.toThrow('REDIRECT:/settings/organization')
+  })
+
+  it('preserves agent selection in the redirect URL', async () => {
+    await expect(AdminOrganizationRedirectPage({
+      searchParams: Promise.resolve({ agentId: 'agent-a' }),
+    })).rejects.toThrow('REDIRECT:/settings/organization?agentId=agent-a')
   })
 })

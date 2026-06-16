@@ -1,5 +1,9 @@
-import { redirect } from 'next/navigation'
+import { redirectWithSearch } from '@/app/_lib/legacy-redirect'
 
-export default function AdminScenariosRedirect() {
-  redirect('/build/pilot-lab')
+export default async function AdminScenariosRedirect({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
+  return redirectWithSearch('/build/pilot-lab', searchParams)
 }

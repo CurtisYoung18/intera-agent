@@ -17,7 +17,13 @@ describe('AdminKnowledgeRedirectPage', () => {
     mockRedirect.mockClear()
   })
 
-  it('redirects to the native knowledge workspace', () => {
-    expect(() => AdminKnowledgeRedirectPage()).toThrow('REDIRECT:/build/components/knowledge')
+  it('redirects to the native knowledge workspace', async () => {
+    await expect(AdminKnowledgeRedirectPage({})).rejects.toThrow('REDIRECT:/build/components/knowledge')
+  })
+
+  it('preserves agent selection in the redirect URL', async () => {
+    await expect(AdminKnowledgeRedirectPage({
+      searchParams: Promise.resolve({ agentId: 'agent-a' }),
+    })).rejects.toThrow('REDIRECT:/build/components/knowledge?agentId=agent-a')
   })
 })
