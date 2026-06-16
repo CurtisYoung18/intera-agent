@@ -11,7 +11,6 @@ import {
   User, ChevronDown, LogOut, Building2, ChevronLeft, ChevronRight,
   Globe, Lock, Unlock, ArrowRightLeft,
   MessageSquare,
-  BarChart3,
   Loader2,
   Users2,
   FlaskConical,
@@ -54,7 +53,6 @@ type NavSlug =
   | 'knowledge'
   | 'integrations'
   | 'chats'
-  | 'procedureMetrics'
   | 'users'
   | 'organization'
 
@@ -66,7 +64,6 @@ const BUILD_ITEMS: NavItem[] = [
 
 const OPERATE_ITEMS: NavItem[] = [
   { href: '/operate/conversations', slug: 'chats', icon: MessageSquare, color: '#5d7487', matchPattern: '/operate/conversations' },
-  { href: '/operate/procedures', slug: 'procedureMetrics', icon: BarChart3, color: '#357f7c', matchPattern: '/operate/procedures' },
   { href: '/operate/handoff', slug: 'users', icon: Users2, color: '#7d7a63', matchPattern: '/operate/handoff' },
 ]
 
@@ -91,7 +88,6 @@ function navLabel(t: (key: string, vars?: Record<string, string | number>) => st
     knowledge: t('sidebar.knowledge'),
     integrations: t('sidebar.integrations'),
     chats: t('sidebar.conversations'),
-    procedureMetrics: t('sidebar.procedureMetrics'),
     users: t('sidebar.handoff'),
     organization: t('sidebar.organization'),
   }

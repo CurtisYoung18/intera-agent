@@ -310,8 +310,8 @@ The platform can author, simulate, and guard procedures, but cannot answer "whic
 ### 7.2 Decision
 
 - `ProcedureRun.outcome` (schema in M2): `resolved_by_agent` (finalize passed safety checks), `handed_off` (human task created), `abandoned` (cancelled/expired/evicted), recorded by the runtime at the terminal transition.
-- API: `GET /api/operate/procedures/metrics?agentConfigId&from&to` -> per `procedureId` for the selected Agent: runs, resolution rate, handoff rate, abandonment, top blockers (from `state.blockers` frequency), median turns-to-terminal.
-- Operate UI: selected-Agent procedure table -> drill to run list -> run detail (timeline, evidence, receipts, transcript link) -> "Open playbook" CTA into the v2 editor. The loop closes: production failure -> transcript -> edit guidance -> re-simulate -> publish.
+- Owner decision on 2026-06-16: the standalone `/operate/procedures` page and `/api/operate/procedures/metrics` endpoint are removed from the active product surface. Do not reintroduce them without a new product decision.
+- Operate feedback should now flow through conversations, human handoff, and explicit case drill-down surfaces rather than a separate aggregate Procedure metrics page.
 
 ### 7.3 Out of scope
 
@@ -319,9 +319,9 @@ The platform can author, simulate, and guard procedures, but cannot answer "whic
 
 ### 7.4 Acceptance gates
 
-- Metrics endpoint verified against a seeded fixture of known runs (counts match by hand).
-- Switching the selected Agent changes the metrics; rows without `agentConfigId` do not count unless a migration/backfill attributes them.
-- Production receipt: a real J1B handed-off run appears with the correct outcome and drill-down path; screenshots per the delivery audit bar.
+- No active route/API/sidebar entry exists for `/operate/procedures` or `/api/operate/procedures/metrics`.
+- Outcome recording remains available for future Operate surfaces that have an explicit product decision.
+- Typecheck, tests, build, and production 404/absence proof pass after removal.
 
 ---
 

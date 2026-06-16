@@ -16,7 +16,6 @@ Creates a production-readiness receipt under .artifacts/production-readiness/<da
 
 Environment:
   PRODUCTION_BASE_URL              Public production URL. Defaults to ${DEFAULT_BASE_URL}.
-  PRODUCTION_AUTH_COOKIE           Optional raw Cookie header for authenticated metrics proof.
   PRODUCTION_RUNTIME_INTERNAL_URL  Optional host-local runtime URL, e.g. http://127.0.0.1:3101.
   INTERNAL_API_SECRET              Required only with PRODUCTION_RUNTIME_INTERNAL_URL.
   PRODUCTION_READINESS_REQUIRE_FULL
@@ -35,7 +34,6 @@ const outDir = resolve(ROOT, '.artifacts', 'production-readiness', date, runId)
 mkdirSync(outDir, { recursive: true })
 
 const baseUrl = normalizeBaseUrl(process.env.PRODUCTION_BASE_URL || process.env.PROD_BASE_URL || DEFAULT_BASE_URL)
-const authCookie = process.env.PRODUCTION_AUTH_COOKIE || ''
 const runtimeInternalUrl = normalizeBaseUrl(process.env.PRODUCTION_RUNTIME_INTERNAL_URL || '')
 const internalSecret = process.env.INTERNAL_API_SECRET || ''
 const skipAudit = process.env.PRODUCTION_READINESS_SKIP_AUDIT === '1'
@@ -44,15 +42,6 @@ const requireFullEvidence = process.env.PRODUCTION_READINESS_REQUIRE_FULL === '1
 const checks = []
 checks.push(await checkPublicHealth(baseUrl))
 checks.push(await checkPublicInternalIsBlocked(baseUrl))
-checks.push(await checkUnauthenticatedMetricsProtected(baseUrl))
-if (authCookie) {
-  checks.push(await checkAuthenticatedMetrics(baseUrl, authCookie))
-} else {
-  checks.push(skippedCheck(
-    'authenticated-operate-metrics',
-    'Set PRODUCTION_AUTH_COOKIE to prove /api/operate/procedures/metrics with an authenticated session.',
-  ))
-}
 if (runtimeInternalUrl) {
   checks.push(await checkRuntimeInternalHealth(runtimeInternalUrl, internalSecret))
 } else {
@@ -102,10 +91,6 @@ export function isPublicInternalBlockedStatus(status) {
   return [401, 403, 404, 405].includes(status)
 }
 
-export function isProtectedUnauthenticatedStatus(status) {
-  return [302, 303, 307, 308, 401, 403].includes(status)
-}
-
 export function overallStatus(checks, requireFullEvidence = false) {
   if (checks.some((check) => check.status === 'fail')) return 'fail'
   if (requireFullEvidence && checks.some((check) => check.status === 'skipped')) return 'fail'
@@ -151,47 +136,6 @@ async function checkPublicInternalIsBlocked(baseUrl) {
       ? 'Public /internal/health is not exposed.'
       : `Public /internal/health returned ${result.status}; internal runtime endpoints must not be public.`,
     response: redactBody(result.json),
-  }
-}
-
-async function checkUnauthenticatedMetricsProtected(baseUrl) {
-  const url = `${baseUrl}/api/operate/procedures/metrics`
-  const result = await fetchJson(url, { redirect: 'manual' })
-  const ok = isProtectedUnauthenticatedStatus(result.status)
-  return {
-    name: 'unauthenticated-operate-metrics-protected',
-    status: ok ? 'pass' : 'fail',
-    url,
-    httpStatus: result.status,
-    detail: ok
-      ? 'Procedure metrics API is protected without an authenticated session.'
-      : `Expected protected response, got HTTP ${result.status}.`,
-    response: redactBody(result.json),
-  }
-}
-
-async function checkAuthenticatedMetrics(baseUrl, cookie) {
-  const url = `${baseUrl}/api/operate/procedures/metrics`
-  const result = await fetchJson(url, {
-    headers: { cookie },
-  })
-  const metrics = result.json?.data?.metrics
-  const ok = result.status === 200 && metrics && Array.isArray(metrics.rows)
-  return {
-    name: 'authenticated-operate-metrics',
-    status: ok ? 'pass' : 'fail',
-    url,
-    httpStatus: result.status,
-    detail: ok
-      ? `Authenticated Procedure metrics shape is valid with ${metrics.rows.length} row(s).`
-      : `Expected authenticated metrics response with data.metrics.rows, got status=${result.status} body=${safeJson(result.json)}`,
-    response: ok
-      ? {
-        totalRuns: metrics.totalRuns,
-        rowCount: metrics.rows.length,
-        generatedAt: metrics.generatedAt,
-      }
-      : redactBody(result.json),
   }
 }
 

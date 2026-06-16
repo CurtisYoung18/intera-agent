@@ -64,10 +64,10 @@ graph LR
 - `codex/cons-integration-m1-m7-full` stacks M1, M3A/M4, M6, M7C, and M3B on the current main baseline.
 - Local proof on that branch: focused runtime/Console seam tests, `npm run test:runtime`, `npm test`, `npm run build:console`, `npx tsc --noEmit -p apps/console/tsconfig.json`, deploy script syntax checks, and `git diff --check` pass.
 - Security proof: `next` is patched to `15.5.18`, clearing production high/critical Next audit findings; `npm audit --omit=dev` still reports a moderate advisory from Next's bundled `postcss@8.4.31`. Track the owner decision in [`../handoffs/DELIVERY_UNCERTAINTY_LOG.md`](../handoffs/DELIVERY_UNCERTAINTY_LOG.md).
-- Production deploy status: `origin/main`, `deploy/main`, and the server worktree are at `c776a700fbea6c0e7d22d379074ea89115b7a310`; `https://demo.anytrans.ai/api/health` is healthy, public `/internal/health` is blocked, and unauthenticated `/api/operate/procedures/metrics` returns `401`.
-- Authenticated Operate metrics proof: Chrome-authenticated production proof passed after `fix(operate): count legacy human handoff outcomes`; `/operate/procedures` rendered with no console warn/error, and the authenticated metrics API returned `totalRuns=118`, `handedOff=48`, `handoffRate=0.4067796610169492`, `unknownTerminal=5`. Receipt: `.artifacts/production-readiness/2026-06-16/authenticated-operate-procedures/summary.md`.
+- Production deploy status: `origin/main`, `deploy/main`, and the server worktree are at `c776a700fbea6c0e7d22d379074ea89115b7a310`; `https://demo.anytrans.ai/api/health` is healthy and public `/internal/health` is blocked.
+- Operate Procedure metrics surface: `/operate/procedures` and `/api/operate/procedures/metrics` were removed by owner decision on 2026-06-16. Earlier Chrome/API receipts are retained as historical evidence only; this page/API is no longer part of the active delivery bar.
 - Active Procedure UI proof: Chrome-authenticated production proof on `/build/components/procedures/deposit_not_credited` found no active UI copy matches for `confirmedFacts`, `requiredFacts`, `Procedure v1`, `procedureVersion`, `legacyFacts`, `collectedFacts`, `exposeConfirmedFacts`, `seedProcedureTodos`, or `renderProcedureSteps`, with console warn/error count `0`. Receipt: `.artifacts/production-readiness/2026-06-16/procedure-v1-ui-absence/summary.md`.
-- Production readiness command: `PRODUCTION_READINESS_REQUIRE_FULL=1 npm run check:production-readiness` was rerun after the earlier deploy and failed by design because authenticated Procedure metrics proof and host-local runtime internal health were skipped. The authenticated metrics gap now has separate Chrome-session proof above; strict command still cannot pass until runtime host-local health is available or a cookie-based final run is provided. Receipt: `.artifacts/production-readiness/2026-06-16/051843/summary.md`.
+- Production readiness command: `PRODUCTION_READINESS_REQUIRE_FULL=1 npm run check:production-readiness` was rerun after the earlier deploy and failed by design because host-local runtime internal health was skipped. Strict command still cannot pass until runtime host-local health is available. Receipt: `.artifacts/production-readiness/2026-06-16/051843/summary.md`.
 - Runtime-service host proof: a one-shot user-mode smoke on the production host proved `apps/runtime` can start on `127.0.0.1:3101` and read Console internal health with the existing `INTERNAL_API_SECRET`. Formal systemd enablement is still blocked from this session because `sudo cp /etc/intera/console.env` requires a password; no env or unit changes were applied.
 - Hotfix merge state: `codex/cons-m1-main-base` is patch-equivalent to `origin/main` (`git cherry` marks its only ahead commit as `-`), and `codex/playground-formresult-hotfix` currently has no product-code delta beyond `.artifacts/` receipt files. These branches are not active code blockers for the remaining production acceptance work.
 - Not accepted yet: runtime dual-process service proof, LiveChat runtime round trip, and bundled J1B matrix PASS remain required before this consolidation can be called complete.
@@ -242,19 +242,18 @@ typecheck · keyless tests · clean build · migration verified on snapshot · p
 **Spec section:** M6 (§7). **Owned files:**
 
 - terminal-transition call sites in `packages/runtime-core` session-store adapter (`finalizeProcedureRun`, handoff pause, eviction/close) — coordinate the exact three functions with M3B owner before starting
-- `apps/console/app/api/operate/procedures/metrics/route.ts` (new, `defineRoute` with agent scoping per M5; org/account metrics only through explicit roll-ups)
-- `apps/console/app/operate/**`, `apps/console/components/operate/**`
-- fixture + tests for the metrics endpoint
+- No standalone `/operate/procedures` page or `/api/operate/procedures/metrics` endpoint. Removed by owner decision on 2026-06-16; do not reintroduce without a new product decision.
+- Remaining Operate UI work should flow through conversations, handoff, or explicit case drill-down surfaces.
 
 **Tasks:**
 
 - [ ] T1. Outcome recording: `resolved_by_agent` (finalize passes safety checks), `handed_off` (human task created), `abandoned` (cancelled/expired/evicted) written to `ProcedureRun.outcome` at the terminal transition (column exists from M2).
-- [ ] T2. Metrics API `GET /api/operate/procedures/metrics?agentConfigId&from&to`: per `procedureId` for the selected Agent — runs, resolution rate, handoff rate, abandonment, top blockers (frequency over `state.blockers`), median turns-to-terminal. Verified against a seeded fixture with hand-checked counts.
-- [ ] T3. Operate UI: selected-Agent procedure table → run list → run detail (timeline, evidence, receipts, transcript link) → "Open playbook" CTA into the v2 editor.
-- [ ] T4. Agent-switch regression: changing the selected Agent changes the metrics; unattributed legacy rows do not appear unless backfilled to an Agent.
-- [ ] T5. Production receipt: a real handed-off J1B run shows the correct outcome and full drill-down path (screenshots per delivery-audit bar).
+- [x] T2. Retired by owner decision: no standalone Procedure metrics API.
+- [x] T3. Retired by owner decision: no standalone Procedure metrics page/drill-down table.
+- [x] T4. Retired by owner decision: no metrics-page Agent-switch regression requirement.
+- [x] T5. Retired by owner decision: no production receipt required for `/operate/procedures`.
 
-**Gates:** fixture counts match by hand · selected-Agent switch proof · typecheck/tests/build · production drill-down receipt.
+**Gates:** outcome recording remains useful for downstream Operate views · typecheck/tests/build · no active route/API/sidebar entry for `/operate/procedures`.
 
 ---
 

@@ -24,7 +24,6 @@ export const enCommon: Record<string, string> = {
   'sidebar.memory': 'Memory',
   'sidebar.members': 'Members',
   'sidebar.conversations': 'Conversations',
-  'sidebar.procedureMetrics': 'Procedure Metrics',
   'sidebar.handoff': 'Human Handoff',
   'sidebar.settings': 'Settings',
   'guide.hero.eyebrow': 'Intera',

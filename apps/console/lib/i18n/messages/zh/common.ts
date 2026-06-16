@@ -21,7 +21,6 @@ export const zhCommon: Record<string, string> = {
   'sidebar.guide': '指南',
   'sidebar.apiKeys': 'API 密钥',
   'sidebar.conversations': '对话',
-  'sidebar.procedureMetrics': '流程指标',
   'sidebar.handoff': '人工交接',
   'sidebar.settings': '设置',
   'guide.hero.eyebrow': 'Intera',
