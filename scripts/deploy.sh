@@ -3,6 +3,39 @@
 # Usage: sudo -iu intera ./scripts/deploy.sh
 set -e
 
+restart_unit() {
+  local unit="$1"
+  local old_pid new_pid active
+
+  old_pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
+  if systemctl restart "$unit" 2>/tmp/intera-systemctl-restart.err; then
+    echo "$unit restarted via systemctl"
+  else
+    cat /tmp/intera-systemctl-restart.err >&2 || true
+    if [ -z "$old_pid" ] || [ "$old_pid" = "0" ]; then
+      echo "Unable to restart $unit: systemctl restart failed and no running PID is available for fallback" >&2
+      exit 1
+    fi
+
+    echo "$unit systemctl restart unavailable; killing PID $old_pid so systemd can restart it"
+    kill -9 "$old_pid"
+  fi
+
+  for _ in $(seq 1 30); do
+    sleep 1
+    active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+    new_pid="$(systemctl show "$unit" -p MainPID --value 2>/dev/null || true)"
+    if [ "$active" = "active" ] && [ -n "$new_pid" ] && [ "$new_pid" != "0" ] && [ "$new_pid" != "$old_pid" ]; then
+      echo "$unit active with PID $new_pid"
+      return 0
+    fi
+  done
+
+  echo "$unit did not restart cleanly" >&2
+  systemctl status "$unit" --no-pager -l || true
+  exit 1
+}
+
 # Load environment variables for Prisma / build
 if [ -f /etc/intera/console.env ]; then
   set -a
@@ -69,14 +102,14 @@ if [ -n "${INTERA_RUNTIME_URL:-}" ]; then
     echo "INTERA_RUNTIME_URL is set but intera-runtime.service is not installed" >&2
     exit 1
   fi
-  sudo systemctl restart intera-runtime
+  restart_unit intera-runtime.service
 else
   echo "=== Runtime ==="
   echo "INTERA_RUNTIME_URL not set; skipping intera-runtime.service"
 fi
 
 echo "=== Restart ==="
-sudo systemctl restart intera-console
+restart_unit intera-console.service
 
 echo "=== Console health check ==="
 sleep 2
