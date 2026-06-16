@@ -125,6 +125,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
       displayName: 'Deposit not credited',
     }))
     expect(h.startProcedureRun).toHaveBeenCalledWith('case-123', expect.objectContaining({
+      agentConfigId: 'agent-a',
       procedureId: 'deposit_not_credited',
     }))
     expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
@@ -205,6 +206,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     )
 
     expect(h.startProcedureRun).toHaveBeenCalledWith('case-compat', expect.objectContaining({
+      agentConfigId: 'agent-a',
       procedureId: 'deposit_not_credited',
     }))
     expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')

@@ -14,6 +14,15 @@ export interface AgentCaseScope {
   runIds: string[]
 }
 
+function isLegacyRunAgentConfig(agentConfigId: string | null | undefined): boolean {
+  const normalized = agentConfigId?.trim().toLowerCase()
+  return !normalized || normalized === 'unknown'
+}
+
+function isPlaygroundChatForAgent(chatId: string, agentConfigId: string): boolean {
+  return chatId.startsWith(`pg_${agentConfigId}_`)
+}
+
 export function selectedAgentFromInput(input: { agentId?: string | null; agentConfigId?: string | null }): string | undefined {
   return input.agentConfigId ?? input.agentId ?? undefined
 }
@@ -50,6 +59,7 @@ export async function resolveAgentCaseScopeForChat(
   chatId: string,
 ): Promise<AgentCaseScope> {
   const scope = await resolveAgentCaseScope(repo, agentConfigId)
+  const scopedCaseIds = new Set(scope.caseIds)
   const chatCases = await repo.raw.case.findMany({
     where: { orgId: repo.orgId, chatId },
     select: { id: true },
@@ -59,15 +69,27 @@ export async function resolveAgentCaseScopeForChat(
 
   const runsForChat = await repo.raw.procedureRun.findMany({
     where: { orgId: repo.orgId, caseId: { in: chatCaseIds } },
-    select: { caseId: true },
+    select: { caseId: true, agentConfigId: true },
   })
   const casesWithRuns = new Set(runsForChat.map((run: { caseId: string }) => run.caseId))
+  const runsByCase = new Map<string, Array<{ caseId: string; agentConfigId: string | null }>>()
+  for (const run of runsForChat) {
+    const bucket = runsByCase.get(run.caseId) ?? []
+    bucket.push(run)
+    runsByCase.set(run.caseId, bucket)
+  }
   const unscopedCaseIds = chatCaseIds.filter((caseId: string) => !casesWithRuns.has(caseId))
-  if (unscopedCaseIds.length === 0) return scope
+  const legacyPlaygroundCaseIds = isPlaygroundChatForAgent(chatId, agentConfigId)
+    ? chatCaseIds.filter((caseId: string) => {
+        const runs = runsByCase.get(caseId) ?? []
+        return !scopedCaseIds.has(caseId) && runs.length > 0 && runs.every((run) => isLegacyRunAgentConfig(run.agentConfigId))
+      })
+    : []
+  if (unscopedCaseIds.length === 0 && legacyPlaygroundCaseIds.length === 0) return scope
 
   return {
     ...scope,
-    caseIds: [...new Set([...scope.caseIds, ...unscopedCaseIds])],
+    caseIds: [...new Set([...scope.caseIds, ...unscopedCaseIds, ...legacyPlaygroundCaseIds])],
   }
 }
 

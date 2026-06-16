@@ -45,19 +45,27 @@ fi
 
 cd ~/intera-agent
 
-# NOTE: `git pull` is intentionally omitted. The post-receive hook
-# (`/var/git/intera.git/hooks/post-receive`) already checks the new
-# commit into this working tree via `git --work-tree=… --git-dir=… checkout`,
-# and that mode leaves the work tree's HEAD/index behind, so a `git pull`
-# here would fail with "fatal: not a git repository: '.'". If you want
-# to run this script manually (not from the hook), do
-#   sudo -iu intera git pull origin main
-# yourself first, then invoke the script.
+# post-receive hooks export GIT_DIR/GIT_WORK_TREE for the bare repo context.
+# Clear them before using the working tree repo's own remotes/index.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 
-echo "=== Prisma provider ==="
-# Force-clean: ensure work tree exactly matches HEAD
-GIT_DIR=/var/git/intera.git GIT_WORK_TREE=$(pwd) git checkout -f main
-GIT_DIR=/var/git/intera.git GIT_WORK_TREE=$(pwd) git reset --hard HEAD
+# Always realign via the working tree repo itself. The post-receive hook may
+# have checked files out from the bare repo already, but that path has produced
+# inconsistent HEAD/index/tree state on this host and unstable Next builds.
+DEPLOY_REMOTE="${INTERA_DEPLOY_REMOTE:-bare}"
+DEPLOY_REF="${INTERA_DEPLOY_REF:-main}"
+if ! git remote get-url "$DEPLOY_REMOTE" >/dev/null 2>&1; then
+  DEPLOY_REMOTE="origin"
+fi
+
+echo "=== Sync repo (${DEPLOY_REMOTE}/${DEPLOY_REF}) ==="
+git fetch --force "$DEPLOY_REMOTE" "$DEPLOY_REF"
+TARGET_SHA="$(git rev-parse FETCH_HEAD)"
+git reset --hard "$TARGET_SHA"
+echo "Deploy target: $TARGET_SHA"
+
+# Best-effort cleanup for stale tracked deletions / moved paths without relying
+# on broad git clean, which can fail on root-owned artifact directories.
 # Remove stale files deleted in repo but lingering in work tree
 rm -rf \
   apps/console/app/api/human-chat \

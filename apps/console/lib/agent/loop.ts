@@ -22,6 +22,7 @@ import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message
 import { selectPromptAndTools } from './prompt-selector'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import {
+  bindProcedureRuntimeAgentConfig,
   latestInputEpoch,
   procedureRunPromptTail,
   recordProcedureTextReply,
@@ -124,6 +125,7 @@ export class AgentLoop {
   }
 
   constructor(private deps: AgentLoopDeps) {
+    bindProcedureRuntimeAgentConfig(deps.caseId, deps.configId)
     this.chatMemory = new ChatMemoryManager(deps.caseId, deps.config.memoryStrategy)
     this.toolRouter = new ToolRouter()
     this.abortController = new AbortController()

@@ -148,6 +148,7 @@ async function handleStartProcedure(
       maxAutoTurns: ctRow.maxAutoTurns ?? undefined,
     }
     const start = startProcedureRun(ctx.caseId, {
+      agentConfigId: ctx.agentConfigId,
       procedureId: ctRow.type,
       displayName: ctRow.displayName,
       procedure: schema.procedure,
