@@ -31,15 +31,21 @@ describe('LiveChatRenderer', () => {
   })
 
   describe('message_stop', () => {
-    it('returns flush_text action', () => {
+    it('returns flush_text action for a completed turn', () => {
       const r = new LiveChatRenderer(true)
-      const actions = r.render(makeEvent('message_stop', {}), makeCtx())
+      const actions = r.render(makeEvent('message_stop', { reason: 'end_turn' }), makeCtx())
       expect(actions[0]!.type).toBe('flush_text')
     })
 
     it('suppresses flush_text when the turn is waiting for a form submission', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('message_stop', { transition: 'waiting_form' }), makeCtx())
+      expect(actions[0]!.type).toBe('noop')
+    })
+
+    it('keeps buffered text while the loop is continuing to another tool turn', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('message_stop', { reason: 'next_turn' }), makeCtx())
       expect(actions[0]!.type).toBe('noop')
     })
   })

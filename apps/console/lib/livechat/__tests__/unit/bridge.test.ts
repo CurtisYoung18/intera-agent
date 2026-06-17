@@ -248,6 +248,56 @@ describe('livechat bridge', () => {
     expect(JSON.parse(String(fetchInit.body))).not.toHaveProperty('sessionCasePinned')
   })
 
+  it('drops buffered preamble text when a later turn renders a form card', async () => {
+    mockFlushTextBuffer
+      .mockResolvedValueOnce('Transaction history hernu ko lagi malai tapaiko Member ID chahincha.')
+      .mockResolvedValueOnce('')
+
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'text_delta',
+        data: 'Transaction history hernu ko lagi malai tapaiko Member ID chahincha.',
+        timestamp: '2026-06-17T05:32:02.267Z',
+      },
+      { type: 'message_stop', data: { reason: 'next_turn' }, timestamp: '2026-06-17T05:32:02.271Z' },
+      {
+        type: 'form_request',
+        data: {
+          caseId: 'case-1',
+          title: 'Transaction History',
+          description: 'Please share your details so I can continue.',
+          fields: [{ key: 'member_id', label: 'Member ID', type: 'text', required: true }],
+        },
+        timestamp: '2026-06-17T05:32:04.692Z',
+      },
+      { type: 'message_stop', data: { transition: 'waiting_form' }, timestamp: '2026-06-17T05:32:04.713Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'I need my transaction history' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockAppendTextBuffer).toHaveBeenCalledWith(
+      'chat-1',
+      'Transaction history hernu ko lagi malai tapaiko Member ID chahincha.',
+    )
+    expect(mockFlushTextBuffer).toHaveBeenCalledTimes(1)
+    expect(mockSendTextMessage).not.toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringContaining('Member ID chahincha'),
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockSendCard).toHaveBeenCalledTimes(1)
+  })
+
   it('pins a new customer message to the current case while the bridge is still thinking', async () => {
     mockGetSession.mockResolvedValue({
       ...makeSession(),

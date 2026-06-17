@@ -148,9 +148,12 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       // ── message_stop: { reason, stage? } ──
       case 'message_stop': {
         const data = (event.data && typeof event.data === 'object')
-          ? event.data as { transition?: string }
+          ? event.data as { reason?: string; transition?: string }
           : undefined
         if (data?.transition === 'waiting_form') {
+          return { type: 'noop' }
+        }
+        if (data?.reason === 'next_turn') {
           return { type: 'noop' }
         }
         return { type: 'flush_text' }

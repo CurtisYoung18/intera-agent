@@ -373,6 +373,15 @@ export async function handleIncomingEvent(
   let pendingHumanHandoff: { taskId?: string; queue?: string } | null = null
   try {
     for await (const sseEvent of parseSSEStream(response.body)) {
+      if (sseEvent.type === 'form_request' || sseEvent.type === 'human_task_created') {
+        const discardedText = await flushTextBuffer(chatId)
+        if (discardedText.trim()) {
+          console.log('[Bridge] Discarded buffered preamble before card action:', {
+            chatId,
+            eventType: sseEvent.type,
+          })
+        }
+      }
       if (sseEvent.type === 'human_task_created' && typeof sseEvent.data === 'object' && sseEvent.data) {
         const payload = sseEvent.data as { taskId?: string; queue?: string }
         pendingHumanHandoff = {
