@@ -62,17 +62,44 @@ const h = vi.hoisted(() => {
       humanTasks: [],
       _count: { messages: 1 },
     },
+    {
+      id: 'case-livechat-general',
+      orgId: 'default',
+      userId: 'livechat-TG2RX99U7R',
+      chatId: 'TG2RX99U7R',
+      type: 'general',
+      status: 'created',
+      source: 'live',
+      goal: 'LiveChat discovery without a ProcedureRun',
+      createdAt: new Date('2026-06-16T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-16T00:04:00.000Z'),
+      humanTasks: [],
+      _count: { messages: 8 },
+    },
   ]
   const runs = [
     { id: 'run-new', caseId: 'case-new', orgId: 'default', agentConfigId: 'agent-a', updatedAt: new Date('2026-06-16T00:03:00.000Z') },
     { id: 'run-middle', caseId: 'case-middle', orgId: 'default', agentConfigId: 'agent-b', updatedAt: new Date('2026-06-16T00:02:00.000Z') },
   ]
-  return { mockGetSession, agentConfigs, cases, runs }
+  const externalConversations = [
+    {
+      id: 'external-livechat-general',
+      orgId: 'default',
+      platform: 'livechat',
+      externalChatId: 'TG2RX99U7R',
+      internalCaseId: 'case-livechat-general',
+      metadata: { agentConfigId: 'agent-a' },
+    },
+  ]
+  return { mockGetSession, agentConfigs, cases, runs, externalConversations }
 })
 
 function matchesWhere(row: any, where: Record<string, any> = {}) {
   if (where.orgId && row.orgId !== where.orgId) return false
   if (where.agentConfigId && row.agentConfigId !== where.agentConfigId) return false
+  if (typeof where.chatId === 'object' && where.chatId?.startsWith && !row.chatId?.startsWith(where.chatId.startsWith)) return false
+  if (where.internalCaseId?.not === null && row.internalCaseId === null) return false
+  if (where.metadata?.path?.[0] === 'agentConfigId' && row.metadata?.agentConfigId !== where.metadata.equals) return false
   if (where.id?.in && !where.id.in.includes(row.id)) return false
   if (where.caseId?.in && !where.caseId.in.includes(row.caseId)) return false
   return true
@@ -94,7 +121,17 @@ vi.mock('@/lib/db/repo-for-org', () => ({
           .filter((row) => matchesWhere(row, { ...(args?.where ?? {}), orgId }))
           .sort((a, b) => b.updatedAt.toISOString().localeCompare(a.updatedAt.toISOString()))),
       },
+      externalConversation: {
+        findMany: vi.fn(async (args: any) => h.externalConversations
+          .filter((row) => matchesWhere(row, { ...(args?.where ?? {}), orgId }))
+          .map((row) => ({ internalCaseId: row.internalCaseId }))),
+      },
       raw: {
+        case: {
+          findMany: vi.fn(async (args: any) => h.cases
+            .filter((row) => matchesWhere(row, args?.where ?? {}))
+            .map((row) => ({ id: row.id }))),
+        },
         procedureRun: {
           findMany: vi.fn(async (args: any) => h.runs
             .filter((row) => matchesWhere(row, args?.where ?? {}))
@@ -210,13 +247,21 @@ describe('/api/chats route', () => {
     const body = await res.json()
 
     expect(body.ok).toBe(true)
-    expect(body.data.total).toBe(1)
-    expect(body.data.sessions).toHaveLength(1)
+    expect(body.data.total).toBe(2)
+    expect(body.data.sessions).toHaveLength(2)
     expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'TG2RX99U7R',
+      userId: 'livechat-TG2RX99U7R',
+    })
+    expect(body.data.sessions[0].cases[0]).toMatchObject({
+      id: 'case-livechat-general',
+      runId: null,
+    })
+    expect(body.data.sessions[1]).toMatchObject({
       chatId: 'chat-new',
       userId: 'user-new',
     })
-    expect(body.data.sessions[0].cases[0]).toMatchObject({
+    expect(body.data.sessions[1].cases[0]).toMatchObject({
       id: 'run-new',
       runId: 'run-new',
     })

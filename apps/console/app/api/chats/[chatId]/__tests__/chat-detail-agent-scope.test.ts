@@ -47,7 +47,10 @@ const h = vi.hoisted(() => {
 function matchesWhere(row: any, where: Record<string, any> = {}) {
   if (where.orgId && row.orgId !== where.orgId) return false
   if (where.agentConfigId && row.agentConfigId !== where.agentConfigId) return false
-  if (where.chatId && row.chatId !== where.chatId) return false
+  if (where.chatId && typeof where.chatId === 'string' && row.chatId !== where.chatId) return false
+  if (typeof where.chatId === 'object' && where.chatId?.startsWith && !row.chatId?.startsWith(where.chatId.startsWith)) return false
+  if (where.internalCaseId?.not === null && row.internalCaseId === null) return false
+  if (where.metadata?.path?.[0] === 'agentConfigId' && row.metadata?.agentConfigId !== where.metadata.equals) return false
   if (where.id && typeof where.id === 'string' && row.id !== where.id) return false
   if (where.id?.in && !where.id.in.includes(row.id)) return false
   if (where.caseId?.in && !where.caseId.in.includes(row.caseId)) return false
@@ -72,6 +75,7 @@ vi.mock('@/lib/db/repo-for-org', () => ({
       },
       externalConversation: {
         findFirst: vi.fn(async () => null),
+        findMany: vi.fn(async () => []),
       },
       raw: {
         case: {
