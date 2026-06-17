@@ -39,6 +39,19 @@ Use this format for each new item:
 
 ## Open Items
 
+### 2026-06-17 - Knowledge Test Retrieval Hides Raw Backend Identifiers
+
+- Area: Knowledge / Test retrieval / operator-facing evidence
+- Status: default-applied
+- Severity: P2
+- Uncertainty: Production `Build -> Components -> Knowledge -> Test retrieval` exposed raw retrieval plumbing identifiers directly in the operator UI: a `group_ids` line with internal GPTBots group ids and per-result `doc/data` and `chunk` ids. These values were not needed to judge retrieval quality during delivery testing, but it is still a product choice whether advanced operators should ever see them in a debug affordance.
+- Default action taken: Removed raw `group_ids`, `doc/data`, and `chunk` identifiers from the standard retrieval results display while keeping the operator-meaningful fields: query, topK, chosen source, result count, score, document name, and retrieved content.
+- Why this default: It makes the evidence panel cleaner and more truthful for delivery/ops review without changing the retrieval API contract or hiding any customer-meaningful retrieval behavior.
+- Evidence: `apps/console/app/build/components/knowledge/page.tsx`; `apps/console/app/build/components/knowledge/page.test.tsx`
+- Production URL / screenshot / receipt: Reproduced on `https://demo.anytrans.ai/build/components/knowledge?agentId=cmq4q82mx0001qj32gt8htfiq` in `J1B v3` before fix: a retrieval query like `deposit fee` showed raw `group_ids: 6a0ae...` and `doc/data: 6a215...` lines in the result panel.
+- Owner decision needed: Confirm whether a future advanced/debug mode should optionally reveal raw retrieval ids, or whether the standard operator surface should keep them hidden permanently.
+- Follow-up owner: founder / architect / delivery lead
+
 ### 2026-06-17 - API Keys Binding Defaults To Wrong Agent And Version
 
 - Area: Integrations / API Keys / agent version binding

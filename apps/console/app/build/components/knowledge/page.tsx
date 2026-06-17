@@ -717,9 +717,6 @@ export default function BuildKnowledgePage() {
                       <span>source: <span className="font-mono text-[var(--mist)]">{retrievalMeta?.sourceName || 'all enabled sources'}</span></span>
                       <span>{testTotal} results</span>
                     </div>
-                    {retrievalMeta?.groupIds?.length ? (
-                      <p className="mt-1">group_ids: <span className="font-mono text-[var(--mist)]">{retrievalMeta.groupIds.join(', ')}</span></p>
-                    ) : null}
                   </div>
 
                   {testResults.length === 0 ? (
@@ -735,10 +732,6 @@ export default function BuildKnowledgePage() {
                         <div className="mb-2 flex items-start justify-between gap-3">
                           <span className="truncate text-[11px] font-medium text-[var(--color-accent-primary)]">{result.document_name}</span>
                           <span className="text-[11px] font-semibold text-[var(--color-accent-primary)]">{(result.score * 100).toFixed(1)}%</span>
-                        </div>
-                        <div className="mb-2 flex flex-wrap gap-3 text-[10px] text-[var(--fog)]">
-                          {result.data_id ? <span>doc/data: <span className="font-mono">{result.data_id}</span></span> : null}
-                          {result.chunk_id != null ? <span>chunk: <span className="font-mono">{String(result.chunk_id)}</span></span> : null}
                         </div>
                         <p className="whitespace-pre-wrap text-[12px] leading-6 text-[var(--mist)]">{result.content}</p>
                       </div>

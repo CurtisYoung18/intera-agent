@@ -214,4 +214,56 @@ describe('BuildKnowledgePage', () => {
       }))
     })
   })
+
+  it('shows retrieval summaries without exposing raw backend ids', async () => {
+    mockGptbotsPayload = {
+      knowledge_base: [{ id: 'kb-1', name: 'Account', desc: 'Account KB', chunk: 4, doc: 1 }],
+    }
+    mockApiClient.mockImplementation(async (url: string, options?: any) => {
+      if (url.startsWith('/api/admin/knowledge/sources?agentConfigId=')) {
+        return { data: { sources: mockSources } }
+      }
+      if (url.startsWith('/api/admin/case-types?agentConfigId=')) {
+        return { data: { types: [] } }
+      }
+      if (url.startsWith('/api/admin/knowledge/gptbots?agentConfigId=')) {
+        return { data: mockGptbotsPayload }
+      }
+      if (url === '/api/admin/knowledge/test' && options?.method === 'POST') {
+        return {
+          data: {
+            list: [
+              {
+                content: 'Deposit help article',
+                data_id: 'doc-raw-123',
+                document_name: 'Deposit FAQ',
+                chunk_id: 'chunk-9',
+                score: 0.92,
+              },
+            ],
+            total: 1,
+            query: options.body.query,
+            topK: options.body.topK,
+            request: { groupIds: ['kb-1', 'kb-2'] },
+          },
+        }
+      }
+      return { data: {} }
+    })
+
+    await renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test retrieval' }))
+    fireEvent.change(screen.getByLabelText('Query'), { target: { value: 'deposit' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('1 results')).toBeDefined()
+      expect(screen.getAllByText('Deposit FAQ').length).toBeGreaterThan(0)
+    })
+
+    expect(screen.queryByText(/group_ids:/i)).toBeNull()
+    expect(screen.queryByText(/doc\/data:/i)).toBeNull()
+    expect(screen.queryByText(/chunk:/i)).toBeNull()
+  })
 })
