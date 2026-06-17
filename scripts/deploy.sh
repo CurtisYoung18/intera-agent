@@ -81,7 +81,7 @@ rm -rf node_modules
 npm ci --include=dev
 
 echo "=== Prisma migrate ==="
-npm exec prisma migrate deploy --schema=packages/shared/prisma/schema.prisma
+npm exec -- prisma migrate deploy --schema=packages/shared/prisma/schema.prisma
 
 echo "=== Prisma ==="
 npm run db:generate
