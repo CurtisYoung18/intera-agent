@@ -25,6 +25,8 @@ const mockDeactivateChat = vi.fn()
 
 const mockEnqueueRetry = vi.fn()
 const mockFetch = vi.fn()
+const mockDownloadAndEncode = vi.fn()
+const mockIsLikelyImageAttachment = vi.fn()
 const mockResolveRenderableImageUrls = vi.fn()
 
 vi.mock('../../session-store', () => ({
@@ -60,8 +62,8 @@ vi.mock('../../retry-queue', () => ({
 }))
 
 vi.mock('../../image-utils', () => ({
-  downloadAndEncode: vi.fn(),
-  isSupportedImageType: vi.fn(() => false),
+  downloadAndEncode: (...args: unknown[]) => mockDownloadAndEncode(...args),
+  isLikelyImageAttachment: (...args: unknown[]) => mockIsLikelyImageAttachment(...args),
   resolveRenderableImageUrls: (...args: unknown[]) => mockResolveRenderableImageUrls(...args),
 }))
 
@@ -118,6 +120,8 @@ describe('livechat bridge', () => {
     mockSetTypingIndicator.mockResolvedValue(undefined)
     mockTransferChat.mockResolvedValue(undefined)
     mockDeactivateChat.mockResolvedValue(undefined)
+    mockDownloadAndEncode.mockResolvedValue({ contentType: 'image/png', data: 'base64-image' })
+    mockIsLikelyImageAttachment.mockReturnValue(false)
     mockResolveRenderableImageUrls.mockResolvedValue([])
     mockFetch.mockResolvedValue(makeSseResponse([]))
     vi.stubGlobal('fetch', mockFetch)
@@ -370,6 +374,88 @@ describe('livechat bridge', () => {
       undefined,
     )
     expect(mockSendCard).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends LiveChat image attachments to the agent as multimodal content blocks', async () => {
+    mockIsLikelyImageAttachment.mockReturnValueOnce(true)
+    mockDownloadAndEncode.mockResolvedValueOnce({
+      contentType: 'image/png',
+      data: 'encoded-receipt',
+    })
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      {
+        type: 'attachment',
+        attachment: {
+          url: 'https://files.livechatinc.com/receipt-download',
+          contentType: 'application/octet-stream',
+          filename: 'receipt.png',
+        },
+      } satisfies IncomingEvent,
+      makeConfig(),
+      'agent-1',
+    )
+
+    expect(mockIsLikelyImageAttachment).toHaveBeenCalledWith({
+      url: 'https://files.livechatinc.com/receipt-download',
+      contentType: 'application/octet-stream',
+      filename: 'receipt.png',
+    })
+    expect(mockDownloadAndEncode).toHaveBeenCalledWith(
+      'https://files.livechatinc.com/receipt-download',
+      { contentType: 'application/octet-stream', filename: 'receipt.png' },
+    )
+    const [, fetchInit] = mockFetch.mock.calls[0]!
+    expect(JSON.parse(String(fetchInit.body))).toMatchObject({
+      chatId: 'chat-1',
+      caseId: 'case-1',
+      message: 'Customer uploaded image: receipt.png',
+      contentBlocks: [
+        { type: 'text', text: 'Customer uploaded image: receipt.png' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'encoded-receipt' } },
+      ],
+      sessionCasePinned: true,
+      disableCaseRouting: true,
+    })
+  })
+
+  it('queues a retry when /api/messages rejects a bridge request', async () => {
+    const event = { type: 'message', text: 'hello' } satisfies IncomingEvent
+    mockFetch.mockResolvedValueOnce(new Response('Request body too large', { status: 502 }))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      event,
+      makeConfig(),
+      'agent-1',
+    )
+
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'Service is temporarily unavailable. Our systems are recovering — please try again shortly.',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockEnqueueRetry).toHaveBeenCalledWith(
+      'chat-1',
+      'org-1',
+      'user-1',
+      event,
+      expect.stringContaining('api_messages_502: Request body too large'),
+      'agent-1',
+    )
+    expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'idle')
   })
 
   it('pins a new customer message to the current case while the bridge is still thinking', async () => {

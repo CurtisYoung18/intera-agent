@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 
 export const INTERNAL_SECRET_HEADER = 'x-intera-internal'
 export const RUNTIME_BYPASS_HEADER = 'x-intera-runtime-bypass'
+const DEFAULT_MAX_BODY_BYTES = 8 * 1024 * 1024
 
 function normalizeBaseUrl(raw) {
   const value = raw?.trim()
@@ -29,6 +30,12 @@ export function resolveRuntimeExecutionMode(env = process.env) {
   const value = env.INTERA_RUNTIME_EXECUTION_MODE?.trim().toLowerCase()
   if (value === 'legacy' || value === 'legacy-forward') return 'legacy-forward'
   return 'direct'
+}
+
+export function resolveRuntimeMaxBodyBytes(env = process.env) {
+  const raw = Number(env.INTERA_RUNTIME_MAX_BODY_BYTES)
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw)
+  return DEFAULT_MAX_BODY_BYTES
 }
 
 export function authorizeInternalRequest(headers, env = process.env) {
@@ -61,7 +68,7 @@ function routeInfo(req) {
   return { url, parts }
 }
 
-async function readBody(req, limit = 100_000) {
+async function readBody(req, limit = DEFAULT_MAX_BODY_BYTES) {
   const chunks = []
   let size = 0
   for await (const chunk of req) {
@@ -159,6 +166,7 @@ export function createRuntimeServer(options = {}) {
   const env = options.env ?? process.env
   const fetchImpl = options.fetch ?? globalThis.fetch
   const executionMode = resolveRuntimeExecutionMode(env)
+  const maxBodyBytes = resolveRuntimeMaxBodyBytes(env)
   const directRuntimeHealth = options.directRuntimeHealth ?? loadDirectRuntimeHealth
   const directMessagesHandler = options.directMessagesHandler ?? executeDirectMessagesHandler
   const directCloseHandler = options.directCloseHandler ?? executeDirectCloseHandler
@@ -242,7 +250,7 @@ export function createRuntimeServer(options = {}) {
     try {
       if (req.method === 'POST' && (action === 'messages' || (caseId === 'messages' && !action))) {
         const pathCaseId = caseId === 'messages' ? '_unresolved' : caseId
-        const rawBody = await readBody(req)
+        const rawBody = await readBody(req, maxBodyBytes)
         const body = withPathCaseId(rawBody, pathCaseId)
 
         state.inFlightCases.add(pathCaseId)

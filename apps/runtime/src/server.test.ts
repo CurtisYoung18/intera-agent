@@ -7,6 +7,7 @@ import {
   authorizeInternalRequest,
   createRuntimeServer,
   resolveRuntimeExecutionMode,
+  resolveRuntimeMaxBodyBytes,
   resolveConsoleRuntimeHealthUrl,
   resolveConsoleMessagesUrl,
 } from './server.mjs'
@@ -32,6 +33,11 @@ describe('runtime service', () => {
     expect(resolveRuntimeExecutionMode({ INTERA_RUNTIME_EXECUTION_MODE: 'direct' })).toBe('direct')
     expect(resolveRuntimeExecutionMode({ INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward' })).toBe('legacy-forward')
     expect(resolveRuntimeExecutionMode({ INTERA_RUNTIME_EXECUTION_MODE: 'legacy' })).toBe('legacy-forward')
+  })
+
+  it('allows large multimodal message bodies by default', () => {
+    expect(resolveRuntimeMaxBodyBytes({})).toBeGreaterThan(100_000)
+    expect(resolveRuntimeMaxBodyBytes({ INTERA_RUNTIME_MAX_BODY_BYTES: '262144' })).toBe(262_144)
   })
 
   it('resolves the legacy Console messages backend explicitly', () => {
@@ -178,6 +184,50 @@ describe('runtime service', () => {
           body: JSON.stringify({ message: 'hi', caseId: 'case-1' }),
         }),
       )
+    } finally {
+      await close(server)
+    }
+  })
+
+  it('forwards image contentBlocks larger than the legacy 100KB proxy limit', async () => {
+    const fetchMock = vi.fn(async () => new Response('data: {"type":"message_stop"}\n\n', {
+      headers: { 'Content-Type': 'text/event-stream' },
+    }))
+    const server = createRuntimeServer({
+      env: {
+        INTERNAL_API_SECRET: 'secret-1',
+        CONSOLE_INTERNAL_MESSAGES_URL: 'http://console.local/api/messages',
+        INTERA_RUNTIME_EXECUTION_MODE: 'legacy-forward',
+      },
+      fetch: fetchMock as typeof fetch,
+    })
+    const baseUrl = await listen(server)
+    const imageData = 'a'.repeat(150_000)
+    const body = {
+      message: 'Customer uploaded image: receipt.png',
+      contentBlocks: [
+        { type: 'text', text: 'Customer uploaded image: receipt.png' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: imageData } },
+      ],
+    }
+    try {
+      const response = await fetch(`${baseUrl}/internal/cases/case-vision/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          [INTERNAL_SECRET_HEADER]: 'secret-1',
+          'x-intera-org': 'org-a',
+          'x-intera-agent-config-id': 'agent-a',
+        },
+        body: JSON.stringify(body),
+      })
+
+      expect(response.status).toBe(200)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [, init] = fetchMock.mock.calls[0]!
+      const forwarded = JSON.parse(String(init.body))
+      expect(forwarded.caseId).toBe('case-vision')
+      expect(forwarded.contentBlocks[1].source.data).toHaveLength(150_000)
     } finally {
       await close(server)
     }

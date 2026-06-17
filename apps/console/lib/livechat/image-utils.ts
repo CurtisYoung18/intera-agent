@@ -2,6 +2,23 @@
 // Downloads images from external URLs and encodes as base64 for multimodal API.
 
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+const IMAGE_TYPE_ALIASES = new Map<string, string>([
+  ['image/jpg', 'image/jpeg'],
+  ['image/pjpeg', 'image/jpeg'],
+])
+const IMAGE_EXTENSION_TYPES = new Map<string, string>([
+  ['png', 'image/png'],
+  ['jpg', 'image/jpeg'],
+  ['jpeg', 'image/jpeg'],
+  ['gif', 'image/gif'],
+  ['webp', 'image/webp'],
+])
+const GENERIC_BINARY_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'binary/octet-stream',
+  'application/download',
+])
 const SUPPORTED_PREVIEW_PAGE_HOSTS = new Set(['postimg.cc', 'www.postimg.cc'])
 const DIRECT_IMAGE_PATTERN = /\.(?:png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i
 
@@ -10,16 +27,80 @@ export interface DownloadResult {
   contentType: string
 }
 
+export function normalizeImageContentType(contentType?: string | null): string | null {
+  const normalized = contentType?.split(';')[0]?.trim().toLowerCase() ?? ''
+  if (!normalized) return null
+  if (SUPPORTED_IMAGE_TYPES.has(normalized)) return normalized
+  return IMAGE_TYPE_ALIASES.get(normalized) ?? null
+}
+
+function inferImageTypeFromPath(value?: string | null): string | null {
+  if (!value) return null
+  let pathname = value
+  try {
+    pathname = new URL(value).pathname
+  } catch { /* value may be a filename, not a URL */ }
+
+  const match = pathname.toLowerCase().match(/\.([a-z0-9]+)(?:$|[?#])/)
+  if (!match?.[1]) return null
+  return IMAGE_EXTENSION_TYPES.get(match[1]) ?? null
+}
+
+function inferImageTypeFromBytes(buffer: Buffer): string | null {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png'
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  if (buffer.length >= 6) {
+    const signature = buffer.subarray(0, 6).toString('ascii')
+    if (signature === 'GIF87a' || signature === 'GIF89a') return 'image/gif'
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+  ) {
+    return 'image/webp'
+  }
+  return null
+}
+
+export function isLikelyImageAttachment(input: {
+  contentType?: string | null
+  filename?: string | null
+  url?: string | null
+}): boolean {
+  return Boolean(
+    normalizeImageContentType(input.contentType) ||
+    inferImageTypeFromPath(input.filename) ||
+    inferImageTypeFromPath(input.url),
+  )
+}
+
 /** Download an image and return base64 data + verified content type. Throws if URL is unreachable or content is not a supported image type. */
-export async function downloadAndEncode(url: string): Promise<DownloadResult> {
+export async function downloadAndEncode(
+  url: string,
+  fallback?: { contentType?: string | null; filename?: string | null },
+): Promise<DownloadResult> {
   const res = await fetch(url)
   if (!res.ok) {
     throw new Error(`Failed to download from ${url}: ${res.status}`)
   }
   const buffer = Buffer.from(await res.arrayBuffer())
-  const contentType = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'application/octet-stream'
-  if (!SUPPORTED_IMAGE_TYPES.has(contentType)) {
-    throw new Error(`Unsupported content type: ${contentType}`)
+  const responseContentType = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
+  const contentType =
+    normalizeImageContentType(responseContentType) ||
+    inferImageTypeFromBytes(buffer) ||
+    (GENERIC_BINARY_TYPES.has(responseContentType)
+      ? normalizeImageContentType(fallback?.contentType) ||
+        inferImageTypeFromPath(fallback?.filename) ||
+        inferImageTypeFromPath(url)
+      : null)
+
+  if (!contentType) {
+    throw new Error(`Unsupported content type: ${responseContentType || 'unknown'}`)
   }
   return {
     data: buffer.toString('base64'),
@@ -28,7 +109,7 @@ export async function downloadAndEncode(url: string): Promise<DownloadResult> {
 }
 
 export function isSupportedImageType(contentType?: string): boolean {
-  return !!contentType && SUPPORTED_IMAGE_TYPES.has(contentType)
+  return Boolean(normalizeImageContentType(contentType))
 }
 
 export function extractUrls(text: string): string[] {

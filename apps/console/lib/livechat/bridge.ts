@@ -14,7 +14,7 @@ import {
 } from './livechat-api'
 import { enqueueRetry } from './retry-queue'
 
-import { downloadAndEncode, isSupportedImageType, resolveRenderableImageUrls } from './image-utils'
+import { downloadAndEncode, isLikelyImageAttachment, resolveRenderableImageUrls } from './image-utils'
 import { getInternalMessagesUrl } from './internal-messages-url'
 import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
@@ -273,6 +273,15 @@ async function sendFailureNotice(
   await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
 }
 
+async function readResponsePreview(response: Response): Promise<string> {
+  try {
+    const text = await response.text()
+    return text.replace(/\s+/g, ' ').slice(0, 500)
+  } catch {
+    return ''
+  }
+}
+
 function canResumeTransferredSession(event: IncomingEvent): boolean {
   return event.type === 'message' ||
     event.type === 'attachment' ||
@@ -389,12 +398,16 @@ export async function handleIncomingEvent(
   // attachments get a text-only fallback so the multimodal API doesn't reject.
   let contentBlocks: ContentBlock[] | undefined
   if (event.type === 'attachment') {
-    const attachContentType = event.attachment.contentType
-    if (isSupportedImageType(attachContentType)) {
+    const attachmentText = `Customer uploaded image: ${event.attachment.filename}`
+    if (isLikelyImageAttachment(event.attachment)) {
+      ;(body as Record<string, unknown>).message = attachmentText
       try {
-        const result = await downloadAndEncode(event.attachment.url)
+        const result = await downloadAndEncode(event.attachment.url, {
+          contentType: event.attachment.contentType,
+          filename: event.attachment.filename,
+        })
         contentBlocks = [
-          { type: 'text', text: `Customer uploaded image: ${event.attachment.filename}` },
+          { type: 'text', text: attachmentText },
           { type: 'image', source: { type: 'base64', media_type: result.contentType, data: result.data } },
         ]
       } catch (err) {
@@ -403,7 +416,7 @@ export async function handleIncomingEvent(
       }
     } else {
       // Non-image file: don't try to construct an image block
-      const typeLabel = attachContentType || 'unknown type'
+      const typeLabel = event.attachment.contentType || 'unknown type'
       ;(body as Record<string, unknown>).message = `[File upload] ${event.attachment.filename} (${typeLabel})`
     }
   }
@@ -438,8 +451,17 @@ export async function handleIncomingEvent(
   // BUG-D: /api/messages never returns 202 — queued messages flow through SSE
   // with message_stop{reason:'queued'}. Dead branch removed.
   if (!response.ok || !response.body) {
-    console.error('[Bridge] /api/messages returned', response.status)
+    const responsePreview = await readResponsePreview(response)
+    console.error('[Bridge] /api/messages returned', response.status, responsePreview ? { responsePreview } : undefined)
     await sendFailureNotice(chatId, config, 'engine_unreachable')
+    await enqueueRetry(
+      chatId,
+      orgId,
+      userId,
+      event,
+      `api_messages_${response.status}${responsePreview ? `: ${responsePreview}` : ''}`,
+      resolvedAgentConfigId,
+    )
     await updateSessionState(chatId, 'idle')
     setTypingIndicator(chatId, false, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId).catch(() => {})
     return

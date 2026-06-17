@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   downloadAndEncode,
   extractUrls,
+  isLikelyImageAttachment,
   isDirectImageUrl,
   isResolvablePreviewPageUrl,
   isSupportedImageType,
+  normalizeImageContentType,
   resolvePreviewPageImageUrl,
   resolveRenderableImageUrls,
 } from '../../image-utils'
@@ -27,6 +29,19 @@ describe('downloadAndEncode', () => {
     expect(result.contentType).toBe('image/png')
   })
 
+  it('accepts generic LiveChat downloads when the filename identifies the image type', async () => {
+    const imageData = new Uint8Array([1, 2, 3, 4])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () => Promise.resolve(imageData.buffer),
+      headers: { get: () => 'application/octet-stream' },
+    }))
+
+    const result = await downloadAndEncode('https://files.livechatinc.com/download', { filename: 'receipt.jpg' })
+    expect(result.data).toBe(Buffer.from(imageData).toString('base64'))
+    expect(result.contentType).toBe('image/jpeg')
+  })
+
   it('throws on non-image content type', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
@@ -46,6 +61,8 @@ describe('isSupportedImageType', () => {
   it('returns true for png/jpeg/gif/webp', () => {
     expect(isSupportedImageType('image/png')).toBe(true)
     expect(isSupportedImageType('image/jpeg')).toBe(true)
+    expect(isSupportedImageType('image/jpg')).toBe(true)
+    expect(isSupportedImageType('image/png; charset=binary')).toBe(true)
     expect(isSupportedImageType('image/gif')).toBe(true)
     expect(isSupportedImageType('image/webp')).toBe(true)
   })
@@ -55,6 +72,20 @@ describe('isSupportedImageType', () => {
     expect(isSupportedImageType('application/octet-stream')).toBe(false)
     expect(isSupportedImageType(undefined)).toBe(false)
     expect(isSupportedImageType('')).toBe(false)
+  })
+
+  it('normalizes aliases and detects likely image attachments', () => {
+    expect(normalizeImageContentType('IMAGE/JPG')).toBe('image/jpeg')
+    expect(isLikelyImageAttachment({
+      contentType: 'application/octet-stream',
+      filename: 'receipt.png',
+      url: 'https://files.livechatinc.com/download',
+    })).toBe(true)
+    expect(isLikelyImageAttachment({
+      contentType: 'application/octet-stream',
+      filename: 'receipt.pdf',
+      url: 'https://files.livechatinc.com/download',
+    })).toBe(false)
   })
 })
 
