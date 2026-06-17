@@ -138,6 +138,39 @@ function humanizeKey(key: string): string {
     .replace(/^\w/, (c) => c.toUpperCase())
 }
 
+// Detail text is often a "key: value" block (e.g. procedureId / caseId / runId).
+// Render those as a clean two-column list instead of a raw pre-wrapped dump.
+function parseKeyValueLines(text: string): Array<{ key: string; value: string }> | null {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean)
+  if (lines.length < 2) return null
+  const out: Array<{ key: string; value: string }> = []
+  for (const line of lines) {
+    const idx = line.indexOf(':')
+    if (idx <= 0) return null
+    const key = line.slice(0, idx).trim()
+    if (!/^[A-Za-z][\w.]*$/.test(key)) return null
+    out.push({ key, value: line.slice(idx + 1).trim() })
+  }
+  return out
+}
+
+function DetailBody({ text }: { text: string }) {
+  const kv = parseKeyValueLines(text)
+  if (!kv) {
+    return <p className="text-[13px] leading-relaxed text-[var(--mist)]/75 whitespace-pre-wrap">{text}</p>
+  }
+  return (
+    <dl className="space-y-1.5">
+      {kv.map(({ key, value }) => (
+        <div key={key} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <dt className="min-w-[132px] shrink-0 text-[11px] font-medium text-[var(--fog)]">{humanizeKey(key)}</dt>
+          <dd className={`min-w-0 break-all font-mono text-[11.5px] ${value === 'true' ? 'text-[#2ea04a]' : value === 'false' ? 'text-[var(--smoke)]/70' : 'text-[var(--mist)]/90'}`}>{value || '—'}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 function JsonValuePreview({
   value,
   depth,
@@ -507,9 +540,7 @@ export function CaseTraceTimeline({
               </div>
             ) : (
               <>
-                {showDetailText && (
-                  <p className="text-[13px] leading-relaxed text-[var(--mist)]/75 whitespace-pre-wrap">{truth.detailText}</p>
-                )}
+                {showDetailText && <DetailBody text={truth.detailText || ''} />}
               </>
             )}
 
