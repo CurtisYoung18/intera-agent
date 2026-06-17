@@ -17,7 +17,6 @@ declare global {
 }
 
 const MOMENTS_SDK_SRC = 'https://cdn.livechat-static.com/moments-sdk/moments-sdk-1.9.0.umd.min.js'
-const MOMENT_CLOSE_FALLBACK_DELAY_MS = 350
 
 function readCreateMomentsSDK(): CreateMomentsSDK | null {
   if (typeof window === 'undefined') return null
@@ -126,9 +125,5 @@ export async function closeMomentIfPossible(options?: {
   } catch {
     return fallbackReturnToChat()
   }
-
-  window.setTimeout(() => {
-    if (document.visibilityState === 'visible') fallbackReturnToChat()
-  }, MOMENT_CLOSE_FALLBACK_DELAY_MS)
   return true
 }

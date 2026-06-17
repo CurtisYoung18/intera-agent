@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateCaseId } from '@/lib/utils'
-import { rotateSessionCase } from '@/lib/livechat/session-store'
+import { getSession, rotateSessionCase } from '@/lib/livechat/session-store'
 
 export async function POST(request: NextRequest) {
   let body: unknown
@@ -16,6 +16,26 @@ export async function POST(request: NextRequest) {
 
   if (!chatId) {
     return NextResponse.json({ error: 'chatId is required' }, { status: 400 })
+  }
+
+  const orgId = typeof (body as { orgId?: unknown })?.orgId === 'string'
+    ? (body as { orgId: string }).orgId.trim()
+    : ''
+  const agentConfigId = typeof (body as { agentConfigId?: unknown })?.agentConfigId === 'string'
+    ? (body as { agentConfigId: string }).agentConfigId.trim()
+    : ''
+
+  const session = await getSession(chatId)
+  if (!session) {
+    return NextResponse.json({ error: 'Session not found for chatId' }, { status: 404 })
+  }
+
+  if (orgId && session.orgId !== orgId) {
+    return NextResponse.json({ error: 'Session org mismatch' }, { status: 403 })
+  }
+
+  if (agentConfigId && session.agentConfigId !== agentConfigId) {
+    return NextResponse.json({ error: 'Session agent mismatch' }, { status: 403 })
   }
 
   await rotateSessionCase(chatId, generateCaseId())
