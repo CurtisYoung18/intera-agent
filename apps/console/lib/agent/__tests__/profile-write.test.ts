@@ -21,20 +21,18 @@ const h = vi.hoisted(() => {
 // ── Mock prisma ──
 vi.mock('@intera/shared/prisma', () => ({
   prisma: {
-    $queryRaw: vi.fn(async () => [{ exists: true }]),
+    $queryRaw: vi.fn(async () => [{ exists: false }]),
     userProfile: {
-      findUnique: vi.fn(async ({ where }: { where: { userId?: string; orgId_userId?: { userId: string }; orgId_agentConfigId_userId?: { orgId: string; agentConfigId: string; userId: string } } }) => {
-        const scoped = where.orgId_agentConfigId_userId
-        const key = scoped ? `${scoped.orgId}:${scoped.agentConfigId}:${scoped.userId}` : where.orgId_userId?.userId ?? where.userId ?? ''
+      findUnique: vi.fn(async ({ where }: { where: { userId?: string; orgId_userId?: { orgId: string; userId: string } }; }) => {
+        const key = where.orgId_userId ? `${where.orgId_userId.orgId}:${where.orgId_userId.userId}` : where.userId ?? ''
         return h.existingProfiles[key] ?? null
       }),
       upsert: vi.fn(async (args: {
-        where: { userId?: string; orgId_userId?: { userId: string }; orgId_agentConfigId_userId?: { orgId: string; agentConfigId: string; userId: string } }
-        create: { userId: string; orgId?: string; agentConfigId?: string; profile: string; sections?: string }
+        where: { userId?: string; orgId_userId?: { orgId: string; userId: string } }
+        create: { userId: string; orgId?: string; profile: string; sections?: string }
         update: { profile: string; sections?: string }
       }) => {
-        const scoped = args.where.orgId_agentConfigId_userId
-        const key = scoped ? `${scoped.orgId}:${scoped.agentConfigId}:${scoped.userId}` : args.where.orgId_userId?.userId ?? args.where.userId ?? args.create.userId
+        const key = args.where.orgId_userId ? `${args.where.orgId_userId.orgId}:${args.where.orgId_userId.userId}` : args.where.userId ?? args.create.userId
         const data = {
           profile: args.create.profile || args.update.profile,
           sections: args.create.sections || args.update.sections || '{}',
@@ -131,7 +129,7 @@ describe('compactUserProfile — dual-write (C3)', () => {
       '## Activity',
       '- issue: login problem',
     ].join('\n')
-    h.existingProfiles['test-org:test-agent:user:test-user'] = { profile: existingMd }
+    h.existingProfiles['test-org:user:test-user'] = { profile: existingMd }
 
     // Arrange: compactConversation returns a new profile summary
     const newSummary = [
@@ -160,15 +158,13 @@ describe('compactUserProfile — dual-write (C3)', () => {
 
     const upsertArgs = upsertMock.mock.calls[0][0]
     expect(upsertArgs.where).toEqual({
-      orgId_agentConfigId_userId: {
+      orgId_userId: {
         orgId: 'test-org',
-        agentConfigId: 'test-agent',
         userId: 'user:test-user',
       },
     })
     expect(upsertArgs.create).toMatchObject({
       orgId: 'test-org',
-      agentConfigId: 'test-agent',
       userId: 'user:test-user',
     })
     // Both profile and sections must be present
@@ -180,7 +176,7 @@ describe('compactUserProfile — dual-write (C3)', () => {
 
   it('profile and sections are internally consistent', async () => {
     // Arrange
-    h.existingProfiles['test-org:test-agent:user:test-user'] = { profile: '# User Profile' }
+    h.existingProfiles['test-org:user:test-user'] = { profile: '# User Profile' }
 
     const newSummary = [
       '# User Profile',
@@ -204,7 +200,7 @@ describe('compactUserProfile — dual-write (C3)', () => {
     await (loop as any).compactUserProfile()
 
     // Assert: verify the persisted data
-    const persisted = h.persistedProfiles['test-org:test-agent:user:test-user']
+    const persisted = h.persistedProfiles['test-org:user:test-user']
     expect(persisted).toBeDefined()
 
     // The profile Markdown should contain the rendered sections

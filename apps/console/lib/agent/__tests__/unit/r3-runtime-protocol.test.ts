@@ -96,15 +96,18 @@ function endOnlyProcedure() {
   }
 }
 
-function makeLoop(caseId: string): AgentLoop {
+function makeLoop(
+  caseId: string,
+  overrides: Partial<{ userId: string; chatId: string | null }> = {},
+): AgentLoop {
   const memory = createMemoryPersistence()
   return new AgentLoop({
     config: config(),
     configId: 'agent_1',
     caseId,
     orgId: 'org_1',
-    userId: 'user_1',
-    chatId: 'chat_1',
+    userId: overrides.userId ?? 'user_1',
+    chatId: overrides.chatId ?? 'chat_1',
     systemPrompt: 'CORE_PROMPT',
     coreSystemPrompt: 'CORE_PROMPT',
     persistence: memory.port,
@@ -455,5 +458,41 @@ describe('R3 HookContext and memory boundaries', () => {
     const read = await resolveRuntimeTool(loop, 'read_user_profile')
     expect((read as any).profile).toContain('prefers SMS updates')
     expect(JSON.stringify(read)).not.toContain('currentStepId')
+  })
+
+  it('lets a fresh chat read durable user memory from an earlier chat for the same user', async () => {
+    const firstLoop = makeLoop('r3-user-memory-session-a', { chatId: 'chat_A' })
+    await resolveRuntimeTool(firstLoop, 'remember', {
+      scope: 'user',
+      key: 'vip_level',
+      value: 'gold',
+      reason: 'customer disclosed their membership tier',
+    })
+
+    const firstUpsertArg = h.userProfileUpsert.mock.calls[0][0]
+    h.userProfileFindUnique.mockResolvedValueOnce({
+      profile: firstUpsertArg.create.profile,
+      sections: firstUpsertArg.create.sections,
+      totalChats: 1,
+      totalCases: 1,
+      resolvedCases: 1,
+      escalatedCases: 0,
+      lastCaseType: 'general',
+      firstSeenAt: null,
+      lastSeenAt: null,
+    })
+
+    const secondLoop = makeLoop('r3-user-memory-session-b', { chatId: 'chat_B' })
+    const read = await resolveRuntimeTool(secondLoop, 'read_user_profile')
+
+    expect((read as any).profile).toContain('gold')
+    expect(h.userProfileFindUnique).toHaveBeenLastCalledWith({
+      where: {
+        orgId_userId: {
+          orgId: 'org_1',
+          userId: 'user:user_1',
+        },
+      },
+    })
   })
 })

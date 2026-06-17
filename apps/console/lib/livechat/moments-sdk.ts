@@ -17,6 +17,7 @@ declare global {
 }
 
 const MOMENTS_SDK_SRC = 'https://cdn.livechat-static.com/moments-sdk/moments-sdk-1.9.0.umd.min.js'
+const MOMENT_CLOSE_FALLBACK_DELAY_MS = 350
 
 function readCreateMomentsSDK(): CreateMomentsSDK | null {
   if (typeof window === 'undefined') return null
@@ -92,13 +93,42 @@ export function ensureMomentsSdk(options?: {
   return window.__interaMomentsSdkPromise
 }
 
+function fallbackReturnToChat(): boolean {
+  if (typeof window === 'undefined') return false
+
+  try {
+    window.parent?.postMessage({ type: 'intera:livechat:return-to-chat' }, '*')
+  } catch {}
+
+  if (window.history.length > 1) {
+    window.history.back()
+    return true
+  }
+
+  try {
+    window.close()
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function closeMomentIfPossible(options?: {
   title?: string
   icon?: string
   isFragile?: boolean
 }): Promise<boolean> {
   const sdk = await ensureMomentsSdk(options)
-  if (!sdk?.close) return false
-  await sdk.close()
+  if (!sdk?.close) return fallbackReturnToChat()
+
+  try {
+    await sdk.close()
+  } catch {
+    return fallbackReturnToChat()
+  }
+
+  window.setTimeout(() => {
+    if (document.visibilityState === 'visible') fallbackReturnToChat()
+  }, MOMENT_CLOSE_FALLBACK_DELAY_MS)
   return true
 }
