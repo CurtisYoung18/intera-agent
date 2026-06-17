@@ -41,6 +41,10 @@ describe('LiveChatFormWidget', () => {
       />,
     )
 
+    await waitFor(() => {
+      expect(mockEnsureMomentsSdk).toHaveBeenCalledWith({ title: 'Deposit details' })
+    })
+
     fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '800' } })
     fireEvent.change(screen.getByLabelText(/Payment channel/), { target: { value: 'Bank transfer' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
@@ -90,6 +94,7 @@ describe('LiveChatFormWidget', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交' }))
 
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(mockEnsureMomentsSdk).not.toHaveBeenCalled()
     expect(await screen.findByText('已提交')).toBeDefined()
     expect(await screen.findByText(/"amount": "800"/)).toBeDefined()
   })

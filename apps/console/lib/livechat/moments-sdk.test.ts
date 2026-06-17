@@ -72,6 +72,24 @@ describe('closeMomentIfPossible', () => {
     expect(closeSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('reads the initialized client back from window.MomentsSDK for the UMD script build', async () => {
+    const closeSpy = vi.fn(async () => {})
+    const createSpy = vi.fn(async () => {
+      window.MomentsSDK = { close: closeSpy }
+      return undefined as unknown as { close?: () => Promise<void> | void }
+    })
+    window.MomentsSDK = createSpy
+
+    const { ensureMomentsSdk, closeMomentIfPossible } = await import('@/lib/livechat/moments-sdk')
+    const sdk = await ensureMomentsSdk({ title: 'Transaction History Details' })
+    const closed = await closeMomentIfPossible({ title: 'Transaction History Details' })
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    expect(sdk).toBe(window.MomentsSDK)
+    expect(closed).toBe(true)
+    expect(closeSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('does not force browser navigation when sdk.close() rejects', async () => {
     const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
     const closeWindowSpy = vi.spyOn(window, 'close').mockImplementation(() => {})

@@ -30,6 +30,18 @@ function readExistingMomentsClient(): MomentsSdkClient | null {
   return null
 }
 
+function normalizeMomentsClient(candidate: MomentsSdkClient | null | undefined): MomentsSdkClient | null {
+  const existingClient = readExistingMomentsClient()
+  if (existingClient) return existingClient
+  if (!candidate || typeof candidate !== 'object') return null
+
+  const close = (candidate as { close?: unknown }).close
+  if (typeof close === 'function') {
+    return candidate
+  }
+  return null
+}
+
 function readCreateMomentsSDK(): CreateMomentsSDK | null {
   if (typeof window === 'undefined') return null
   const candidate = window.MomentsSDK
@@ -64,7 +76,9 @@ export async function ensureMomentsSdk(options?: {
 
   const createImmediately = readCreateMomentsSDK()
   if (createImmediately) {
-    window.__interaMomentsSdkPromise = Promise.resolve(createImmediately(options)).catch(() => null)
+    window.__interaMomentsSdkPromise = Promise.resolve(createImmediately(options))
+      .then((sdk) => normalizeMomentsClient(sdk))
+      .catch(() => null)
     const sdk = await window.__interaMomentsSdkPromise
     if (!sdk) window.__interaMomentsSdkPromise = undefined
     return sdk
@@ -83,7 +97,7 @@ export async function ensureMomentsSdk(options?: {
 
     const initialize = (createMomentsSDK: CreateMomentsSDK) => {
       Promise.resolve(createMomentsSDK(options))
-        .then((sdk) => finish(sdk))
+        .then((sdk) => finish(normalizeMomentsClient(sdk)))
         .catch(() => finish(null))
     }
 
