@@ -36,6 +36,12 @@ describe('LiveChatRenderer', () => {
       const actions = r.render(makeEvent('message_stop', {}), makeCtx())
       expect(actions[0]!.type).toBe('flush_text')
     })
+
+    it('suppresses flush_text when the turn is waiting for a form submission', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('message_stop', { transition: 'waiting_form' }), makeCtx())
+      expect(actions[0]!.type).toBe('noop')
+    })
   })
 
   describe('tool_executing', () => {
