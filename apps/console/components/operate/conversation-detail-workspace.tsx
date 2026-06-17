@@ -24,7 +24,6 @@ import { apiClient } from '@/lib/api/client'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { computeConversationMetrics } from '@/components/operate/conversation-metrics'
 import {
-  getRuntimeSourceTruth,
   summarizeConversationSourceTruth,
   summarizeToolPairing,
 } from '@/lib/operate/runtime-truth'
@@ -204,8 +203,7 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
       ),
     [traces],
   )
-  const { groupedCaseTraces, unassignedTraces } = useMemo(() => {
-    const grouped = new Map<string, TraceItem[]>()
+  const unassignedTraces = useMemo(() => {
     const knownRunIds = new Set((session?.cases.map((caseItem) => caseItem.runId).filter(Boolean) as string[]) ?? [])
     const unassigned: TraceItem[] = []
 
@@ -214,13 +212,14 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         unassigned.push(trace)
         continue
       }
-      const existing = grouped.get(trace.runId) ?? []
-      existing.push(trace)
-      grouped.set(trace.runId, existing)
     }
 
-    return { groupedCaseTraces: grouped, unassignedTraces: unassigned }
+    return unassigned
   }, [session, traces])
+  const toolTraceCount = useMemo(
+    () => traces.filter((trace) => normalizeTraceActionType(trace.actionType) === 'tool_result').length,
+    [traces],
+  )
 
   useEffect(() => {
     async function load() {
@@ -400,24 +399,31 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
             </details>
           </div>
         )}
-        {session?.cases.length ? (
+        {session ? (
           <div className={`${metrics.llmCalls > 0 ? 'mt-4 border-t border-black/[0.05] pt-4' : ''} space-y-2`}>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]/70">{isZh ? '流程运行' : 'ProcedureRuns'}</p>
-            <div className="flex flex-wrap gap-2">
-              {session.cases.map((caseItem) => (
-                <Link
-                  key={caseItem.id}
-                  href={withAgent(caseItem.runId
-                    ? `/operate/conversations/runs/${encodeURIComponent(caseItem.runId)}`
-                    : `/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-black/[0.06] bg-white/70 px-3 py-1.5 transition-colors hover:border-indigo/20"
-                  title={isZh ? '查看流程运行详情' : 'View ProcedureRun details'}
-                >
-                  <CasePill caseItem={caseItem} />
-                  <BarChart3 className="h-3.5 w-3.5 text-[var(--fog)]" />
-                </Link>
-              ))}
-            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]/70">{isZh ? '运行分析' : 'Run analysis'}</p>
+            <Link
+              href={withAgent(`/operate/conversations/${encodeURIComponent(activeChatId)}/analysis`)}
+              className="flex flex-col gap-3 rounded-2xl border border-black/[0.06] bg-white/70 px-4 py-3 transition-colors hover:border-indigo/20 hover:bg-white/90 sm:flex-row sm:items-center sm:justify-between"
+              title={isZh ? '查看整个会话的工具、Token、耗时与完整 Trace' : 'View whole-chat tools, tokens, timing, and full trace'}
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo/[0.08] text-indigo">
+                  <BarChart3 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-[var(--mist)]">{isZh ? '会话运行分析' : 'Chat run analysis'}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--fog)]">
+                    {isZh ? '按整个 Chat 聚合，不再绑定单个 ProcedureRun' : 'Aggregated by whole chat, not a single ProcedureRun'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-[var(--fog)]">
+                <span className="rounded-lg border border-black/[0.05] bg-black/[0.02] px-2 py-1">{session.cases.length} {isZh ? '个流程记录' : 'flow records'}</span>
+                <span className="rounded-lg border border-black/[0.05] bg-black/[0.02] px-2 py-1">{toolTraceCount} {isZh ? '次工具' : 'tools'}</span>
+                <span className="rounded-lg border border-black/[0.05] bg-black/[0.02] px-2 py-1">{traces.length} trace</span>
+              </div>
+            </Link>
           </div>
         ) : null}
       </section>
@@ -442,21 +448,21 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         ))}
       </div>
 
-      {/* Chat-level timeline only — per-ProcedureRun evidence lives in the run sub-page */}
+      {/* Main page stays lightweight; full chat-level evidence lives in the analysis sub-page. */}
       {activeTab === 'timeline' && (
         unassignedTraces.length > 0 ? (
           <section className="rounded-2xl border border-black/[0.06] bg-white/[0.66] p-4">
             <div className="mb-3">
               <h3 className="text-[12px] font-semibold text-[var(--mist)]">{isZh ? '会话级时间线' : 'Chat-level timeline'}</h3>
               <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
-                {isZh ? '这些事件记录在会话层；单个流程运行的完整证据（含原始 Prompt、工具 input/output）请点上方「流程运行」进入详情查看。' : 'These events were recorded at the chat level. Open a ProcedureRun above for its full per-run evidence (raw prompt, tool input/output).'}
+                {isZh ? '这些事件记录在会话层；完整工具 input/output、Token 与耗时请进入上方「会话运行分析」。' : 'These events were recorded at the chat level. Open Chat run analysis above for full tool input/output, tokens, and timing.'}
               </p>
             </div>
             <CaseTraceTimeline traces={unassignedTraces} t={t} groupByIteration={false} />
           </section>
         ) : (
           <p className="rounded-2xl border border-dashed border-black/[0.08] bg-white/50 px-4 py-8 text-center text-[12px] text-[var(--fog)]">
-            {isZh ? '没有会话级事件；请点上方「流程运行」查看完整时间线与证据。' : 'No chat-level events. Open a ProcedureRun above for its full timeline and evidence.'}
+            {isZh ? '没有会话级事件；请打开上方「会话运行分析」查看完整时间线与证据。' : 'No chat-level events. Open Chat run analysis above for the full timeline and evidence.'}
           </p>
         )
       )}
