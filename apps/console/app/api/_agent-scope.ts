@@ -14,6 +14,10 @@ export interface AgentCaseScope {
   runIds: string[]
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0))]
+}
+
 function isLegacyRunAgentConfig(agentConfigId: string | null | undefined): boolean {
   const normalized = agentConfigId?.trim().toLowerCase()
   return !normalized || normalized === 'unknown'
@@ -35,13 +39,33 @@ export function requireSelectedAgentFromInput(input: { agentId?: string | null; 
 
 export async function resolveAgentCaseScope(repo: RepoForOrg, agentConfigId: string): Promise<AgentCaseScope> {
   await assertAgentInOrg(repo, agentConfigId)
-  const runs = await repo.raw.procedureRun.findMany({
-    where: { orgId: repo.orgId, agentConfigId },
-    orderBy: { updatedAt: 'desc' as const },
-    select: { id: true, caseId: true },
-  })
-  const caseIds = [...new Set(runs.map((run: AgentScopedRun) => run.caseId))]
-  const runIds = [...new Set(runs.map((run: AgentScopedRun) => run.id))]
+  const [runs, channelConversations, playgroundCases] = await Promise.all([
+    repo.raw.procedureRun.findMany({
+      where: { orgId: repo.orgId, agentConfigId },
+      orderBy: { updatedAt: 'desc' as const },
+      select: { id: true, caseId: true },
+    }),
+    repo.externalConversation.findMany({
+      where: {
+        internalCaseId: { not: null },
+        metadata: { path: ['agentConfigId'], equals: agentConfigId },
+      },
+      select: { internalCaseId: true },
+    }),
+    repo.raw.case.findMany({
+      where: {
+        orgId: repo.orgId,
+        chatId: { startsWith: `pg_${agentConfigId}_` },
+      },
+      select: { id: true },
+    }),
+  ])
+  const caseIds = uniqueStrings([
+    ...runs.map((run: AgentScopedRun) => run.caseId),
+    ...channelConversations.map((conversation: { internalCaseId: string | null }) => conversation.internalCaseId),
+    ...playgroundCases.map((caseRow: { id: string }) => caseRow.id),
+  ])
+  const runIds = uniqueStrings(runs.map((run: AgentScopedRun) => run.id))
 
   return { agentConfigId, runs, caseIds, runIds }
 }
@@ -89,7 +113,7 @@ export async function resolveAgentCaseScopeForChat(
 
   return {
     ...scope,
-    caseIds: [...new Set([...scope.caseIds, ...unscopedCaseIds, ...legacyPlaygroundCaseIds])],
+    caseIds: uniqueStrings([...scope.caseIds, ...unscopedCaseIds, ...legacyPlaygroundCaseIds]),
   }
 }
 
