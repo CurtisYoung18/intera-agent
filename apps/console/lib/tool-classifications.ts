@@ -26,4 +26,5 @@ export const SPECIAL_TOOL_NAMES = new Set<string>([
 export const RETIRED_TOOL_NAMES = new Set([
   'dispatch_case_agent',
   'finalize_case',
+  'reconcile_procedure_input',
 ])
