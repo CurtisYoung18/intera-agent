@@ -44,24 +44,30 @@ function readCreateMomentsSDK(): CreateMomentsSDK | null {
   return null
 }
 
-export function ensureMomentsSdk(options?: {
+export async function ensureMomentsSdk(options?: {
   title?: string
   icon?: string
   isFragile?: boolean
 }): Promise<MomentsSdkClient | null> {
-  if (typeof window === 'undefined') return Promise.resolve(null)
-  if (window.__interaMomentsSdkPromise) return window.__interaMomentsSdkPromise
+  if (typeof window === 'undefined') return null
+  if (window.__interaMomentsSdkPromise) {
+    const cached = await window.__interaMomentsSdkPromise.catch(() => null)
+    if (cached) return cached
+    window.__interaMomentsSdkPromise = undefined
+  }
 
   const existingClient = readExistingMomentsClient()
   if (existingClient) {
     window.__interaMomentsSdkPromise = Promise.resolve(existingClient)
-    return window.__interaMomentsSdkPromise
+    return existingClient
   }
 
   const createImmediately = readCreateMomentsSDK()
   if (createImmediately) {
     window.__interaMomentsSdkPromise = Promise.resolve(createImmediately(options)).catch(() => null)
-    return window.__interaMomentsSdkPromise
+    const sdk = await window.__interaMomentsSdkPromise
+    if (!sdk) window.__interaMomentsSdkPromise = undefined
+    return sdk
   }
 
   window.__interaMomentsSdkPromise = new Promise<MomentsSdkClient | null>((resolve) => {
@@ -125,7 +131,9 @@ export function ensureMomentsSdk(options?: {
     document.body.appendChild(script)
   })
 
-  return window.__interaMomentsSdkPromise
+  const sdk = await window.__interaMomentsSdkPromise
+  if (!sdk) window.__interaMomentsSdkPromise = undefined
+  return sdk
 }
 
 function signalReturnToChat(): boolean {

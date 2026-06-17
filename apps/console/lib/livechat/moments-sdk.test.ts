@@ -18,10 +18,10 @@ describe('closeMomentIfPossible', () => {
     window.MomentsSDK = undefined
   })
 
-  it('does not navigate the browser when no Moments SDK close handler is available', async () => {
+  it('does not navigate the browser when the runtime has no close handler', async () => {
     const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
     const closeSpy = vi.spyOn(window, 'close').mockImplementation(() => {})
-    window.__interaMomentsSdkPromise = Promise.resolve(null)
+    window.__interaMomentsSdkPromise = Promise.resolve({})
 
     const { closeMomentIfPossible } = await import('@/lib/livechat/moments-sdk')
     const closed = await closeMomentIfPossible({ title: 'Transaction History Details' })
@@ -57,6 +57,19 @@ describe('closeMomentIfPossible', () => {
     expect(closeSpy).toHaveBeenCalledTimes(1)
     expect(backSpy).not.toHaveBeenCalled()
     expect(closeWindowSpy).not.toHaveBeenCalled()
+  })
+
+  it('rechecks the runtime when an earlier cached null SDK becomes available later', async () => {
+    const closeSpy = vi.fn(async () => {})
+    window.__interaMomentsSdkPromise = Promise.resolve(null)
+
+    const { closeMomentIfPossible } = await import('@/lib/livechat/moments-sdk')
+    window.MomentsSDK = { close: closeSpy }
+
+    const closed = await closeMomentIfPossible({ title: 'Transaction History Details' })
+
+    expect(closed).toBe(true)
+    expect(closeSpy).toHaveBeenCalledTimes(1)
   })
 
   it('does not force browser navigation when sdk.close() rejects', async () => {
