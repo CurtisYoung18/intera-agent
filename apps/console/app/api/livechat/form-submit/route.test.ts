@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetSession = vi.fn()
 const mockGetLiveChatConfigForFamily = vi.fn()
+const mockGetLiveChatConfigForOrg = vi.fn()
 const mockHandleIncomingEvent = vi.fn()
 
 vi.mock('@/lib/api/define-route', () => ({
@@ -17,6 +18,7 @@ vi.mock('@/lib/livechat/session-store', () => ({
 
 vi.mock('@/lib/livechat/config-store', () => ({
   getLiveChatConfigForFamily: (...args: unknown[]) => mockGetLiveChatConfigForFamily(...args),
+  getLiveChatConfigForOrg: (...args: unknown[]) => mockGetLiveChatConfigForOrg(...args),
 }))
 
 vi.mock('@/lib/livechat/bridge', () => ({
@@ -37,6 +39,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockHandleIncomingEvent.mockResolvedValue(undefined)
   mockGetLiveChatConfigForFamily.mockResolvedValue(null)
+  mockGetLiveChatConfigForOrg.mockResolvedValue(null)
 })
 
 describe('POST /api/livechat/form-submit', () => {
@@ -55,13 +58,12 @@ describe('POST /api/livechat/form-submit', () => {
 
     const res = await POST(makeRequest({
       chatId: 'chat-1',
-      orgId: 'default',
-      agentConfigId: 'agent-1',
       answers: { member_id: 'JAYA11C5184', amount: 800 },
     }) as any)
 
     expect(res.status).toBe(200)
     expect(mockGetLiveChatConfigForFamily).toHaveBeenCalledWith('agent-1')
+    expect(mockGetLiveChatConfigForOrg).not.toHaveBeenCalled()
     expect(mockHandleIncomingEvent).toHaveBeenCalledWith(
       'chat-1',
       'default',
@@ -78,44 +80,58 @@ describe('POST /api/livechat/form-submit', () => {
     )
   })
 
-  it('rejects form submission when request agent scope does not match the stored session', async () => {
+  it('falls back to the org active binding for legacy sessions that predate agentConfig persistence', async () => {
+    const config = { enabled: true, botAccessToken: 'bot', licenseId: 'lic' }
     mockGetSession.mockResolvedValue({
-      chatId: 'chat-1',
+      chatId: 'chat-legacy',
       orgId: 'default',
       userId: 'user-2',
-      caseId: 'case-1',
-      agentConfigId: 'agent-1',
+      caseId: 'case-legacy',
       state: 'idle',
       textBuffer: '',
     })
+    mockGetLiveChatConfigForOrg.mockResolvedValue({
+      agentConfigId: 'agent-active',
+      config,
+    })
 
     const res = await POST(makeRequest({
-      chatId: 'chat-1',
-      orgId: 'default',
-      agentConfigId: 'agent-2',
+      chatId: 'chat-legacy',
+      caseId: 'case-legacy',
       answers: { member_id: 'JAYA11C5184' },
     }) as any)
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     expect(mockGetLiveChatConfigForFamily).not.toHaveBeenCalled()
-    expect(mockHandleIncomingEvent).not.toHaveBeenCalled()
+    expect(mockGetLiveChatConfigForOrg).toHaveBeenCalledWith('default')
+    expect(mockHandleIncomingEvent).toHaveBeenCalledWith(
+      'chat-legacy',
+      'default',
+      'user-2',
+      {
+        type: 'form_submit',
+        form: {
+          caseId: 'case-legacy',
+          answers: { member_id: 'JAYA11C5184' },
+        },
+      },
+      config,
+      'agent-active',
+    )
   })
 
-  it('returns 404 when the scoped agent LiveChat binding is not configured', async () => {
+  it('returns 404 when neither the session binding nor the org fallback is configured', async () => {
     mockGetSession.mockResolvedValue({
       chatId: 'chat-missing',
       orgId: 'default',
       userId: 'user-3',
       caseId: 'case-missing',
-      agentConfigId: 'agent-1',
       state: 'idle',
       textBuffer: '',
     })
 
     const res = await POST(makeRequest({
       chatId: 'chat-missing',
-      orgId: 'default',
-      agentConfigId: 'agent-1',
       answers: { member_id: 'JAYA11C5184' },
     }) as any)
 

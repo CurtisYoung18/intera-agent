@@ -9,7 +9,6 @@ function makeCtx(overrides?: Partial<RenderContext>): RenderContext {
   return {
     caseId: 'case-1',
     orgId: 'cust-1',
-    agentConfigId: 'agent-1',
     sessionId: 'chat-1',
     binding: { channel: 'livechat', enabled: true, credentials: {} } as ChannelBindingConfig,
     ...overrides,
@@ -131,8 +130,6 @@ describe('LiveChatRenderer', () => {
       expect(card.buttons[0]!.label).toBe('Fill details')
       expect(card.buttons[0]!.type).toBe('webview')
       expect(card.buttons[0]!.url).toContain('view=form')
-      expect(card.buttons[0]!.url).toContain('orgId=cust-1')
-      expect(card.buttons[0]!.url).toContain('agentConfigId=agent-1')
       expect(card.buttons[0]!.url).toContain('description=Please+fill+in+the+requested+details.')
     })
 

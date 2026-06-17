@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intera Console UI/UX 走查报告</title>
+<style>
+  :root{
+    --bg:#f6f7f5; --card:#ffffff; --ink:#1f2421; --muted:#6b726c; --line:#e4e7e3;
+    --green:#2f6b4f; --green-soft:#e8f1ec; --amber:#b6791f; --amber-soft:#fbf1de;
+    --red:#c0392b; --red-soft:#fbeae8; --blue:#2d5b8e; --blue-soft:#e8eef6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.65;font-size:15px}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 28px 80px}
+  header.top{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:8px}
+  .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--green);font-weight:700}
+  h1{font-size:30px;margin:8px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px}
+  h2{font-size:21px;margin:46px 0 14px;padding-top:18px;border-top:1px solid var(--line)}
+  h3{font-size:16px;margin:26px 0 8px}
+  p{margin:10px 0}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
+  .meta div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px}
+  .meta b{display:block;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0 6px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border-radius:999px;padding:3px 11px}
+  .p-hi{background:var(--red-soft);color:var(--red)}
+  .p-md{background:var(--amber-soft);color:var(--amber)}
+  .p-lo{background:var(--blue-soft);color:var(--blue)}
+  .p-bug{background:#2b2f2c;color:#fff}
+  .issue{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0;
+    box-shadow:0 1px 0 rgba(0,0,0,.02)}
+  .issue h3{margin-top:0;display:flex;align-items:flex-start;gap:10px;font-size:16.5px}
+  .issue h3 .num{color:var(--green);font-variant-numeric:tabular-nums;font-weight:800}
+  .loc{font-size:12.5px;color:var(--muted);margin:-2px 0 12px;padding-left:2px}
+  .loc b{color:var(--ink)}
+  .row{display:grid;grid-template-columns:96px 1fr;gap:6px 14px;margin:9px 0}
+  .row .k{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+  .row .v{font-size:14.5px}
+  .row.fe .k{color:var(--green)}
+  code{background:#eef0ed;border-radius:5px;padding:1px 6px;font-size:12.5px;font-family:"SF Mono",ui-monospace,Menlo,monospace}
+  figure{margin:14px 0 4px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fcfdfc}
+  figcaption{font-size:12px;color:var(--muted);padding:8px 12px;border-top:1px solid var(--line);background:#fff}
+  svg{display:block;width:100%;height:auto}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:#fff}
+  tr:nth-child(even) td{background:#fbfcfb}
+  .tag{display:inline-block;font-size:11px;font-weight:700;border-radius:5px;padding:1px 7px;background:var(--green-soft);color:var(--green)}
+  .note{background:var(--amber-soft);border:1px solid #eccf93;border-radius:10px;padding:12px 16px;font-size:13.5px;margin:16px 0}
+  ul.clean{margin:8px 0;padding-left:20px}
+  ul.clean li{margin:5px 0}
+  .foot{color:var(--muted);font-size:12.5px;margin-top:40px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">UI / UX 走查报告</div>
+  <h1>Intera Console 交付配置体验评审</h1>
+  <div class="sub">站点：demo.anytrans.ai　·　视角：交付配置人员（Delivery / Config Operator）　·　日期：2026-06-16</div>
+</header>
+
+<div class="meta">
+  <div><b>走查 Agent</b>J1N (v1)、J1B (v3 · Live)</div>
+  <div><b>覆盖页面</b>试点实验室 / Playground / 发布 / 组件(流程·钩子·…) / 对话 / 人工交接 / 组织 / Agent 切换</div>
+  <div><b>方法</b>真实账号登录逐页操作 + 实操新建/编辑/保存/删除 + DOM 检查</div>
+  <div><b>问题数</b>24 项（含 2 个功能性 Bug + 实操 CRUD 发现）</div>
+</div>
+
+<p>整体印象：信息架构与状态模型是认真设计过的（草稿→验证→发布的门禁逻辑清晰，主从编辑布局合理）。
+体验上的主要短板集中在三处：<b>本地化不一致（最普遍）</b>、<b>两个把内部标识符直接渲染给用户的 Bug</b>、以及<b>把过多控件塞进单一窄栏导致的认知负担</b>。
+下面按严重程度排序，每条都给出现象、影响、改进方案与前端实现建议。</p>
+
+<div class="legend">
+  <span class="pill p-bug">Bug 功能缺陷</span>
+  <span class="pill p-hi">高 影响日常操作</span>
+  <span class="pill p-md">中 摩擦/困惑</span>
+  <span class="pill p-lo">低 打磨项</span>
+</div>
+
+<div class="note">
+关于截图：本环境的页面采用了较新的 CSS <code>color()</code> 颜色函数，常规网页截图库无法导出像素截图，因此报告对几个关键问题采用<b>带标注的界面还原图（红色为问题标注）</b>来精确定位，比原始截图更便于指认。每条均注明了准确的页面路径，便于你在站内复现。
+</div>
+
+<!-- ========== BUGS ========== -->
+<h2>一、功能性 Bug（建议优先修）</h2>
+
+<div class="issue">
+  <h3><span class="num">B1.</span> 图标渲染失败：图标名称以文字形式显示并遮挡卡片标题 <span class="pill p-bug" style="margin-left:auto">Bug</span></h3>
+  <div class="loc"><b>位置：</b>组件 → 流程（Procedure 列表卡片）　<code>/build/components/procedures</code></div>
+  <figure>
+  <svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,PingFang SC,sans-serif">
+    <rect width="900" height="250" fill="#fcfdfc"/>
+    <rect x="40" y="30" width="500" height="190" rx="12" fill="#fff" stroke="#e4e7e3"/>
+    <text x="60" y="78" font-size="30" fill="#d7dbd6" font-weight="700">banknote-</text>
+    <text x="60" y="110" font-size="30" fill="#d7dbd6" font-weight="700">arrow-</text>
+    <text x="60" y="142" font-size="30" fill="#d7dbd6" font-weight="700">down</text>
+    <text x="175" y="76" font-size="18" fill="#1f2421" font-weight="700">Deposit not credited</text>
+    <text x="175" y="98" font-size="12" fill="#6b726c" font-family="monospace">deposit_not_credited</text>
+    <text x="60" y="178" font-size="13" fill="#9aa09a">Customer says a deposit / 存款 / 充值 … balance did not update.</text>
+    <rect x="60" y="195" width="62" height="20" rx="10" fill="#e8f1ec"/><text x="70" y="209" font-size="11" fill="#2f6b4f">6 steps</text>
+    <!-- annotation -->
+    <path d="M150 95 C 250 40, 600 40, 700 70" stroke="#c0392b" stroke-width="2" fill="none" marker-end="url(#a1)"/>
+    <defs><marker id="a1" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c0392b"/></marker></defs>
+    <rect x="585" y="78" width="290" height="120" rx="9" fill="#fbeae8" stroke="#e3a79f"/>
+    <text x="600" y="104" font-size="13" fill="#c0392b" font-weight="700">实为 Lucide 图标名 “banknote-arrow-down”</text>
+    <text x="600" y="126" font-size="12.5" fill="#7a2b22">被当作文字渲染，换行三行，</text>
+    <text x="600" y="146" font-size="12.5" fill="#7a2b22">与标题/描述重叠，难以阅读。</text>
+    <text x="600" y="172" font-size="12" fill="#7a2b22">同页其它卡片：lock / smartphone /</text>
+    <text x="600" y="190" font-size="12" fill="#7a2b22">history 同样以名称形式出现。</text>
+  </svg>
+  <figcaption>界面还原图：装饰性大字其实是图标标识符字符串，图标组件未能解析名称而回退成了文本。</figcaption>
+  </figure>
+  <div class="row"><div class="k">现象</div><div class="v">每张 Procedure 卡片左侧的大号浅色"水印词"其实是图标名（<code>lock</code>、<code>smartphone</code>、<code>banknote-arrow-down</code>、<code>history</code>），本应渲染为图标却以纯文本显示，并与卡片标题、编号、描述重叠。<code>banknote-arrow-down</code> 换行三行，遮挡最严重。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">显得"半成品"，直接削弱产品可信度；重叠文字干扰对 Procedure 标题的快速识别。</div></div>
+  <div class="row"><div class="k">改进</div><div class="v">解析失败时不应回退成名称文本——要么渲染正确图标，要么显示一个中性占位图标。装饰元素必须置于内容层之下且不可干扰阅读。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 检查图标映射：动态 <code>name</code> 多半未在打包白名单内（如 lucide 的 <code>dynamicIconImports</code> 缺项），补齐映射或改用静态 import map；② fallback 渲染占位 <code>&lt;HelpCircle/&gt;</code> 而非 <code>{name}</code> 字符串；③ 水印层加 <code>position:absolute; z-index:0; pointer-events:none; overflow:hidden</code>，标题层 <code>z-index:1</code>，并对卡片加 <code>overflow:hidden</code> 裁剪。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-bug">Bug</span> <span class="pill p-hi">高</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">B2.</span> i18n 翻译键泄漏：未翻译的 key 直接显示给用户 <span class="pill p-bug" style="margin-left:auto">Bug</span></h3>
+  <div class="loc"><b>位置：</b>组件 → 流程 → 打开某 Procedure → 右侧"模拟"面板　<code>/build/components/procedures/&lt;id&gt;</code></div>
+  <figure>
+  <svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,PingFang SC,sans-serif">
+    <rect width="900" height="220" fill="#fcfdfc"/>
+    <rect x="40" y="24" width="430" height="170" rx="10" fill="#fff" stroke="#e4e7e3"/>
+    <text x="60" y="58" font-size="14" fill="#1f2421" font-weight="600">已观察到的 Tool 名称</text>
+    <rect x="60" y="70" width="380" height="32" rx="8" fill="#fff" stroke="#e4e7e3"/>
+    <text x="74" y="91" font-size="13" fill="#aeb4ae" font-family="monospace">get_latest_deposit, kb_search_faq…</text>
+    <text x="60" y="134" font-size="14" fill="#c0392b" font-family="monospace" font-weight="700">procedureEditor.simulation.knowledgeToolNames</text>
+    <rect x="60" y="146" width="380" height="32" rx="8" fill="#fbeae8" stroke="#e3a79f"/>
+    <text x="74" y="167" font-size="12.5" fill="#c0392b" font-family="monospace">procedureEditor.placeholder.simulationKnowled…</text>
+    <path d="M470 138 C 540 138, 560 110, 610 110" stroke="#c0392b" stroke-width="2" fill="none" marker-end="url(#a2)"/>
+    <defs><marker id="a2" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c0392b"/></marker></defs>
+    <text x="615" y="96" font-size="13" fill="#c0392b" font-weight="700">标签与 placeholder 都是</text>
+    <text x="615" y="116" font-size="13" fill="#c0392b" font-weight="700">未解析的 i18n key</text>
+    <text x="615" y="142" font-size="12" fill="#7a2b22">应显示中文（或英文）文案，</text>
+    <text x="615" y="160" font-size="12" fill="#7a2b22">现在直接暴露内部命名空间。</text>
+  </svg>
+  <figcaption>界面还原图：标签 <code>procedureEditor.simulation.knowledgeToolNames</code> 与占位符 <code>procedureEditor.placeholder.simulationKnowled…</code> 原样显示。</figcaption>
+  </figure>
+  <div class="row"><div class="k">现象</div><div class="v">模拟面板中至少有一处标签和一处 placeholder 显示的是 i18n key 本身，而非翻译后的文案。说明对应语言包缺少该键，框架回退成了显示 key。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">用户完全看不懂该字段含义；同样严重影响专业观感。这类缺键往往不止一处。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 补齐 <code>zh</code>（及 <code>en</code>）语言包中 <code>procedureEditor.*</code> 缺失条目；② i18n 配置 <code>fallbackLng</code> + <code>parseMissingKeyHandler</code>，缺键时显示更友好的回退文案而非 key；③ 开启 <code>saveMissing</code>/<code>missingKeyHandler</code> 在开发期告警；④ CI 加一条"翻译键完整性"校验，扫描代码中 <code>t('…')</code> 与语言包做 diff，缺键即失败。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-bug">Bug</span> <span class="pill p-hi">高</span>　工作量：小</div></div>
+</div>
+
+<!-- ========== LOCALIZATION ========== -->
+<h2>二、本地化一致性（全站最普遍的问题）</h2>
+
+<div class="issue">
+  <h3><span class="num">L1.</span> 中英文混杂，且术语未本地化</h3>
+  <div class="loc"><b>位置：</b>全站，尤以 组织设置 / 发布 / 组件首页 最明显</div>
+  <figure>
+  <svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,PingFang SC,sans-serif">
+    <rect width="900" height="250" fill="#fcfdfc"/>
+    <text x="40" y="44" font-size="22" fill="#1f2421" font-weight="700">组织</text>
+    <text x="40" y="74" font-size="13" fill="#6b726c">Manage the workspace name, member access, invitation flow, and the</text>
+    <text x="40" y="94" font-size="13" fill="#6b726c">permission matrix without leaving the quiet material language…</text>
+    <rect x="560" y="30" width="150" height="26" rx="6" fill="#fff" stroke="#e4e7e3"/><text x="572" y="47" font-size="11.5" fill="#3a403b">Organization profile</text>
+    <rect x="560" y="62" width="180" height="26" rx="6" fill="#fff" stroke="#e4e7e3"/><text x="572" y="79" font-size="11.5" fill="#3a403b">Members and invitations</text>
+    <rect x="560" y="94" width="150" height="26" rx="6" fill="#fff" stroke="#e4e7e3"/><text x="572" y="111" font-size="11.5" fill="#3a403b">Permission matrix</text>
+    <rect x="40" y="135" width="64" height="30" rx="7" fill="#eef1ee"/><text x="54" y="155" font-size="13" fill="#1f2421">通用</text>
+    <rect x="112" y="135" width="64" height="30" rx="7" fill="#fff" stroke="#e4e7e3"/><text x="126" y="155" font-size="13" fill="#3a403b">成员</text>
+    <rect x="184" y="135" width="64" height="30" rx="7" fill="#fff" stroke="#e4e7e3"/><text x="198" y="155" font-size="13" fill="#3a403b">权限</text>
+    <path d="M745 80 C 800 80, 800 150, 250 150" stroke="#c0392b" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+    <defs><marker id="a3" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#c0392b"/></marker></defs>
+    <rect x="40" y="185" width="820" height="50" rx="9" fill="#fbeae8" stroke="#e3a79f"/>
+    <text x="56" y="206" font-size="12.5" fill="#c0392b" font-weight="700">同一页里：整段英文说明 + 右上英文导航（Organization profile / Members and invitations / Permission matrix）</text>
+    <text x="56" y="225" font-size="12.5" fill="#7a2b22">与下方中文 Tab（通用 / 成员 / 权限）功能重复 —— 既混语言又重复导航。</text>
+  </svg>
+  <figcaption>界面还原图：组织设置页同时存在英文说明段、英文导航链接和中文 Tab。</figcaption>
+  </figure>
+  <div class="row"><div class="k">现象</div><div class="v">中文界面里大量保留英文术语与整段英文：<br>
+  · 组织页说明整段英文，且右上"Organization profile / Members and invitations / Permission matrix"与下方"通用/成员/权限"<b>语言不同且功能重复</b>；<br>
+  · 发布页："Import dry-run 会继续检查 Required secrets、conflicts、unsupported integrations 和 Knowledge refs"；<br>
+  · 组件首页："把 Brain、Procedures、Tools、Hooks、Knowledge 和 Integrations 收进同一个本地 Build hub…克制 chip"；<br>
+  · 通用术语 draft / proposal / diff / handoff / brief / compact / trace / memory / scenario 等几乎从不翻译。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">对中文交付/运营人员阅读成本高；"克制 chip""Build 壳层"这类直译更让人困惑；专业度受损。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 制定<b>术语表</b>：决定哪些为产品专有名词保留英文（如 Procedure/Hook 可保留并首次出现括注中文），其余一律翻译，并全站统一；② 把所有硬编码文案收进 i18n 资源；③ 删除组织页重复的英文导航，只保留一套（建议中文 Tab）；④ 找一位中文母语者过一遍 microcopy。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-hi">高</span>　工作量：中</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">L2.</span> 同一功能多种叫法 / 标签语言不统一</h3>
+  <div class="loc"><b>位置：</b>人工交接页、对话页统计卡</div>
+  <div class="row"><div class="k">现象</div><div class="v">"人工交接"功能在三处叫法不一：左侧导航＝<b>人工交接</b>、页面标题＝<b>人工接管指挥台</b>、页内标签＝<b>人工接管</b>（交接/接管混用）。对话页统计卡标签语言/大小写不一致：<code>会话数</code>、<code>待接手</code>、<code>PROCEDURERUNS</code>（唯独这张全大写英文）。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">同义异名让用户怀疑是不是两个不同功能；统计卡视觉不齐。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">统一为单一术语（建议全用"人工接管"或"人工交接"其一），导航、标题、标签、面包屑共用同一 i18n key；统计卡标签统一走同一套样式与语言。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">L3.</span> 未翻译的状态串散落各处</h3>
+  <div class="loc"><b>位置：</b>Playground 徽章行、发布页</div>
+  <div class="row"><div class="k">现象</div><div class="v">Playground 顶部徽章：<code>图片 Not supported</code>、<code>MEMORY Balanced</code>、<code>HOOKS 4个</code>、<code>TEMP 0.3</code> 中英大小写混排；发布页 <code>1/5 retained</code>、<code>No draft</code> / <code>Awaiting draft</code>、<code>发布人 不可用</code>（"不可用"实为"未记录/无"，措辞误导）。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">状态枚举统一走 i18n；"retained"译为"已保留 1/5"；"不可用"按真实语义改为"未填写/暂无"；徽章 label 统一为小型大写或中文，二选一。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小</div></div>
+</div>
+
+<!-- ========== IA / LAYOUT ========== -->
+<h2>三、信息架构与布局</h2>
+
+<div class="issue">
+  <h3><span class="num">A1.</span> 试点实验室右栏严重过载</h3>
+  <div class="loc"><b>位置：</b>试点实验室 → Pilot 标签，右侧栏　<code>/build/pilot-lab</code></div>
+  <figure>
+  <svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,PingFang SC,sans-serif">
+    <rect width="900" height="300" fill="#fcfdfc"/>
+    <rect x="40" y="20" width="430" height="260" rx="10" fill="#fff" stroke="#e4e7e3"/>
+    <text x="60" y="48" font-size="13" fill="#9aa09a">主编辑区（聊天）— 问候 + 4 个建议后大片空白</text>
+    <rect x="60" y="60" width="390" height="40" rx="8" fill="#f3f5f2"/>
+    <rect x="60" y="108" width="185" height="30" rx="8" fill="#f3f5f2"/><rect x="265" y="108" width="185" height="30" rx="8" fill="#f3f5f2"/>
+    <rect x="490" y="20" width="370" height="260" rx="10" fill="#fff" stroke="#c0392b"/>
+    <text x="505" y="42" font-size="11.5" fill="#3a403b" font-weight="700">当前上下文</text>
+    <text x="505" y="64" font-size="11.5" fill="#3a403b" font-weight="700">Pilot 状态（多行 label:value）</text>
+    <text x="505" y="86" font-size="11.5" fill="#3a403b" font-weight="700">提议改动 + 生成 proposal</text>
+    <text x="505" y="108" font-size="11.5" fill="#3a403b" font-weight="700">Diff 查看器</text>
+    <text x="505" y="130" font-size="11.5" fill="#3a403b" font-weight="700">☑ 我已检查 diff → 应用草稿</text>
+    <text x="505" y="152" font-size="11.5" fill="#c0392b" font-weight="700">Scenario 控制（20+ 字段表单）</text>
+    <line x1="505" y1="160" x2="845" y2="160" stroke="#eee"/>
+    <text x="505" y="178" font-size="10.5" fill="#7a2b22">名称/显示名/描述/语言/标签/启用…</text>
+    <text x="505" y="196" font-size="10.5" fill="#7a2b22">对话轮次（角色+内容，可多条）</text>
+    <text x="505" y="214" font-size="10.5" fill="#7a2b22">期望 Procedure/Tools/最终状态…</text>
+    <rect x="505" y="224" width="340" height="22" rx="5" fill="#fbeae8" stroke="#e3a79f"/><text x="515" y="239" font-size="10.5" fill="#c0392b" font-family="monospace">期望 Tool-call 规则 JSON（手写原始 JSON）</text>
+    <rect x="505" y="250" width="340" height="22" rx="5" fill="#fbeae8" stroke="#e3a79f"/><text x="515" y="265" font-size="10.5" fill="#c0392b" font-family="monospace">期望 Hook 决策 JSON / observed evidence JSON</text>
+  </svg>
+  <figcaption>界面还原图：右栏把上下文、状态、提议、Diff、应用、以及一整套超长 Scenario 编写表单全部纵向堆在一条窄栏里。</figcaption>
+  </figure>
+  <div class="row"><div class="k">现象</div><div class="v">右栏在一条窄列里依次堆叠：当前上下文 → Pilot 状态 → 提议改动 → Diff 查看器 → 接受并应用 → <b>Scenario 控制（含 20+ 字段、多个需手写的原始 JSON 输入框</b>，如"期望 Tool-call 规则 JSON""期望 Hook 决策 JSON""observed evidence JSON"）。需要大量滚动，且编辑场景与查看状态混在一起。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">认知负担高；手写 JSON 对配置人员极不友好、易出错且无即时校验；中间主区却大片留白，空间分配失衡。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 把"Scenario 编写"从右栏抽出，改为<b>独立抽屉/全宽弹层或独立页</b>，并做<b>分步表单</b>（基本信息 → 对话轮次 → 断言期望）；② 原始 JSON 字段换成<b>结构化编辑器</b>（键值/数组 UI）或至少接入带 schema 校验+高亮的 JSON 编辑器（如 CodeMirror + JSON schema），失焦即校验报错；③ 右栏其余分区支持折叠、记忆展开状态；④ 把部分内容移到留白的主区，平衡左右比重。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-hi">高</span>　工作量：中–大</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">A2.</span> 组件首页表格"这里可以做什么"六行文案完全相同</h3>
+  <div class="loc"><b>位置：</b>组件首页　<code>/build/components</code></div>
+  <div class="row"><div class="k">现象</div><div class="v">大脑/流程/工具/钩子/知识库/集成六行，"这里可以做什么"列内容一字不差：<i>"在保留共享 Build 壳层、本地导航和各编辑器原有保存/测试流程的前提下，打开 X 控制面。"</i> 该列零信息量，反而占据视觉重心。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">为每个能力写<b>差异化一句话</b>（如 流程="定义 Agent 处理某类问题的步骤与分支"；钩子="在工具调用前后/回复前插入校验或拦截"）；或去掉该列，改为"能力简介 + 数量徽章（如 12 套 Procedure）+ 打开"。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">A3.</span> 主编辑区大片空白，核心配置全靠自由聊天</h3>
+  <div class="loc"><b>位置：</b>试点实验室 Pilot / Playground</div>
+  <div class="row"><div class="k">现象</div><div class="v">Pilot 与 Playground 中央区域只有一句问候 + 4 个建议 chip，其余大片空白；几乎所有结构化改动都要通过对 "U-Pilot" 自由打字完成。对偏流程化的"交付配置人员"而言，缺少表单/按钮式的直接入口。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 空状态补充引导（"从这里开始""最近改动""常用操作"卡片）；② 为高频操作（新建 Procedure / 加 Hook / 跑 Scenario）提供按钮式快捷入口，点击预填聊天或直接打开对应表单；③ 让聊天与结构化操作并存，而非二选一。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：中</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">A4.</span> 当前 Agent/版本 在同屏重复显示三次</h3>
+  <div class="loc"><b>位置：</b>试点实验室</div>
+  <div class="row"><div class="k">现象</div><div class="v">同一屏里"当前 Agent + 版本"出现三处、样式各异：顶部"正在编辑：J1N v1 当前版本▾"、左栏"当前 AGENT J1N v1"、主区标题"当前 Agent / J1N v1"。哪个可切换、哪个只读不清晰。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">确立单一权威的 Agent/版本切换控件（建议保留顶部"正在编辑"），其余改为弱化的只读上下文或移除；统一交互（可点即下拉，不可点即纯文本）。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-lo">低</span>　工作量：小</div></div>
+</div>
+
+<!-- ========== USABILITY ========== -->
+<h2>四、可用性与交互细节</h2>
+
+<div class="issue">
+  <h3><span class="num">U1.</span> 破坏性操作缺保护；纯图标按钮无标签</h3>
+  <div class="loc"><b>位置：</b>组件卡片、Procedure 编辑器顶栏</div>
+  <div class="row"><div class="k">现象</div><div class="v">每张 Procedure 卡片把红色"Delete"与"Open"并排放在卡片底部，易误点（删除是否二次确认待核实）；Procedure 编辑器顶栏的齿轮/垃圾桶/关闭等为纯图标按钮，无文字标签或 tooltip，含义需猜。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 删除等危险操作移入卡片"⋯ 更多"菜单，或保留但必须二次确认弹窗（输入名称/再次点击）；② 所有图标按钮补 <code>aria-label</code> + hover tooltip；③ 危险按钮用危险色但降低视觉权重（非主操作）。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">U2.</span> 禁用控件无原因提示</h3>
+  <div class="loc"><b>位置：</b>Playground 顶部"导出试跑评审副本"</div>
+  <div class="row"><div class="k">现象</div><div class="v">"导出试跑评审副本"为置灰禁用态，但没有任何说明为何不可用、需满足什么条件。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">禁用按钮加 tooltip 说明启用条件（如"需先完成一轮运行时测试"）；条件满足后自动启用。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-lo">低</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">U3.</span> "创建/派生草稿"入口多处并存，指向不清</h3>
+  <div class="loc"><b>位置：</b>发布页　<code>/build/release</code></div>
+  <div class="row"><div class="k">现象</div><div class="v">同一页出现多个语义相近的入口：黄条里的"创建草稿"、候选卡的"导入草稿"、次级版本动作里的"派生可编辑草稿"。用户难判断该用哪个、彼此差异是什么。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">明确区分"从 live 派生草稿"与"导入 package"两条路径，各保留一个主 CTA 并配一句话说明；移除冗余按钮，避免三处都像主操作。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">U4.</span> 面向用户的文案暴露后端 API 路径</h3>
+  <div class="loc"><b>位置：</b>试点实验室 → 应用草稿说明</div>
+  <div class="row"><div class="k">现象</div><div class="v">说明文字写道："这里的 Apply 只会调用 <code>/api/admin/config-pilot/apply</code>，写入 draft 配置…"。把内部接口路径直接展示给操作人员，属实现细节泄漏。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">改为业务语言描述行为与边界（"应用后会写入草稿配置并将验证标记为过期；发布、激活、回滚不在此处执行"），删除 API 路径。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-lo">低</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">U5.</span> 状态徽章语义与可点性模糊</h3>
+  <div class="loc"><b>位置：</b>试点实验室、发布页</div>
+  <div class="row"><div class="k">现象</div><div class="v">"自上次验证后已变更"做成药丸状、看着像按钮其实是状态；旁边"就绪"是极小灰字；绿点/"运行时已验证"/"尚未验证"等状态散落且视觉权重不一，难一眼判断当前处于哪一步。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">建立统一的<b>状态徽章组件</b>（颜色映射：绿=已验证/live、黄=待验证/已变更、灰=暂无），状态不可点，可点操作用真正的按钮样式区分；在显眼处给一个"当前阶段"指示，串起 草稿→验证→发布。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小–中</div></div>
+</div>
+
+<!-- ========== VISUAL ========== -->
+<h2>五、视觉与加载态</h2>
+
+<div class="issue">
+  <h3><span class="num">V1.</span> 左上 Logo 裁切/重叠</h3>
+  <div class="loc"><b>位置：</b>多页（加载或特定宽度时）</div>
+  <div class="row"><div class="k">现象</div><div class="v">侧栏顶部"intera"logo 多次出现字母被裁切、与"收起侧栏"按钮重叠的情况（如显示成"int e"）。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">检查 logo 容器宽度与折叠按钮的定位/层级；给 logo 区固定最小宽度，按钮用 <code>flex-shrink:0</code>，避免重叠；加载完成前用占位避免抖动。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-lo">低</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">V2.</span> 加载态简陋</h3>
+  <div class="loc"><b>位置：</b>切换 Agent、进入发布页等</div>
+  <div class="row"><div class="k">现象</div><div class="v">切换 Agent 或进入发布页时，整页只有一个小"正在加载发布控制台…"卡片浮在大片空白中，侧栏 logo 区为空白骨架，过渡突兀。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">用<b>布局级 skeleton</b>（保留侧栏、卡片轮廓的骨架屏）替代居中小卡片；侧栏 logo/agent 区给固定骨架，减少跳动。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-lo">低</span>　工作量：小</div></div>
+</div>
+
+<!-- ========== ACTION PLAN ========== -->
+<!-- ========== CRUD DEEP DIVE ========== -->
+<h2>六、实操 CRUD：深层交互发现</h2>
+<p>为了不停留在静态页面，我在 J1B 实际走了一遍"新建 → 编辑 → 保存 → 删除"的完整流程（新建了一个测试 Procedure「ZZ 测试流程-待删除」）。以下是只有动手操作才会暴露的问题，以及几处做得好的地方。</p>
+
+<div class="issue">
+  <h3><span class="num">C1.</span> 新建即生成时间戳 slug，并全程暴露给用户</h3>
+  <div class="loc"><b>位置：</b>组件 → 流程 →「新建 Procedure type」</div>
+  <div class="row"><div class="k">现象</div><div class="v">点击"新建"不先询问名称，直接创建一条 Procedure，code name 自动取了 <code>new_procedure_1781591946733</code>（时间戳 slug）。该 slug 出现在标识 chip、URL、甚至删除确认文案里；改了"显示名称"后，code name <b>不会</b>随之生成可读 slug，需要手动改、否则永远是这串时间戳。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">机器 slug 对配置人员无意义、难检索；容易留下一堆 <code>new_procedure_…</code> 命名的条目。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 新建时弹轻量对话先收集"显示名称"，由它 <code>slugify</code> 生成 code name（如 <code>account_status</code>）并允许编辑、做唯一性校验；② 或保持即时创建但在保存前用名称回填 slug；③ 删除确认等文案改用显示名。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小–中</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">C2.</span> 保存无必填校验，可存下"无名"Procedure</h3>
+  <div class="loc"><b>位置：</b>Procedure 编辑器</div>
+  <div class="row"><div class="k">现象</div><div class="v">把"显示名称"清空后，<b>保存按钮依然可点、也确实保存成功</b>，没有任何内联报错或拦截。结果会生成一个标题为空（仅显示灰色占位"新建 Procedure"）的 Procedure。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">数据完整性风险：列表里会出现"无名"条目，难以辨认与维护；下游引用该 Procedure 时也会混乱。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 对必填项（显示名称、code name）做校验：为空时禁用保存并显示内联错误（红框 + 提示）；② 提交时统一用表单校验库（如 react-hook-form + zod）做 schema 校验；③ 对 code name 限制字符集与唯一性。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-hi">高</span>　工作量：小</div></div>
+</div>
+
+<div class="issue">
+  <h3><span class="num">C3.</span> 保存反馈弱，且顶部状态徽章三重冗余</h3>
+  <div class="loc"><b>位置：</b>Procedure 编辑器顶栏</div>
+  <div class="row"><div class="k">现象</div><div class="v">保存成功没有 toast/明确提示，只能靠顶部徽章变化察觉；而保存后顶栏同时出现三个徽章：<b>草稿</b>、<b>已保存</b>、<b>✓已保存</b>——后两个文字重复。"草稿"与"已保存"并存，也让人不确定当前到底是已保存还是仍是草稿。</div></div>
+  <div class="row"><div class="k">影响</div><div class="v">既缺正反馈（不确定有没有存上），又有冗余噪音，状态语义模糊。</div></div>
+  <div class="row fe"><div class="k">前端建议</div><div class="v">① 保存成功给一个轻量 toast（"已保存"）；② 顶部只保留<b>一个</b>状态徽章，按状态机切换：<code>草稿·未保存</code> / <code>草稿·已保存</code> / <code>已发布</code>；③ 合并重复的"已保存"指示。</div></div>
+  <div class="row"><div class="k">评级</div><div class="v"><span class="pill p-md">中</span>　工作量：小</div></div>
+</div>
+
+<div class="note">
+<b>做得好的地方（保留）：</b>① 编辑器内删除有二次确认弹窗（"删除 Procedure type? 这会永久删除…"，取消/删除分明）；② dirty-state 检测准确——一编辑立即变为"有未保存改动"并点亮保存按钮，离开有据可依；③ 创建后即时进入编辑器、URL 同步，流程连贯。<br>
+<b>小瑕疵：</b>删除确认文案用的是 slug <code>new_procedure_1781591946733</code> 而非显示名，建议改用可读名称以防误删；另需确认<b>列表卡片</b>上的"Delete"是否也有同样的二次确认（编辑器内已有，列表卡需保持一致）。
+</div>
+
+<h2>七、优先级建议（落地顺序）</h2>
+<table>
+  <thead><tr><th>优先</th><th>问题</th><th>类型</th><th>工作量</th></tr></thead>
+  <tbody>
+    <tr><td><span class="tag">P0</span></td><td>B1 图标名以文本渲染并遮挡标题</td><td>Bug</td><td>小</td></tr>
+    <tr><td><span class="tag">P0</span></td><td>B2 i18n key 泄漏</td><td>Bug</td><td>小</td></tr>
+    <tr><td><span class="tag">P1</span></td><td>L1 中英混杂 + 组织页重复英文导航</td><td>本地化</td><td>中</td></tr>
+    <tr><td><span class="tag">P1</span></td><td>A1 Pilot 右栏过载 / 手写 JSON</td><td>架构</td><td>中–大</td></tr>
+    <tr><td><span class="tag">P1</span></td><td>L2 同功能多名（交接/接管）</td><td>本地化</td><td>小</td></tr>
+    <tr><td><span class="tag">P1</span></td><td>C2 保存无必填校验，可存"无名"Procedure</td><td>CRUD/数据</td><td>小</td></tr>
+    <tr><td><span class="tag">P2</span></td><td>C1 新建即生成时间戳 slug、C3 保存反馈弱+状态徽章冗余</td><td>CRUD</td><td>小–中</td></tr>
+    <tr><td><span class="tag">P2</span></td><td>A2 组件表格重复文案、A3 主区留白、U1 删除防护、U3 草稿入口、U5 状态徽章</td><td>可用性</td><td>小–中</td></tr>
+    <tr><td><span class="tag">P3</span></td><td>L3 状态串、U2 禁用提示、U4 API 路径、A4 重复 Agent 显示、V1/V2 视觉与加载</td><td>打磨</td><td>小</td></tr>
+  </tbody>
+</table>
+
+<p><b>一句话结论：</b>产品骨架和状态模型是扎实的；当前最划算的提升是——先修两个标识符泄漏 Bug（P0，几乎零成本、观感收益最大），再做一轮系统性的中文本地化与术语统一（P1），然后把 Pilot 右栏的 Scenario 编写拆出来、用结构化编辑替代手写 JSON（P1，对配置人员体感最强）。</p>
+
+<div class="foot">
+  走查范围：J1N(v1)、J1B(v3·Live) 两个 Agent，覆盖 试点实验室/Playground/发布/组件（流程·钩子）/对话/人工交接/组织/Agent 切换。
+  说明：服务器 SSH 在本工具沙箱网络不可达，前端建议基于浏览器 DOM 与运行时行为观测得出，未读后端源码；如需，我可在能联网的环境进一步核对具体组件实现。
+  客服端 LiveChat 对话窗（参考链接）为第三方组件，未纳入本次 Console 评审，如需可另做。
+</div>
+
+</div>
+</body>
+</html>

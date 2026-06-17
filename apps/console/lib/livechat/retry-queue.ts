@@ -2,9 +2,9 @@
 // Failed bridge events are enqueued for retry with exponential backoff.
 
 import { prisma } from '@intera/shared/prisma'
-import { getLiveChatConfigForFamily, resolveLiveChatConfigForOrg } from './config-store'
+import { getLiveChatConfigForFamily, getLiveChatConfigForOrg } from './config-store'
 import { handleIncomingEvent } from './bridge'
-import type { IncomingEvent, LiveChatConfig } from './types'
+import type { IncomingEvent } from './types'
 
 const MAX_RETRIES = 4
 const BACKOFF_MS = [30_000, 120_000, 600_000, 1_800_000] // 30s, 2m, 10m, 30m
@@ -55,21 +55,15 @@ export async function processRetryQueue(): Promise<number> {
         ? payload.agentConfigId
         : undefined
 
-      let resolvedAgentConfigId: string | undefined
-      let config: LiveChatConfig | null = null
+      let resolvedAgentConfigId = payloadAgentConfigId
+      let config = payloadAgentConfigId
+        ? await getLiveChatConfigForFamily(payloadAgentConfigId)
+        : null
 
-      if (payloadAgentConfigId) {
-        resolvedAgentConfigId = payloadAgentConfigId
-        config = await getLiveChatConfigForFamily(payloadAgentConfigId)
-      } else {
-        const fallback = await resolveLiveChatConfigForOrg(item.orgId)
-        if (fallback.status === 'ambiguous') {
-          throw new Error('agentConfigId required for multi-agent LiveChat retry')
-        }
-        if (fallback.status === 'resolved') {
-          resolvedAgentConfigId = fallback.agentConfigId
-          config = fallback.config
-        }
+      if (!config?.enabled) {
+        const fallback = await getLiveChatConfigForOrg(item.orgId)
+        resolvedAgentConfigId = fallback?.agentConfigId ?? resolvedAgentConfigId
+        config = fallback?.config ?? null
       }
 
       if (!config?.enabled) {

@@ -62,6 +62,27 @@ export function finalizationBlockers(run: ProcedureRunState): string[] {
   return [...new Set(blockers)]
 }
 
+export function promisesHumanHandoff(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+  return [
+    /(?:i|we)\s+(?:have|\'ve)\s+(?:created|opened|submitted|arranged|escalated)\s+(?:a\s+)?(?:ticket|case|handoff|human support request)/i,
+    /(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)/i,
+    /已为您创建工单/,
+    /已经为您创建工单/,
+    /已安排人工/,
+    /将安排人工/,
+    /正在(?:为您|帮您)?人工处理/,
+    /(?:为您|帮您)?人工处理(?:中|。|，|,|$)/,
+    /已转人工/,
+    /已经转人工/,
+    /已为您转接/,
+    /客服会(?:尽快)?(?:联系|回复)您/,
+    /(?:人工|客服|专员)(?:会|将)(?:尽快)?(?:联系|回复)您/,
+    /专员将尽快与您联系/,
+  ].some((pattern) => pattern.test(trimmed))
+}
+
 export function hasPersistedHandoffEvidence(run: ProcedureRunState): boolean {
   return run.evidence.some((entry) =>
     entry.kind === 'handoff' &&

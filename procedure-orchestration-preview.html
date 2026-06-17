@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intera · 编排编辑器理想态原型</title>
+<style>
+  :root{
+    --bg:#fbfaf6; --surface:#fffefa; --card:#ffffff;
+    --ink:#1b2c33; --fog:#5f6b66; --faint:#9aa39e;
+    --line:rgba(0,0,0,0.09); --line2:rgba(0,0,0,0.16);
+    --teal:#357f7c; --teal-soft:#e3f1ee; --green:#128a20; --mark:#14b8a6;
+    --amber:#9a6b12; --amber-soft:#fbf0d8;
+    --purple:#5b50b6; --purple-soft:#ecebfb;
+    --blue:#2b6ca8; --blue-soft:#e7f0fa;
+    --pink:#a8497e; --pink-soft:#fbe9f1;
+    --gate:#0f6e56; --gate-soft:#e1f5ee;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.55}
+  .wrap{max-width:1240px;margin:0 auto;padding:18px 22px 60px}
+  .crumb{font-size:12px;color:var(--faint)}
+  .crumb b{color:var(--fog);font-weight:500}
+  .topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:6px}
+  h1{font-size:24px;margin:4px 0 0;letter-spacing:-.01em}
+  .vpill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--teal);background:var(--teal-soft);border-radius:999px;padding:3px 10px;margin-left:8px;vertical-align:6px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--mark);display:inline-block}
+  .actions{display:flex;gap:8px;flex-shrink:0}
+  button{font:inherit;cursor:pointer}
+  .btn{border:1px solid var(--line2);background:#fff;color:var(--ink);border-radius:10px;padding:7px 14px;font-size:13px;transition:.15s}
+  .btn:hover{background:#f4f5f2}
+  .btn-primary{background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 8px 20px rgba(18,138,32,.18)}
+  .btn-primary:hover{background:#0f7a1c}
+  .tabs{display:flex;gap:4px;margin:18px 0 14px;background:#efeee8;padding:4px;border-radius:14px;width:fit-content}
+  .tab{border:0;background:transparent;border-radius:11px;padding:8px 16px;font-size:13px;color:var(--fog)}
+  .tab.active{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.06);font-weight:500}
+  .panel{display:none}
+  .panel.active{display:block}
+
+  /* simulation bar */
+  .simbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:14px}
+  .simbar .lab{font-size:12px;color:var(--faint);margin-right:2px}
+  .toggle{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--fog);background:#fff;border:1px solid var(--line2);border-radius:999px;padding:5px 11px}
+  .toggle .sw{width:30px;height:17px;border-radius:999px;background:#d7d9d3;position:relative;transition:.15s;flex-shrink:0}
+  .toggle .sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:.15s}
+  .toggle.on{color:var(--gate);border-color:#bfe3d5;background:var(--gate-soft)}
+  .toggle.on .sw{background:var(--gate)}
+  .toggle.on .sw::after{left:15px}
+  .receipt{margin-left:auto;font-size:12px;color:var(--fog)}
+  .receipt b{color:var(--ink);font-weight:500}
+
+  .grid{display:grid;grid-template-columns:348px 1fr;gap:16px;align-items:start}
+  .col-title{font-size:12px;color:var(--faint);margin:2px 0 10px;text-transform:uppercase;letter-spacing:.06em}
+
+  /* spine */
+  .spine{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .step{display:flex;gap:11px;align-items:flex-start;padding:9px 10px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:.12s}
+  .step:hover{background:#f5f6f3}
+  .step.sel{background:var(--blue-soft);border-color:#cfe0f2}
+  .step .num{width:23px;height:23px;border-radius:50%;background:#eef0ec;color:var(--fog);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:1px}
+  .step.sel .num{background:#b9d6f1;color:#0c447c}
+  .step .t{font-size:14px}
+  .step .sub{margin-top:5px;display:flex;flex-direction:column;gap:4px}
+  .connector{width:2px;height:10px;background:var(--line2);margin-left:21px;border-radius:2px}
+  .connector.lit{background:var(--gate)}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;border-radius:8px;padding:1px 8px;width:fit-content}
+  .c-ask{background:var(--gate-soft);color:var(--gate)}
+  .c-tool{background:var(--purple-soft);color:var(--purple)}
+  .c-know{background:var(--blue-soft);color:var(--blue)}
+  .c-hand{background:var(--pink-soft);color:var(--pink)}
+  .c-end{background:#eee;color:#555}
+  .c-hook{background:var(--amber-soft);color:var(--amber)}
+  .brow{font-size:11.5px;color:var(--fog);display:flex;align-items:center;gap:5px}
+  .brow.lit{color:var(--gate);font-weight:500}
+  .statuspill{font-size:10.5px;border-radius:7px;padding:1px 7px;margin-left:auto;flex-shrink:0}
+  .s-done{background:var(--gate-soft);color:var(--gate)}
+  .s-active{background:var(--blue-soft);color:var(--blue)}
+  .s-skip{background:#efefec;color:var(--faint)}
+  .addstep{margin-top:10px;width:100%;border:1px dashed var(--line2);background:#fff;border-radius:11px;padding:8px;color:var(--fog);font-size:13px}
+
+  /* inspector */
+  .insp{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+  .insp .field{margin-bottom:14px}
+  .insp label{display:block;font-size:12px;color:var(--fog);margin-bottom:5px}
+  .insp input[type=text],.insp textarea,.insp select{width:100%;font:inherit;font-size:13.5px;color:var(--ink);background:#fff;border:1px solid var(--line2);border-radius:10px;padding:8px 11px}
+  .insp textarea{resize:vertical;min-height:54px}
+  .insp .ttl input{font-size:18px;font-weight:600;border-color:transparent;background:transparent;padding:4px 2px}
+  .insp .ttl input:focus{border-color:var(--line2);background:#fff;outline:none}
+  .sectitle{font-size:12.5px;color:var(--ink);font-weight:500;margin:6px 0 8px;display:flex;align-items:center;gap:8px}
+  .sectitle .hint{font-weight:400;color:var(--faint);font-size:11.5px}
+
+  .branch{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;background:#fff}
+  .branchhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .tag{font-size:11px;border-radius:8px;padding:2px 9px;font-weight:500}
+  .tag-if{background:var(--blue-soft);color:var(--blue)}
+  .tag-else{background:#eef0ec;color:var(--fog)}
+  .selmini{font-size:12px;border:1px solid var(--line2);border-radius:8px;padding:4px 8px;background:#fff}
+  .gate{display:inline-flex;align-items:center;gap:4px;font-size:11px;border-radius:8px;padding:2px 8px}
+  .gate-hard{background:var(--gate-soft);color:var(--gate)}
+  .gate-soft{background:var(--amber-soft);color:var(--amber)}
+  .then{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;color:var(--fog);margin-top:8px}
+  .actchip{display:inline-flex;align-items:center;gap:5px;font-size:12px;border-radius:8px;padding:3px 9px}
+  .addmini{border:1px dashed var(--line2);background:#fff;border-radius:8px;padding:2px 9px;font-size:12px;color:var(--fog)}
+  .hookcard{display:flex;align-items:center;gap:10px;background:var(--amber-soft);border-radius:11px;padding:9px 11px;margin-bottom:7px}
+  .hookcard .ic{width:26px;height:26px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .hookcard .h1{font-size:12.5px;color:#6a4a0a}
+  .hookcard .h2{font-size:11.5px;color:var(--amber)}
+  .addhook{width:100%;border:1px dashed #e0c98c;background:#fff;border-radius:11px;padding:8px;color:var(--amber);font-size:12.5px}
+  .compiledlink{margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--blue);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+
+  /* lanes */
+  .lanes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .lane{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px;min-height:260px}
+  .lanehd{font-size:13px;font-weight:500;margin-bottom:3px}
+  .lanesub{font-size:11.5px;color:var(--faint);margin-bottom:12px}
+  .hk{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:9px;background:#fff}
+  .hk .nm{font-size:13px;font-weight:500}
+  .hk .meta{font-size:11.5px;color:var(--fog);margin-top:4px;display:flex;flex-wrap:wrap;gap:5px}
+  .obadge{font-size:11px;border-radius:7px;padding:1px 7px}
+  .o-block{background:#fbe7e6;color:#a32d2d}
+  .o-escalate{background:var(--pink-soft);color:var(--pink)}
+  .o-warn{background:var(--amber-soft);color:var(--amber)}
+  .scopebadge{font-size:11px;border-radius:7px;padding:1px 7px;background:#eef0ec;color:var(--fog)}
+
+  /* compiled */
+  .compiled{background:#0f1c20;color:#cfe9e2;border-radius:16px;padding:18px 20px;font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.7;white-space:pre-wrap;overflow:auto}
+  .compiled .gateline{color:#7fe0c0}
+  .compiled .cmt{color:#6f8a84}
+  .legend{font-size:12px;color:var(--fog);margin:6px 0 16px;display:flex;gap:16px;flex-wrap:wrap}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="crumb"><b>构建</b> / <b>组件</b> / <b>流程</b></div>
+  <div class="topbar">
+    <div>
+      <h1>充值未到账
+        <span class="vpill"><span class="dot"></span> v2 · 草稿</span>
+      </h1>
+      <div style="font-size:12.5px;color:var(--faint);margin-top:6px">理想态原型：大纲 + 检查器 + 实时路径预览。点左侧步骤、切换上方模拟开关、看三种视图。</div>
+    </div>
+    <div class="actions">
+      <button class="btn">测试</button>
+      <button class="btn btn-primary">保存</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-view="orch">流程编排</button>
+    <button class="tab" data-view="lanes">Hook 检查点泳道</button>
+    <button class="tab" data-view="compiled">编译预览</button>
+  </div>
+
+  <!-- ORCHESTRATION -->
+  <div class="panel active" id="p-orch">
+    <div class="simbar">
+      <span class="lab">模拟输入</span>
+      <button class="toggle" data-sim="deposit"><span class="sw"></span>入金工具=成功</button>
+      <button class="toggle" data-sim="handoff"><span class="sw"></span>客户要求转人工</button>
+      <button class="toggle" data-sim="knowledge"><span class="sw"></span>命中知识库</button>
+      <span class="receipt" id="receipt"></span>
+    </div>
+    <div class="grid">
+      <div class="spine">
+        <div class="col-title">流程脊柱 · 顺序执行</div>
+        <div id="spine"></div>
+        <button class="addstep">+ 添加步骤</button>
+      </div>
+      <div class="insp" id="inspector"></div>
+    </div>
+  </div>
+
+  <!-- LANES -->
+  <div class="panel" id="p-lanes">
+    <div class="legend">
+      <span><span class="obadge o-block">拦截</span> 阻断本次动作</span>
+      <span><span class="obadge o-escalate">升级</span> 转人工并建任务</span>
+      <span><span class="obadge o-warn">警告</span> 记录但放行</span>
+      <span><span class="scopebadge">scope</span> 作用范围（人话）</span>
+    </div>
+    <div class="lanes" id="lanes"></div>
+  </div>
+
+  <!-- COMPILED -->
+  <div class="panel" id="p-compiled">
+    <div style="font-size:12.5px;color:var(--fog);margin-bottom:10px">运行时把这套结构编译成系统提示词 + 确定性<b style="color:var(--gate)">完成门</b>。作者随时能看到"Agent 实际会收到什么"。</div>
+    <div class="compiled" id="compiled"></div>
+  </div>
+
+</div>
+
+<script>
+const DATA = {
+  steps: [
+    { id:'collect_id', title:'收集 member_id',
+      guidance:'先拿到最少必要上下文（member_id），再调用任何会员相关工具。只问这一个问题。',
+      actions:[{kind:'ask', label:'询问 member_id', fields:['member_id']}],
+      branches:[], hooks:[] },
+    { id:'check_deposit', title:'查询入金状态',
+      guidance:'调用入金查询工具，核对客户最近一笔入金；只有结构化证据成立才往下走。',
+      actions:[],
+      branches:[
+        { id:'b_if', kind:'if',
+          condition:{kind:'tool_event', toolName:'get_latest_deposit', event:'succeeded'},
+          actions:[{kind:'call_tool', label:'对齐补充金额', toolName:'reconcile_payment'}] },
+        { id:'b_else', kind:'else', condition:null,
+          actions:[{kind:'search_knowledge', label:'检索入金 runbook'}] }
+      ],
+      hooks:[{checkpoint:'PreToolUse', name:'status_claims_require_evidence', outcome:'block', severity:'high', scope:'此步骤 · get_latest_deposit'}] },
+    { id:'handoff', title:'转人工',
+      guidance:'证据互相冲突，或客户明确要求人工时，立即转人工并建任务。',
+      actions:[{kind:'request_human_handoff', label:'转人工', queue:'deposit_queue'}],
+      branches:[],
+      hooks:[{checkpoint:'Stop', name:'human_transfer_requires_task', outcome:'escalate', severity:'high', scope:'此步骤 · 回复前'}] }
+  ]
+};
+
+const ACT_META = {
+  ask:        {cls:'c-ask',  label:a=>`ask · ${(a.fields||[]).join(', ')||'—'}`},
+  call_tool:  {cls:'c-tool', label:a=>`调用工具 · ${a.toolName}`},
+  search_knowledge:{cls:'c-know', label:a=>`检索知识库`},
+  request_human_handoff:{cls:'c-hand', label:a=>`转人工 · ${a.queue||''}`},
+  end:        {cls:'c-end',  label:a=>`结束 · ${a.status||'completed'}`}
+};
+const HARD_KINDS = ['tool_event','form_field','runtime_signal'];
+const COND_LABELS = {tool_event:'工具事件', form_field:'表单字段', runtime_signal:'运行时信号', llm_eval:'AI 判断'};
+
+let selected = 'check_deposit';
+const sim = {deposit:false, handoff:false, knowledge:false};
+
+function condText(c){
+  if(!c) return '其它情况';
+  if(c.kind==='tool_event') return `${c.toolName} ${({succeeded:'成功',failed:'失败',called:'被调用',stale:'过期',empty_result:'空结果'})[c.event]||c.event}`;
+  if(c.kind==='form_field') return `${c.field} ${c.operator==='equals'?('= '+(c.value||'')):'已填写'}`;
+  if(c.kind==='runtime_signal') return c.signal;
+  if(c.kind==='llm_eval') return c.label||c.prompt||'AI 判断';
+  return '';
+}
+
+function simulate(){
+  // returns map stepId -> {status, branch}
+  const res={};
+  res.collect_id={status:'done'};
+  res.check_deposit={status:'done', branch: sim.deposit?'b_if':'b_else'};
+  res.handoff={status: sim.handoff?'done':'skip'};
+  const finalState = sim.handoff ? '转人工' : '已完成';
+  const branchLabel = sim.deposit ? 'IF（入金成功）' : 'ELSE（其它）';
+  return {res, finalState, branchLabel};
+}
+
+function renderSpine(){
+  const {res}=simulate();
+  const el=document.getElementById('spine'); el.innerHTML='';
+  DATA.steps.forEach((s,i)=>{
+    const st=res[s.id]||{};
+    const node=document.createElement('div');
+    const wrapPre = i>0 ? `<div class="connector ${res[DATA.steps[i-1].id].status==='done'&&st.status!=='skip'?'lit':''}"></div>` : '';
+    let subs='';
+    s.actions.forEach(a=>{const m=ACT_META[a.kind];subs+=`<span class="chip ${m.cls}">${m.label(a)}</span>`;});
+    s.branches.forEach(b=>{
+      const lit = st.branch===b.id;
+      const acts=b.actions.map(a=>ACT_META[a.kind].label(a)).join('、');
+      subs+=`<span class="brow ${lit?'lit':''}">${b.kind==='if'?'IF':b.kind==='else_if'?'ELSE IF':'ELSE'} ${condText(b.condition)} → ${acts}</span>`;
+    });
+    s.hooks.forEach(h=>{subs+=`<span class="chip c-hook">${shield()} ${h.checkpoint} · ${zhOutcome(h.outcome)}</span>`;});
+    const pill = st.status==='done'?'<span class="statuspill s-done">已完成</span>':st.status==='skip'?'<span class="statuspill s-skip">跳过</span>':st.status==='active'?'<span class="statuspill s-active">进行中</span>':'';
+    el.insertAdjacentHTML('beforeend', `${wrapPre}
+      <div class="step ${selected===s.id?'sel':''}" data-step="${s.id}">
+        <div class="num">${i+1}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center"><span class="t">${s.title}</span>${pill}</div>
+          <div class="sub">${subs}</div>
+        </div>
+      </div>`);
+  });
+  el.querySelectorAll('.step').forEach(n=>n.onclick=()=>{selected=n.dataset.step;renderSpine();renderInspector();});
+}
+
+function renderInspector(){
+  const s=DATA.steps.find(x=>x.id===selected);
+  const el=document.getElementById('inspector');
+  let branchHtml='';
+  if(s.branches.length){
+    s.branches.forEach(b=>{
+      const isHard = b.condition && HARD_KINDS.includes(b.condition.kind);
+      let condUI='';
+      if(b.condition){
+        condUI = `<select class="selmini" data-cond="${b.id}">
+            ${Object.keys(COND_LABELS).map(k=>`<option value="${k}" ${b.condition.kind===k?'selected':''}>${COND_LABELS[k]}</option>`).join('')}
+          </select>` + condFields(b.condition);
+        condUI += b.condition.kind==='llm_eval'
+          ? `<span class="gate gate-soft">${spark()} 软判断·需运行时回执</span>`
+          : `<span class="gate gate-hard">${lock()} 硬门</span>`;
+      }
+      const acts=b.actions.map(a=>`<span class="actchip ${ACT_META[a.kind].cls}">${ACT_META[a.kind].label(a)}</span>`).join('');
+      branchHtml+=`<div class="branch">
+        <div class="branchhead">
+          <span class="tag ${b.kind==='else'?'tag-else':'tag-if'}">${b.kind==='if'?'IF':b.kind==='else_if'?'ELSE IF':'ELSE'}</span>
+          ${condUI}
+        </div>
+        <div class="then">THEN ${acts}<span class="addmini">+ 动作</span></div>
+      </div>`;
+    });
+  } else {
+    branchHtml = `<div style="font-size:12.5px;color:var(--faint);padding:8px 0">线性步骤（无分支）。只有当结构化证据需要改变动作时才加 IF / ELSE。</div>`;
+  }
+  branchHtml += `<button class="addmini" style="margin-top:2px">+ 加分支</button>`;
+
+  let actHtml = s.actions.length ? s.actions.map(a=>`<span class="actchip ${ACT_META[a.kind].cls}">${ACT_META[a.kind].label(a)}</span>`).join(' ') : '<span style="font-size:12.5px;color:var(--faint)">—</span>';
+
+  let hookHtml = s.hooks.map(h=>`<div class="hookcard">
+      <div class="ic">${shield()}</div>
+      <div style="min-width:0"><div class="h1">${h.checkpoint} · ${h.name}</div>
+      <div class="h2">命中后：${zhOutcomeFull(h.outcome)} · 严重级别 ${({high:'高',critical:'紧急',medium:'中',low:'低'})[h.severity]}</div></div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <div class="col-title">步骤 ${DATA.steps.indexOf(s)+1} · 检查器</div>
+    <div class="field ttl"><input type="text" value="${s.title}"></div>
+    <div class="field"><label>处理指导（写给"交付师"的自然语言）</label><textarea>${s.guidance}</textarea></div>
+    <div class="field">
+      <div class="sectitle">默认动作 <span class="hint">未命中分支时执行</span></div>
+      ${actHtml} <span class="addmini">+ 动作</span>
+    </div>
+    <div class="field">
+      <div class="sectitle">条件分支 <span class="hint">硬门=确定性证据；软判断=AI，需回执</span></div>
+      ${branchHtml}
+    </div>
+    <div class="field">
+      <div class="sectitle">此步骤的 Hook <span class="hint">按检查点拦截</span></div>
+      ${hookHtml||'<div style="font-size:12.5px;color:var(--faint);padding-bottom:6px">暂无</div>'}
+      <button class="addhook">+ 在此步骤加 Hook（预填检查点 / 工具 / scope）</button>
+    </div>
+    <div class="compiledlink" onclick="switchView('compiled')">${code()} 查看编译后的指令（系统提示词 + 完成门）</div>
+  `;
+  el.querySelectorAll('select[data-cond]').forEach(sel=>{
+    sel.onchange=()=>{
+      const b=s.branches.find(x=>x.id===sel.dataset.cond);
+      b.condition=defaultCond(sel.value);
+      renderInspector();renderSpine();
+    };
+  });
+}
+
+function condFields(c){
+  if(c.kind==='tool_event') return `<select class="selmini">${['get_latest_deposit','reconcile_payment','kb_search_faq'].map(t=>`<option ${c.toolName===t?'selected':''}>${t}</option>`).join('')}</select>
+    <select class="selmini">${[['succeeded','成功'],['failed','失败'],['called','被调用'],['stale','过期'],['empty_result','空结果']].map(([v,l])=>`<option value="${v}" ${c.event===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  if(c.kind==='form_field') return `<input class="selmini" style="width:120px" value="${c.field||'member_id'}"><select class="selmini"><option>已填写</option><option>等于</option></select>`;
+  if(c.kind==='runtime_signal') return `<select class="selmini">${[['explicit_human_request','明确要求人工'],['no_progress_loop','无进展循环'],['knowledge_gap','知识缺口']].map(([v,l])=>`<option value="${v}" ${c.signal===v?'selected':''}>${l}</option>`).join('')}</select>`;
+  if(c.kind==='llm_eval') return `<input class="selmini" style="width:200px" value="${c.label||'证据是否互相冲突？'}">`;
+  return '';
+}
+function defaultCond(k){
+  if(k==='tool_event') return {kind:'tool_event', toolName:'get_latest_deposit', event:'succeeded'};
+  if(k==='form_field') return {kind:'form_field', field:'member_id', operator:'present'};
+  if(k==='runtime_signal') return {kind:'runtime_signal', signal:'explicit_human_request'};
+  if(k==='llm_eval') return {kind:'llm_eval', label:'证据是否互相冲突？', prompt:'证据是否互相冲突？'};
+}
+
+function renderLanes(){
+  const lanes={PreToolUse:[],PostToolUse:[],Stop:[]};
+  DATA.steps.forEach(s=>s.hooks.forEach(h=>lanes[h.checkpoint].push({...h, step:s.title})));
+  const subs={PreToolUse:'调用工具前',PostToolUse:'工具结果后',Stop:'回复前'};
+  const el=document.getElementById('lanes'); el.innerHTML='';
+  ['PreToolUse','PostToolUse','Stop'].forEach(cp=>{
+    const cards=lanes[cp].map(h=>`<div class="hk">
+        <div class="nm">${h.name}</div>
+        <div class="meta">
+          <span class="obadge o-${h.outcome}">${zhOutcome(h.outcome)}</span>
+          <span class="scopebadge">${h.scope}</span>
+        </div></div>`).join('') || `<div style="font-size:12px;color:var(--faint);padding:6px 2px">此检查点暂无 Hook</div>`;
+    el.insertAdjacentHTML('beforeend',`<div class="lane">
+      <div class="lanehd">${cp}</div><div class="lanesub">${subs[cp]}</div>${cards}
+      <button class="addhook" style="border-color:var(--line2);color:var(--fog)">+ 加 Hook</button>
+    </div>`);
+  });
+}
+
+function renderCompiled(){
+  const {finalState,branchLabel}=simulate();
+  let L=[];
+  L.push(`<span class="cmt"># 案例类型：充值未到账 — 顺序执行以下步骤</span>`);
+  DATA.steps.forEach((s,i)=>{
+    L.push(``);
+    L.push(`步骤 ${i+1}｜${s.title}`);
+    L.push(`   ${s.guidance}`);
+    s.actions.forEach(a=>L.push(`   • 动作：${ACT_META[a.kind].label(a)}`));
+    s.branches.forEach(b=>{
+      const hard=b.condition&&HARD_KINDS.includes(b.condition.kind);
+      const head=`${b.kind==='if'?'IF':b.kind==='else_if'?'ELSE IF':'ELSE'} ${condText(b.condition)}`;
+      L.push(`   - ${head} → ${b.actions.map(a=>ACT_META[a.kind].label(a)).join('、')}` + (hard?`   <span class="gateline">[硬完成门]</span>`:` <span class="cmt">[软判断·需运行时回执]</span>`));
+    });
+    s.hooks.forEach(h=>L.push(`   <span class="cmt">↳ Hook @${h.checkpoint}: ${h.name} → ${zhOutcome(h.outcome)}</span>`));
+  });
+  L.push(``);
+  L.push(`<span class="cmt"># 当前模拟路径：命中 ${branchLabel} · 终态 ${finalState}</span>`);
+  document.getElementById('compiled').innerHTML=L.join('\n');
+}
+
+function updateReceipt(){
+  const {finalState,branchLabel}=simulate();
+  document.getElementById('receipt').innerHTML=`模拟结果：命中 <b>${branchLabel}</b> · 终态 <b>${finalState}</b> <span style="color:var(--faint)">（预览 ≠ 运行时证明）</span>`;
+}
+
+function switchView(v){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===v));
+  document.getElementById('p-orch').classList.toggle('active',v==='orch');
+  document.getElementById('p-lanes').classList.toggle('active',v==='lanes');
+  document.getElementById('p-compiled').classList.toggle('active',v==='compiled');
+  if(v==='lanes')renderLanes();
+  if(v==='compiled')renderCompiled();
+}
+
+function zhOutcome(o){return {block:'拦截',escalate:'升级',warn:'警告',allow:'放行'}[o]||o;}
+function zhOutcomeFull(o){return {block:'拦截本次调用',escalate:'升级转人工并建任务',warn:'记录警告后放行',allow:'放行'}[o]||o;}
+function shield(){return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>';}
+function lock(){return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';}
+function spark(){return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/></svg>';}
+function code(){return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg>';}
+
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchView(t.dataset.view));
+document.querySelectorAll('.toggle').forEach(b=>b.onclick=()=>{
+  sim[b.dataset.sim]=!sim[b.dataset.sim];
+  b.classList.toggle('on',sim[b.dataset.sim]);
+  renderSpine();updateReceipt();
+});
+
+renderSpine();renderInspector();updateReceipt();
+</script>
+</body>
+</html>

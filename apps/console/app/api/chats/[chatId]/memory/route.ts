@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { profileKey } from '@/lib/agent/identity'
+import { getUserProfileStorageScope, readUserProfile } from '@/lib/db/user-profiles'
 import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScopeForChat } from '../../_agent-scope'
 
 const querySchema = z.object({
@@ -30,9 +31,14 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     })
 
     const key = profileKey(userId ?? undefined, params.chatId)
+    const profileStorageScope = key
+      ? await getUserProfileStorageScope(repo.raw as any).catch(() => 'legacy_org_profile' as const)
+      : null
     const profile = key
-      ? await repo.raw.userProfile.findUnique({
-          where: { orgId_agentConfigId_userId: { orgId: repo.orgId, agentConfigId: scope.agentConfigId, userId: key } },
+      ? await readUserProfile(repo.raw as any, {
+          orgId: repo.orgId,
+          userId: key,
+          agentConfigId: scope.agentConfigId,
         }).catch(() => null)
       : null
 
@@ -47,7 +53,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
         updatedAt: m.updatedAt,
       })),
       profile,
-      profileScope: profile ? 'agent_profile' : null,
+      profileScope: profile ? profileStorageScope : null,
     })
   },
 })

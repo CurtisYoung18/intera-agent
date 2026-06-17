@@ -7,6 +7,7 @@ import { apiOk } from '@intera/shared/contracts/envelope'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
 import { profileKey } from '@/lib/agent/identity'
+import { readUserProfile, upsertUserProfile } from '@/lib/db/user-profiles'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { caseIdFilterForScope, childCaseIdFilterForScope, resolveRequiredAgentCaseScopeForChat, requireSelectedAgentFromInput } from '../../_agent-scope'
 
@@ -48,21 +49,24 @@ export const POST = defineRoute<z.infer<typeof querySchema>, { chatId: string }>
 
     const combinedSummary = memories.map(m => m.summary!).join('\n\n---\n\n')
 
+    const orgId = sampleCase?.orgId ?? 'default'
     const agentCfg = await repo.raw.agentConfig.findUnique({ where: { id: agentConfigId } }).catch(() => null)
     const strategy = parseMemoryStrategy(agentCfg?.memoryStrategy) ?? DEFAULT_MEMORY_STRATEGY
     const maxTokens = (strategy as Record<string, unknown>).chatMemoryMaxTokens as number ?? 4000
 
-    const existing = await repo.raw.userProfile.findUnique({
-      where: { orgId_agentConfigId_userId: { orgId: repo.orgId, agentConfigId, userId: key } },
-      select: { profile: true },
+    const existing = await readUserProfile(repo.raw as any, {
+      orgId: repo.orgId,
+      userId: key,
+      agentConfigId,
     }).catch(() => null)
     const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', combinedSummary, maxTokens)
-    const stats = await recomputeProfileStats(repo.raw, key, repo.orgId, agentConfigId)
+    const stats = await recomputeProfileStats(repo.raw, key, repo.orgId)
 
-    await repo.raw.userProfile.upsert({
-      where: { orgId_agentConfigId_userId: { orgId: repo.orgId, agentConfigId, userId: key } },
-      create: { userId: key, orgId: repo.orgId, agentConfigId, profile: merged, sections, ...stats },
-      update: { profile: merged, sections, ...stats },
+    await upsertUserProfile(repo.raw as any, {
+      orgId: repo.orgId,
+      userId: key,
+      agentConfigId,
+      patch: { profile: merged, sections, ...stats },
     })
 
     return apiOk({ ok: true, profileKey: key, memoriesMerged: memories.length, profileLength: merged.length, updatedAt: new Date().toISOString() })

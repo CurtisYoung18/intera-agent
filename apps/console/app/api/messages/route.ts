@@ -24,12 +24,12 @@ import {
   type RuntimeEventSource,
 } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
+import { classifyExplicitMoneyMovementTopic } from '@/lib/agent/money-movement-routing'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
 import { createSafeSseWriter } from '@/lib/api/safe-sse'
 import { defineRoute } from '@/lib/api/define-route'
-import { assertAgentInOrg } from '@/lib/api/assert-agent-in-org'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { maybeProxyMessagesToRuntime } from '@/lib/runtime/runtime-service'
 import { generateCaseId } from '@/lib/utils'
@@ -145,11 +145,29 @@ type CaseRoutingDecision =
   | { kind: 'existing'; caseId: string }
   | { kind: 'new' }
 
+function resolveCaseByExplicitMoneyMovement(
+  userMessage: string,
+  activeCases: Array<{ id: string; type: string }>,
+): CaseRoutingDecision | null {
+  const topic = classifyExplicitMoneyMovementTopic(userMessage)
+  if (!topic) return null
+
+  const targetCase = activeCases.find((activeCase) => {
+    if (topic === 'deposit') return activeCase.type.includes('deposit')
+    return activeCase.type.includes('withdrawal')
+  })
+
+  return targetCase ? { kind: 'existing', caseId: targetCase.id } : { kind: 'new' }
+}
+
 async function resolveCaseByIntent(
   userMessage: string,
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
 ): Promise<CaseRoutingDecision> {
+  const explicitMoneyMovement = resolveCaseByExplicitMoneyMovement(userMessage, activeCases)
+  if (explicitMoneyMovement) return explicitMoneyMovement
+
   const model = process.env.HUB_ROUTING_MODEL || DEFAULT_MEMORY_MODEL
 
   const caseList = activeCases
@@ -254,17 +272,7 @@ export async function POST(request: NextRequest) {
 
         // Session-based requests (web/playground) pass agentConfigId via body;
         // API-key and internal calls get it from the auth layer.
-        const bodyAgentConfigId =
-          typeof bodyConfigId === 'string' && bodyConfigId.trim().length > 0
-            ? bodyConfigId.trim()
-            : null
-        const resolvedAgentConfigId = authAgentConfigId || bodyAgentConfigId
-        if (!resolvedAgentConfigId) {
-          sendEvent({ type: 'error', data: 'agentConfigId is required', timestamp: new Date().toISOString() })
-          closeStream()
-          return
-        }
-        await assertAgentInOrg(repo, resolvedAgentConfigId)
+        const resolvedAgentConfigId = authAgentConfigId || (typeof bodyConfigId === 'string' ? bodyConfigId : null)
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
         const sessionCasePinned = rawSessionCasePinned === true
@@ -611,7 +619,7 @@ export async function POST(request: NextRequest) {
         // Chat UI binds SSE events to lane.caseId via case_created.
         if (!resumeTrigger && !formResult && !createdCaseForIntent && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
           const inferredType =
-            bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined
+            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined)
           if (inferredType) {
             try {
               const ctRow = await prisma.caseType.findUnique({

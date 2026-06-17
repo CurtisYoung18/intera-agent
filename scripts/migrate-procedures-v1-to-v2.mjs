@@ -7,14 +7,6 @@ const LEGACY_ACTIONS = new Set(['use', 'read', 'ask', 'decide', 'tag', 'escalate
 const V2_ACTIONS = new Set(['ask', 'search_knowledge', 'call_tool', 'request_human_handoff', 'end'])
 const DEFAULT_WHEN_TO_USE = 'Migrated from a legacy Procedure v1 definition. Review and refine before production use.'
 const DEFAULT_OVERVIEW = 'Auto-migrated from the legacy Procedure v1 shape.'
-const REQUIRED_TOOL_OVERRIDES_BY_CASE_TYPE = new Map([
-  ['login_password_reset', new Set(['get_account_status'])],
-  ['withdrawal_password_reset', new Set(['get_account_status'])],
-])
-const HANDOFF_PROMPT_OVERRIDES_BY_CASE_TYPE = new Map([
-  ['login_password_reset', 'Use this handoff only after get_account_status has been called and produced evidence. If account status has not been checked yet, call get_account_status first. After account-status evidence exists, hand off when the customer cannot complete self-service login-password reset because the bound phone, email, recovery path, or account status prevents reset; when manual identity verification is needed; or when the customer explicitly requests manual password reset. Do not promise a human reset unless create_human_task is called and persisted.'],
-  ['withdrawal_password_reset', 'Use this handoff only after get_account_status has been called and produced evidence. If account status has not been checked yet, call get_account_status first. After account-status evidence exists, hand off when the withdrawal password/PIN reset cannot be handled self-service because bound phone, verification path, payout security, or account status requires manual identity verification; or when the customer explicitly requests manual reset. Do not promise a human reset unless create_human_task is called and persisted.'],
-])
 
 function isRecord(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -221,24 +213,8 @@ function looksLikeSkipOnly(text) {
   return value.includes('skip') || value.includes('unless') || value.includes('otherwise')
 }
 
-function legacyStepIsRequired(step, context) {
-  if (step.required === true) return true
-  const caseType = asNonEmptyString(context?.caseTypeType)
-  const target = asNonEmptyString(step.target)
-  return REQUIRED_TOOL_OVERRIDES_BY_CASE_TYPE.get(caseType)?.has(target) === true
-}
-
-function legacyStepConditionPrompt(step, context) {
-  const caseType = asNonEmptyString(context?.caseTypeType)
-  if (step.action === 'escalate' && HANDOFF_PROMPT_OVERRIDES_BY_CASE_TYPE.has(caseType)) {
-    return HANDOFF_PROMPT_OVERRIDES_BY_CASE_TYPE.get(caseType)
-  }
-  return step.when
-}
-
 function buildActionFromLegacyStep(step, index, context) {
   const target = asNonEmptyString(step.target)
-  const required = legacyStepIsRequired(step, context)
   switch (step.action) {
     case 'ask':
       return {
@@ -246,7 +222,7 @@ function buildActionFromLegacyStep(step, index, context) {
         kind: 'ask',
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
-        required,
+        required: !!step.required,
         fields: resolveAskFields(splitFields(target, `field_${index + 1}`), [`field_${index + 1}`], {
           ...context,
           askStepFields: collectAskStepFields(step),
@@ -258,7 +234,7 @@ function buildActionFromLegacyStep(step, index, context) {
         kind: 'call_tool',
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
-        required,
+        required: !!step.required,
         toolName: target || `tool_${step.id}`,
       }
     case 'read':
@@ -268,7 +244,7 @@ function buildActionFromLegacyStep(step, index, context) {
           kind: 'search_knowledge',
           label: legacyStepTitle(step, index),
           guidance: asNonEmptyString(step.guidance),
-          required,
+          required: !!step.required,
           suggestedSources: target ? [target] : [],
         }
       }
@@ -277,7 +253,7 @@ function buildActionFromLegacyStep(step, index, context) {
         kind: 'call_tool',
         label: legacyStepTitle(step, index),
         guidance: asNonEmptyString(step.guidance),
-        required,
+        required: !!step.required,
         toolName: target || `tool_${step.id}`,
       }
     case 'escalate':
@@ -305,15 +281,13 @@ function buildActionFromLegacyStep(step, index, context) {
 
 function buildStepFromLegacy(step, index, context) {
   const action = buildActionFromLegacyStep(step, index, context)
-  const required = legacyStepIsRequired(step, context)
-  const conditionPrompt = legacyStepConditionPrompt(step, context)
   const completionGuidance =
-    required && (step.action === 'use' || step.action === 'read')
+    step.required && (step.action === 'use' || step.action === 'read')
       ? `Only continue after ${asNonEmptyString(step.target, 'the required tool')} succeeds.`
       : ''
   const skipGuidance = step.when && looksLikeSkipOnly(step.when) ? step.when : ''
   const branches =
-    conditionPrompt && !skipGuidance && action
+    step.when && !skipGuidance && action
       ? [{
           id: `${step.id}_when`,
           kind: 'if',
@@ -321,7 +295,7 @@ function buildStepFromLegacy(step, index, context) {
           condition: {
             id: `${step.id}_when_eval`,
             kind: 'llm_eval',
-            prompt: conditionPrompt,
+            prompt: step.when,
           },
           actions: [{ ...action, id: `${action.id}_conditional` }],
         }]
@@ -522,7 +496,6 @@ export function migrateCaseTypeRows(rows) {
     try {
       normalized = normalizeStoredProcedure(row?.procedure, {
         caseTypeRequiredFacts: parseStringArray(row?.requiredFacts),
-        caseTypeType: rowType,
       })
     } catch (error) {
       summary.invalid += 1
@@ -598,7 +571,7 @@ async function runDatabaseMode({ dryRun }) {
   try {
     const rows = await prisma.caseType.findMany({
       where: { NOT: { procedure: null } },
-      select: { id: true, type: true, requiredFacts: true, procedure: true },
+      select: { id: true, type: true, procedure: true },
       orderBy: { type: 'asc' },
     })
 

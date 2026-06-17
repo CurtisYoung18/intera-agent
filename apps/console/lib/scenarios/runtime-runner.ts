@@ -84,15 +84,13 @@ export async function executeScenarioThroughPlayground(input: RuntimeExecutorInp
 
   for (const turn of turns) {
     let turnResponse = ''
-    const formResult = parseScenarioFormSubmission(turn.content)
     const stream = runPlaygroundTurn({
       orgId: input.orgId,
-      message: formResult ? '' : turn.content,
+      message: turn.content,
       playgroundConfig: { debug: true, emitThinking: false },
       configId: input.agentConfigId,
       chatId,
       userId: input.userId ?? `scenario:${input.scenario.id}`,
-      formResult,
       contentBlocks: turn.contentBlocks as ContentBlock[] | undefined,
     })
 
@@ -135,22 +133,6 @@ export async function executeScenarioThroughPlayground(input: RuntimeExecutorInp
     statusOverride: errors.length > 0 ? 'blocked' : undefined,
     failureReasons,
   }
-}
-
-export function parseScenarioFormSubmission(content: string): { answers: Record<string, string> } | undefined {
-  const lines = content.split(/\r?\n/)
-  if (!/^\s*\[Form submission\]\s*$/i.test(lines[0] ?? '')) return undefined
-  const answers: Record<string, string> = {}
-  for (const line of lines.slice(1)) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const match = trimmed.match(/^([^:：]+)[:：]\s*(.*)$/)
-    if (!match) continue
-    const key = match[1]?.trim()
-    const value = match[2]?.trim()
-    if (key && value) answers[key] = value
-  }
-  return Object.keys(answers).length > 0 ? { answers } : undefined
 }
 
 export function buildRuntimeEvidence(input: {

@@ -12,8 +12,6 @@ type LiveChatFormWidgetProps = {
   fields: WidgetFormField[]
   caseId?: string
   chatId?: string
-  orgId?: string
-  agentConfigId?: string
   preview?: boolean
   locale: WidgetLocale
 }
@@ -35,8 +33,6 @@ export default function LiveChatFormWidget({
   fields,
   caseId,
   chatId,
-  orgId,
-  agentConfigId,
   preview = false,
   locale,
 }: LiveChatFormWidgetProps) {
@@ -45,7 +41,7 @@ export default function LiveChatFormWidget({
   const [previewValues, setPreviewValues] = useState<Record<string, string> | null>(null)
 
   const hasFileField = fields.some((field) => field.type === 'file')
-  const canSubmit = preview || Boolean(chatId && orgId && agentConfigId)
+  const canSubmit = preview || Boolean(chatId)
 
   useEffect(() => {
     if (preview) return
@@ -89,8 +85,6 @@ export default function LiveChatFormWidget({
         body: JSON.stringify({
           chatId,
           caseId,
-          orgId,
-          agentConfigId,
           answers: values,
         }),
       })

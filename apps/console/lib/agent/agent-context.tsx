@@ -116,23 +116,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     if (selectedAgentId) writeAgentIdToUrl(selectedAgentId)
   }, [agentConfigs, loading, pathname, selectedAgentId])
 
-  useEffect(() => {
-    if (loading || agentConfigs.length === 0) return
-
-    const handlePopState = () => {
-      const urlAgentId = readAgentIdFromUrl()
-      if (urlAgentId && agentConfigs.some((config) => config.id === urlAgentId)) {
-        try { localStorage.setItem(LS_KEY, urlAgentId) } catch { /* ignore */ }
-        setSelectedAgentId(urlAgentId)
-        return
-      }
-      if (selectedAgentId) writeAgentIdToUrl(selectedAgentId)
-    }
-
-    window.addEventListener('popstate', handlePopState)
-    return () => window.removeEventListener('popstate', handlePopState)
-  }, [agentConfigs, loading, selectedAgentId])
-
   const selectAgent = useCallback((id: string) => {
     try { localStorage.setItem(LS_KEY, id) } catch { /* ignore */ }
     writeAgentIdToUrl(id)

@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { resolveLiveChatConfigForOrg } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { upsertSession } from '@/lib/livechat/session-store'
 import { sendTextMessage } from '@/lib/livechat/livechat-api'
@@ -85,13 +85,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const resolved = await resolveLiveChatConfigForOrg(orgId)
-  if (resolved.status === 'ambiguous') {
-    console.warn('[Webhook] ambiguous org binding; agent-scoped webhook required', { orgId, action, chatId })
-    return NextResponse.json({ error: 'agentConfigId required for multi-agent LiveChat webhook' }, { status: 409 })
-  }
-  const agentConfigId = resolved.status === 'resolved' ? resolved.agentConfigId : undefined
-  const config = resolved.status === 'resolved' ? resolved.config : null
+  const resolved = await getLiveChatConfigForOrg(orgId)
+  const agentConfigId = resolved?.agentConfigId
+  const config = resolved?.config ?? null
   if (!config?.enabled) {
     console.warn('[Webhook] config missing or disabled', { orgId, action, chatId })
     return NextResponse.json({ ok: true, skipped: 'config_disabled' })

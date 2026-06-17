@@ -11,6 +11,7 @@
 
 ## Reference only
 
+- [`2026-06-16-j1n-gptbots-to-intera-migration-analysis.md`](./2026-06-16-j1n-gptbots-to-intera-migration-analysis.md) - tenant-specific analysis for migrating the J1N GPTBots FlowAgent into Intera's Tool / Knowledge / Procedure / Hook / Scenario architecture.
 - [`(原始版本)Agentic AI 客服 Harness 项目内部说明文档 .md`](../archive/superseded/%28原始版本%29Agentic%20AI%20客服%20Harness%20项目内部说明文档%20.md) - early product philosophy. Its single-agent ownership principle remains useful; implementation terms may be outdated.
 
 ## Superseded
