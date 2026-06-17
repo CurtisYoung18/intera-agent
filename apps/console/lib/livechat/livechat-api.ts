@@ -186,6 +186,16 @@ export async function sendTextMessage(
   }, botAccessToken, licenseId, region, authType, accountId)
 }
 
+export async function sendAgentNote(
+  chatId: string, text: string, botAccessToken: string, licenseId: string,
+  region?: string, authType?: string, accountId?: string,
+): Promise<void> {
+  await lcPost('send_event', {
+    chat_id: chatId,
+    event: { type: 'message', text, visibility: 'agents' },
+  }, botAccessToken, licenseId, region, authType, accountId)
+}
+
 export async function sendWidgetPayload(
   chatId: string, payload: WidgetPayload, botAccessToken: string, licenseId: string,
   region?: string, authType?: string, accountId?: string,

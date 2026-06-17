@@ -91,6 +91,50 @@ describe('runtime-truth helpers', () => {
     expect(trace.detailText).not.toContain('{"status"')
   })
 
+  it('renders ask_user_questions tool calls as a readable form summary', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'tool_call',
+      title: 'Tool called: ask_user_questions',
+      detail: null,
+      payload: JSON.stringify({
+        toolName: 'ask_user_questions',
+        input: {
+          title: 'Member ID Required',
+          description: 'Please enter your Jayabaji Member ID.',
+          fields: [
+            { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+          ],
+        },
+      }),
+    })
+
+    expect(trace.detailText).toContain('title: Member ID Required')
+    expect(trace.detailText).toContain('fields:')
+    expect(trace.detailText).toContain('Member ID [text, required]')
+  })
+
+  it('renders form submission traces with labeled answers', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'form_submit',
+      title: 'Form submitted: Member ID Required',
+      detail: null,
+      payload: JSON.stringify({
+        title: 'Member ID Required',
+        fields: [
+          { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+        ],
+        answers: {
+          member_id: 'JAYA117FFEB',
+        },
+      }),
+    })
+
+    expect(trace.kind).toBe('form_submission')
+    expect(trace.status).toBe('ok')
+    expect(trace.detailText).toContain('title: Member ID Required')
+    expect(trace.detailText).toContain('Member ID: JAYA117FFEB')
+  })
+
   it('summarizes unmatched tool call/result counts', () => {
     const summary = summarizeToolPairing([
       { actionType: 'tool_call', title: 'Tool called: search', detail: null, payload: null },

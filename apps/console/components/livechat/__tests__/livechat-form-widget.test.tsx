@@ -34,6 +34,7 @@ describe('LiveChatFormWidget', () => {
         locale="en"
         chatId="chat-1"
         caseId="case-1"
+        toolCallId="toolu_form_1"
         fields={[
           { key: 'amount', type: 'number', label: 'Amount', required: true },
           { key: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'] },
@@ -62,6 +63,13 @@ describe('LiveChatFormWidget', () => {
     expect(init.body).toBe(JSON.stringify({
       chatId: 'chat-1',
       caseId: 'case-1',
+      toolCallId: 'toolu_form_1',
+      title: 'Deposit details',
+      description: 'Please fill in the requested details.',
+      fields: [
+        { id: 'amount', type: 'number', label: 'Amount', required: true, options: undefined, placeholder: undefined },
+        { id: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'], placeholder: undefined },
+      ],
       answers: {
         amount: '800',
         payment_channel: 'Bank transfer',

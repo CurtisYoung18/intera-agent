@@ -27,6 +27,7 @@ export const ACCENTS: Record<string, AccentColors> = {
   hook_hit: { stroke: '#e64539', fill: 'rgba(230, 69, 57, 0.08)', icon: Scale },
   tool_call: { stroke: '#d4912e', fill: 'rgba(212, 145, 46, 0.10)', icon: Wrench },
   tool_result: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.08)', icon: Cpu },
+  form_submit: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.08)', icon: ScrollText },
   human_task_created: { stroke: '#d4912e', fill: 'rgba(212, 145, 46, 0.12)', icon: Timer },
   human_task_resolved: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.10)', icon: Timer },
   final_resolution: { stroke: '#2ea04a', fill: 'rgba(46, 160, 74, 0.10)', icon: ScrollText },

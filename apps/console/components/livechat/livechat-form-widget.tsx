@@ -12,6 +12,7 @@ type LiveChatFormWidgetProps = {
   fields: WidgetFormField[]
   caseId?: string
   chatId?: string
+  toolCallId?: string
   preview?: boolean
   locale: WidgetLocale
 }
@@ -33,6 +34,7 @@ export default function LiveChatFormWidget({
   fields,
   caseId,
   chatId,
+  toolCallId,
   preview = false,
   locale,
 }: LiveChatFormWidgetProps) {
@@ -85,6 +87,17 @@ export default function LiveChatFormWidget({
         body: JSON.stringify({
           chatId,
           caseId,
+          toolCallId,
+          title,
+          description,
+          fields: fields.map((field) => ({
+            id: field.key,
+            type: field.type,
+            label: field.label,
+            required: field.required,
+            options: field.options,
+            placeholder: field.placeholder,
+          })),
           answers: values,
         }),
       })

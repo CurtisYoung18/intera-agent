@@ -772,6 +772,101 @@ describe('POST /api/messages runtime session guards', () => {
     closeSession('case-v2-form')
   })
 
+  it('persists livechat form turns as envelope text plus an internal provider tool_result when toolCallId is present', async () => {
+    mockExistingCase({
+      id: 'case-form-persist',
+      status: 'open',
+      memory: null,
+    })
+
+    const userCreatedAt = new Date('2026-06-17T12:00:00.000Z')
+    const assistantCreatedAt = new Date('2026-06-17T12:00:01.000Z')
+    const loop = mockLoop({
+      run: vi.fn(async () => ({
+        messages: [
+          {
+            id: 'msg-form-user',
+            role: 'user',
+            content: 'Tool ask_user_questions result: {"member_id":"JAYA117FFEB"}',
+            createdAt: userCreatedAt,
+          },
+          {
+            id: 'msg-form-assistant',
+            role: 'assistant',
+            content: 'Thanks, I will continue.',
+            providerContent: [{ type: 'text', text: 'Thanks, I will continue.' }],
+            providerMeta: { protocolVersion: 1, visibility: 'customer', transcriptKind: 'assistant_response' },
+            createdAt: assistantCreatedAt,
+          },
+        ],
+        caseStatus: 'investigating',
+        transition: 'next_turn',
+        reason: 'form handled',
+      })),
+      getMemorySummary: vi.fn(() => ({
+        contextMap: { member_id: 'JAYA117FFEB' },
+        missingFacts: [],
+        toolsCalled: ['ask_user_questions'],
+        toolResults: {},
+        keyEvents: [],
+        summary: '',
+        todos: null,
+        caseStatus: 'investigating',
+      })),
+      getCaseType: vi.fn(() => 'deposit_issue'),
+    })
+    h.agentLoopCreate.mockResolvedValue(loop)
+
+    const res = await POST(makeRequest({
+      formResult: {
+        caseId: 'case-form-persist',
+        toolCallId: 'toolu_form_1',
+        title: 'Member ID Required',
+        description: 'Please enter your Jayabaji Member ID.',
+        fields: [
+          { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+        ],
+        answers: { member_id: 'JAYA117FFEB' },
+      },
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+    }))
+    await readSse(res)
+
+    expect(h.prisma.message.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'msg-form-user__tool_result' },
+      create: expect.objectContaining({
+        role: 'user',
+        content: '',
+        providerContent: [
+          { type: 'tool_result', tool_use_id: 'toolu_form_1', content: '{"member_id":"JAYA117FFEB"}', is_error: undefined },
+        ],
+        providerMeta: expect.objectContaining({
+          visibility: 'internal',
+          transcriptKind: 'tool_result',
+          toolUseIds: ['toolu_form_1'],
+        }),
+      }),
+    }))
+    expect(h.prisma.message.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'msg-form-user' },
+      create: expect.objectContaining({
+        role: 'user',
+        content: '[FORM_SUBMISSION]\nmember_id: JAYA117FFEB\n[/FORM_SUBMISSION]',
+      }),
+    }))
+    expect(h.prisma.actionTrace.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        caseId: 'case-form-persist',
+        chatId: 'chat-1',
+        actionType: 'form_submit',
+        title: 'Form submitted: Member ID Required',
+      }),
+    }))
+    closeSession('case-form-persist')
+  })
+
   it('aligns case truth when a resolved human task explicitly resumes a case', async () => {
     h.prisma.humanTask.findUnique.mockResolvedValue({
       id: 'task-resume',

@@ -32,6 +32,7 @@ export interface TraceTruthInput {
 
 export type OperateTraceKind =
   | 'user_message'
+  | 'form_submission'
   | 'tool_call'
   | 'tool_result'
   | 'hook_decision'
@@ -195,6 +196,7 @@ function deriveTraceStatus(
   }
 
   if (trace.actionType === 'tool_call') return 'info'
+  if (trace.actionType === 'form_submit') return 'ok'
   if (trace.actionType === 'llm_request_start') return 'info'
   if (trace.actionType === 'llm_response') return 'ok'
   if (trace.actionType === 'human_task_created') return 'warn'
@@ -235,6 +237,11 @@ function detailTextForTrace(
   payload: Record<string, unknown> | null,
 ): string | null {
   if (!payload) return trace.detail
+
+  const normalizedToolName =
+    typeof payload.toolName === 'string' && payload.toolName.trim().length > 0
+      ? payload.toolName.trim()
+      : undefined
 
   const summarizeScalarFields = (record: Record<string, unknown>): string | null => {
     const scalarEntries = Object.entries(record)
@@ -285,7 +292,67 @@ function detailTextForTrace(
     return null
   }
 
+  if (trace.actionType === 'form_submit') {
+    const answers = payload.answers && typeof payload.answers === 'object' && !Array.isArray(payload.answers)
+      ? (payload.answers as Record<string, unknown>)
+      : null
+    const fields = Array.isArray(payload.fields)
+      ? payload.fields.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry))
+      : []
+    const labelById = new Map<string, string>()
+    for (const field of fields) {
+      const id = typeof field.id === 'string' ? field.id : ''
+      const label = typeof field.label === 'string' && field.label.trim() ? field.label.trim() : id
+      if (id && label) labelById.set(id, label)
+    }
+
+    const lines: string[] = []
+    if (typeof payload.title === 'string' && payload.title.trim()) lines.push(`title: ${payload.title.trim()}`)
+    if (typeof payload.description === 'string' && payload.description.trim()) lines.push(`description: ${payload.description.trim()}`)
+    if (answers) {
+      const answerLines = Object.entries(answers).map(([key, value]) => {
+        const label = labelById.get(key) ?? key
+        return `${label}: ${String(value ?? '').trim() || '(empty)'}`
+      })
+      if (answerLines.length > 0) {
+        lines.push('answers:')
+        lines.push(...answerLines.map((line) => `- ${line}`))
+      }
+    }
+    return lines.length > 0 ? lines.join('\n') : trace.detail
+  }
+
   if (trace.actionType === 'tool_call') {
+    if (normalizedToolName === 'ask_user_questions') {
+      const input = payload.input && typeof payload.input === 'object' && !Array.isArray(payload.input)
+        ? (payload.input as Record<string, unknown>)
+        : null
+      if (input) {
+        const lines: string[] = []
+        if (typeof input.title === 'string' && input.title.trim()) lines.push(`title: ${input.title.trim()}`)
+        if (typeof input.description === 'string' && input.description.trim()) lines.push(`description: ${input.description.trim()}`)
+        const fields = Array.isArray(input.fields)
+          ? input.fields.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry))
+          : []
+        if (fields.length > 0) {
+          lines.push('fields:')
+          for (const field of fields) {
+            const rawId = typeof field.id === 'string'
+              ? field.id.trim()
+              : typeof field.key === 'string'
+                ? field.key.trim()
+                : ''
+            const label = typeof field.label === 'string' && field.label.trim() ? field.label.trim() : rawId
+            if (!label) continue
+            const type = typeof field.type === 'string' && field.type.trim() ? field.type.trim() : 'text'
+            const tags = [type]
+            if (field.required === true) tags.push('required')
+            lines.push(`- ${label} [${tags.join(', ')}]`)
+          }
+        }
+        if (lines.length > 0) return lines.join('\n')
+      }
+    }
     const summary = summarizeStructuredValue(payload.input)
     return summary ? `input: ${summary}` : trace.detail
   }
@@ -489,6 +556,20 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
       detailText: detailTextForTrace(trace, payload),
       payload,
       toolName,
+      executionLabel,
+      executionNote,
+      isExportedReviewStage: false,
+    }
+  }
+
+  if (trace.actionType === 'form_submit') {
+    return {
+      kind: 'form_submission',
+      status,
+      semanticLabel: 'Form submission',
+      title: trace.title || 'Form submitted',
+      detailText: detailTextForTrace(trace, payload),
+      payload,
       executionLabel,
       executionNote,
       isExportedReviewStage: false,

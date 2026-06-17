@@ -12,6 +12,7 @@ const mockRotateSessionCase = vi.fn()
 const mockConfirmProcedureHumanHandoff = vi.fn()
 
 const mockSendTextMessage = vi.fn()
+const mockSendAgentNote = vi.fn()
 const mockSendWidgetPayload = vi.fn()
 const mockSendQuickReplies = vi.fn()
 const mockSendCard = vi.fn()
@@ -41,6 +42,7 @@ vi.mock('@/lib/agent/session-store', () => ({
 }))
 
 vi.mock('../../livechat-api', () => ({
+  sendAgentNote: (...args: unknown[]) => mockSendAgentNote(...args),
   sendTextMessage: (...args: unknown[]) => mockSendTextMessage(...args),
   sendWidgetPayload: (...args: unknown[]) => mockSendWidgetPayload(...args),
   sendQuickReplies: (...args: unknown[]) => mockSendQuickReplies(...args),
@@ -111,6 +113,7 @@ describe('livechat bridge', () => {
     mockRotateSessionCase.mockResolvedValue(undefined)
     mockConfirmProcedureHumanHandoff.mockResolvedValue({ ok: true })
     mockSendTextMessage.mockResolvedValue(undefined)
+    mockSendAgentNote.mockResolvedValue(undefined)
     mockSendImage.mockResolvedValue(undefined)
     mockSetTypingIndicator.mockResolvedValue(undefined)
     mockTransferChat.mockResolvedValue(undefined)
@@ -152,6 +155,77 @@ describe('livechat bridge', () => {
     expect(mockUpdateSessionState).toHaveBeenCalledWith('chat-1', 'transferred')
     expect(mockUpdateSessionState).not.toHaveBeenCalledWith('chat-1', 'idle')
     expect(mockSetTypingIndicator).not.toHaveBeenCalledWith('chat-1', false, 'bot-token', 'lic-1', undefined, undefined, undefined)
+  })
+
+  it('posts an agent-only note when a form is requested', async () => {
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'form_request',
+        data: {
+          caseId: 'case-1',
+          title: 'Member ID Required',
+          description: 'Please share your member id.',
+          fields: [
+            { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+          ],
+        },
+        timestamp: '2026-06-17T10:00:00.000Z',
+      },
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'check deposit' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockSendAgentNote).toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringContaining('[Intera] Form requested'),
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockSendCard).toHaveBeenCalled()
+  })
+
+  it('posts an agent-only note when a form is submitted', async () => {
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      {
+        type: 'form_submit',
+        form: {
+          caseId: 'case-1',
+          title: 'Member ID Required',
+          fields: [
+            { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+          ],
+          answers: { member_id: 'JAYA117FFEB' },
+        },
+      } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockSendAgentNote).toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringContaining('[Intera] Form submitted'),
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
   })
 
   it('flushes pending text before transfer and drops later post-transfer flushes', async () => {

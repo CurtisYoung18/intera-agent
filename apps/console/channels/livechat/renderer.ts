@@ -85,6 +85,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       case 'form_request': {
         const d = event.data as {
           caseId?: string
+          toolCallId?: string
           title?: string
           description?: string
           fields?: Array<{ id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string }>
@@ -107,6 +108,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           // chatId lets the form webview deliver answers via /api/livechat/form-submit
           // (SDK-independent path — see BUG-F fix).
           chatId: ctx.sessionId,
+          ...(typeof d.toolCallId === 'string' && d.toolCallId.trim()
+            ? { toolCallId: d.toolCallId.trim() }
+            : {}),
           title: d.title ?? copy.fallbackTitle,
           description: d.description ?? copy.fallbackDescription,
           fields: JSON.stringify(fields),

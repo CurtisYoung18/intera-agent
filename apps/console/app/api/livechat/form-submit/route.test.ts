@@ -58,6 +58,12 @@ describe('POST /api/livechat/form-submit', () => {
 
     const res = await POST(makeRequest({
       chatId: 'chat-1',
+      toolCallId: 'toolu_form_1',
+      title: 'Deposit details',
+      description: 'Please fill in the requested details.',
+      fields: [
+        { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+      ],
       answers: { member_id: 'JAYA11C5184', amount: 800 },
     }) as any)
 
@@ -73,6 +79,12 @@ describe('POST /api/livechat/form-submit', () => {
         form: {
           caseId: 'case-1',
           answers: { member_id: 'JAYA11C5184', amount: '800' },
+          toolCallId: 'toolu_form_1',
+          title: 'Deposit details',
+          description: 'Please fill in the requested details.',
+          fields: [
+            { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+          ],
         },
       },
       config,

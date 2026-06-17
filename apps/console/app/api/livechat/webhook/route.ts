@@ -106,6 +106,11 @@ export async function POST(request: NextRequest) {
 
   if (action === 'incoming_event') {
     const eventType = event.type as string
+    const visibility = event.visibility as string | undefined
+
+    if (visibility === 'agents') {
+      return NextResponse.json({ ok: true, skipped: 'agents_only' })
+    }
 
     if (eventType === 'message' || eventType === 'system_message') {
       const text = (event.text as string) || (event.system_message_text as string) || ''

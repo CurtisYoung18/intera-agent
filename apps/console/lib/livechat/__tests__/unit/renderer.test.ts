@@ -130,6 +130,7 @@ describe('LiveChatRenderer', () => {
     it('returns send_card with webview button for Moments', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('form_request', {
+        toolCallId: 'toolu_form_1',
         title: 'Deposit details',
         description: 'Please fill in the requested details.',
         fields: [{ id: 'name', type: 'text', label: 'Name' }],
@@ -142,6 +143,7 @@ describe('LiveChatRenderer', () => {
       expect(card.buttons[0]!.label).toBe('Fill details')
       expect(card.buttons[0]!.type).toBe('webview')
       expect(card.buttons[0]!.url).toContain('view=form')
+      expect(card.buttons[0]!.url).toContain('toolCallId=toolu_form_1')
       expect(card.buttons[0]!.url).toContain('description=Please+fill+in+the+requested+details.')
     })
 

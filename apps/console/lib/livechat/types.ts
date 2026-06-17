@@ -82,6 +82,10 @@ export interface InteraInteractionSubmit {
 export interface InteraFormSubmit {
   caseId: string
   answers: Record<string, string>
+  toolCallId?: string
+  title?: string
+  description?: string
+  fields?: FormField[]
 }
 
 // Content block for multimodal messages (Anthropic-compatible)

@@ -8,7 +8,7 @@ import { confirmProcedureHumanHandoff } from '@/lib/agent/session-store'
 import type { RenderContext } from '@intera/shared/channels/renderer'
 import type { ChannelBindingConfig } from '@intera/shared/channels/binding'
 import {
-  sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
+  sendAgentNote, sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
   sendImage, sendSystemMessage, setTypingIndicator, transferChat,
   deactivateChat,
 } from './livechat-api'
@@ -19,6 +19,20 @@ import { getInternalMessagesUrl } from './internal-messages-url'
 import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
 import type { SSEEvent } from '@intera/shared/types'
+
+type FormSnapshot = {
+  title?: string
+  description?: string
+  fields?: Array<{
+    id?: string
+    type?: string
+    label?: string
+    required?: boolean
+    options?: string[]
+    placeholder?: string
+  }>
+  answers?: Record<string, string>
+}
 
 /** Extract optional LiveChat API params from config for transparent pass-through. */
 function lcParams(config: LiveChatConfig): {
@@ -85,7 +99,17 @@ function buildMessagesBody(
 
   switch (event.type) {
     case 'form_submit':
-      return { ...base, formResult: { caseId: session.caseId, answers: event.form?.answers ?? {} } }
+      return {
+        ...base,
+        formResult: {
+          caseId: session.caseId,
+          answers: event.form?.answers ?? {},
+          ...(event.form?.toolCallId ? { toolCallId: event.form.toolCallId } : {}),
+          ...(event.form?.title ? { title: event.form.title } : {}),
+          ...(event.form?.description ? { description: event.form.description } : {}),
+          ...(event.form?.fields?.length ? { fields: event.form.fields } : {}),
+        },
+      }
     case 'interaction_submit':
       return { ...base, interactionResult: { caseId: session.caseId, optionId: event.interaction?.optionId, input: event.interaction?.input } }
     case 'attachment':
@@ -110,6 +134,63 @@ function buildMessagesBody(
       return { ...base, message: text }
     }
   }
+}
+
+function summarizeFormField(field: NonNullable<FormSnapshot['fields']>[number]): string | null {
+  const id = typeof field.id === 'string' ? field.id.trim() : ''
+  const label = typeof field.label === 'string' && field.label.trim() ? field.label.trim() : id
+  if (!label) return null
+
+  const type = typeof field.type === 'string' && field.type.trim() ? field.type.trim() : 'text'
+  const tags = [type]
+  if (field.required) tags.push('required')
+  const placeholder = typeof field.placeholder === 'string' && field.placeholder.trim() ? field.placeholder.trim() : ''
+  return placeholder
+    ? `- ${label} [${tags.join(', ')}] - ${placeholder}`
+    : `- ${label} [${tags.join(', ')}]`
+}
+
+function formatAgentVisibleFormRequest(form: FormSnapshot | undefined): string | null {
+  if (!form) return null
+
+  const lines = ['[Intera] Form requested']
+  const title = typeof form.title === 'string' && form.title.trim() ? form.title.trim() : ''
+  const description = typeof form.description === 'string' && form.description.trim() ? form.description.trim() : ''
+  const fieldLines = Array.isArray(form.fields)
+    ? form.fields.map(summarizeFormField).filter((line): line is string => Boolean(line))
+    : []
+
+  if (title) lines.push(`Title: ${title}`)
+  if (description) lines.push(`Description: ${description}`)
+  if (fieldLines.length > 0) {
+    lines.push('Fields:')
+    lines.push(...fieldLines)
+  }
+
+  return lines.join('\n')
+}
+
+function formatAgentVisibleFormSubmission(form: FormSnapshot | undefined): string | null {
+  if (!form || !form.answers || Object.keys(form.answers).length === 0) return null
+
+  const labelById = new Map<string, string>()
+  for (const field of form.fields ?? []) {
+    const id = typeof field.id === 'string' ? field.id.trim() : ''
+    const label = typeof field.label === 'string' && field.label.trim() ? field.label.trim() : id
+    if (id && label) labelById.set(id, label)
+  }
+
+  const lines = ['[Intera] Form submitted']
+  const title = typeof form.title === 'string' && form.title.trim() ? form.title.trim() : ''
+  if (title) lines.push(`Title: ${title}`)
+  lines.push('Answers:')
+  for (const [key, value] of Object.entries(form.answers)) {
+    const label = labelById.get(key) ?? key
+    const rendered = typeof value === 'string' ? value.trim() : String(value)
+    lines.push(`- ${label}: ${rendered || '(empty)'}`)
+  }
+
+  return lines.join('\n')
 }
 
 function isTransferGroupUnavailableError(error: unknown): boolean {
@@ -237,6 +318,13 @@ export async function handleIncomingEvent(
   }
 
   const resolvedAgentConfigId = session.agentConfigId ?? agentConfigId
+  if (event.type === 'form_submit') {
+    const note = formatAgentVisibleFormSubmission(event.form)
+    if (note) {
+      await sendAgentNote(chatId, note, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId)
+        .catch((err) => console.error('[Bridge] sendAgentNote(form_submit) failed:', err))
+    }
+  }
 
   let resumedTransferredSession = false
   const sessionStateBeforeEvent = session.state
@@ -380,6 +468,13 @@ export async function handleIncomingEvent(
             chatId,
             eventType: sseEvent.type,
           })
+        }
+      }
+      if (sseEvent.type === 'form_request' && typeof sseEvent.data === 'object' && sseEvent.data) {
+        const note = formatAgentVisibleFormRequest(sseEvent.data as FormSnapshot)
+        if (note) {
+          await sendAgentNote(chatId, note, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+            .catch((err) => console.error('[Bridge] sendAgentNote(form_request) failed:', err))
         }
       }
       if (sseEvent.type === 'human_task_created' && typeof sseEvent.data === 'object' && sseEvent.data) {

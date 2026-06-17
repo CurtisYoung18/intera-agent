@@ -8,9 +8,22 @@ import { getSession } from '@/lib/livechat/session-store'
 import { getLiveChatConfigForFamily, getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
 
+const fieldSchema = z.object({
+  id: z.string().min(1).max(120),
+  type: z.enum(['text', 'number', 'select', 'textarea', 'file', 'date']),
+  label: z.string().min(1).max(200),
+  required: z.boolean().optional(),
+  options: z.array(z.string().min(1).max(200)).max(50).optional(),
+  placeholder: z.string().max(400).optional(),
+})
+
 const formSchema = z.object({
   chatId: z.string().min(1, 'chatId is required'),
   caseId: z.string().optional().default(''),
+  toolCallId: z.string().min(1).max(200).optional(),
+  title: z.string().max(200).optional(),
+  description: z.string().max(2000).optional(),
+  fields: z.array(fieldSchema).max(30).optional(),
   answers: z.record(z.unknown()).refine(v => !Array.isArray(v), 'answers must be an object'),
 }).refine(data => JSON.stringify(data.answers).length <= 50_000, 'answers too large (max 50KB)')
 
@@ -43,7 +56,17 @@ export const POST = defineRoute<z.infer<typeof formSchema>>({
 
     handleIncomingEvent(
       input.chatId, session.orgId, session.userId,
-      { type: 'form_submit', form: { caseId: input.caseId || session.caseId, answers: normalized } },
+      {
+        type: 'form_submit',
+        form: {
+          caseId: input.caseId || session.caseId,
+          answers: normalized,
+          ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}),
+          ...(input.title ? { title: input.title } : {}),
+          ...(input.description ? { description: input.description } : {}),
+          ...(input.fields?.length ? { fields: input.fields } : {}),
+        },
+      },
       config,
       resolvedAgentConfigId,
     ).catch(err => console.error('[FormSubmit] bridge error:', err))

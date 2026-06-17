@@ -27,6 +27,7 @@ export default async function LiveChatWidgetPage({
   const description = readWidgetSearchParam(params, 'description') || copy.fallbackDescription
   const caseId = readWidgetSearchParam(params, 'caseId') || undefined
   const chatId = readWidgetSearchParam(params, 'chatId') || undefined
+  const toolCallId = readWidgetSearchParam(params, 'toolCallId') || undefined
   const preview = isWidgetPreview(params)
 
   return (
@@ -36,6 +37,7 @@ export default async function LiveChatWidgetPage({
       fields={fields}
       caseId={caseId}
       chatId={chatId}
+      toolCallId={toolCallId}
       preview={preview}
       locale={locale}
     />

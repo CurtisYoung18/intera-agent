@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MockLiveChatServer } from '../mocks/livechat-api-mock'
 import {
-  sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
+  sendAgentNote, sendTextMessage, sendWidgetPayload, sendQuickReplies, sendCard, sendCarousel,
   sendImage, sendSystemMessage, setTypingIndicator, transferChat,
 } from '../../livechat-api'
 
@@ -30,6 +30,19 @@ describe('livechat-api', () => {
       try { await sendTextMessage('chat1', 'hi', token, license) } catch (e) {
         expect((e as { code?: string }).code).toBe('TOKEN_EXPIRED')
       }
+    })
+  })
+
+  describe('sendAgentNote', () => {
+    it('sends an agent-only message event', async () => {
+      await sendAgentNote('chat1', 'Internal note', token, license)
+      const call = server.calls[0]!
+      expect(call.action).toBe('send_event')
+      expect((call.body as Record<string, unknown>).event).toMatchObject({
+        type: 'message',
+        text: 'Internal note',
+        visibility: 'agents',
+      })
     })
   })
 

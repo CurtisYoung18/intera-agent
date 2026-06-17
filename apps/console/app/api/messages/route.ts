@@ -7,8 +7,10 @@ import { AgentLoop } from '@/lib/agent/loop'
 import {
   hasProviderOrDisplayContent,
   hydrateMessageFromDb,
+  makeProviderMeta,
   providerTranscriptPersistenceReceipt,
   serializeMessageForPersistence,
+  toolResultProviderContent,
   type MessagePersistenceRecord,
 } from '@/lib/agent/provider-transcript'
 import {
@@ -33,7 +35,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { maybeProxyMessagesToRuntime } from '@/lib/runtime/runtime-service'
 import { generateCaseId } from '@/lib/utils'
-import type { SSEEvent, AgentConfigData, CaseSchemaConfig } from '@intera/shared/types'
+import type { SSEEvent, AgentConfigData, CaseSchemaConfig, Message } from '@intera/shared/types'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import { LOOP_HISTORY_REPLAY_LIMIT } from '@/lib/agent/history-window'
@@ -95,6 +97,169 @@ function parseMemoryJson(raw: string | null | undefined): unknown {
   try { return JSON.parse(raw) } catch { return {} }
 }
 
+function formResultRuntimeText(answers: Record<string, string>): string {
+  return `Tool ask_user_questions result: ${JSON.stringify(answers)}`
+}
+
+type FormTraceField = {
+  id: string
+  type: string
+  label: string
+  required?: boolean
+  options?: string[]
+  placeholder?: string
+}
+
+function normalizeFormTraceFields(raw: unknown): FormTraceField[] {
+  if (!Array.isArray(raw)) return []
+  const normalized: FormTraceField[] = []
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    const id = typeof record.id === 'string' ? record.id.trim() : ''
+    const label = typeof record.label === 'string' && record.label.trim() ? record.label.trim() : id
+    if (!id || !label) continue
+    const type = typeof record.type === 'string' && record.type.trim() ? record.type.trim() : 'text'
+    const options = Array.isArray(record.options)
+      ? record.options.filter((option): option is string => typeof option === 'string' && option.trim().length > 0)
+      : undefined
+
+    normalized.push({
+      id,
+      type,
+      label,
+      required: record.required === true ? true : undefined,
+      options,
+      placeholder: typeof record.placeholder === 'string' && record.placeholder.trim().length > 0
+        ? record.placeholder.trim()
+        : undefined,
+    })
+  }
+
+  return normalized
+}
+
+function formatFormSubmissionTraceDetail(args: {
+  title?: string
+  description?: string
+  answers: Record<string, string>
+  fields: FormTraceField[]
+}): string {
+  const lines: string[] = []
+  if (args.title?.trim()) lines.push(`title: ${args.title.trim()}`)
+  if (args.description?.trim()) lines.push(`description: ${args.description.trim()}`)
+
+  const labelById = new Map(args.fields.map((field) => [field.id, field.label]))
+  const answerLines = Object.entries(args.answers).map(([key, value]) => {
+    const label = labelById.get(key) ?? key
+    const rendered = typeof value === 'string' ? value.trim() : String(value)
+    return `${label}: ${rendered || '(empty)'}`
+  })
+
+  if (answerLines.length > 0) {
+    lines.push('answers:')
+    lines.push(...answerLines.map((line) => `- ${line}`))
+  }
+
+  return lines.join('\n')
+}
+
+function formatFormSubmissionDisplayText(answers: Record<string, string>): string {
+  const entries = Object.entries(answers)
+    .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+    .map(([key, value]) => `${key}: ${value.trim()}`)
+
+  if (entries.length === 0) {
+    return ['[FORM_SUBMISSION]', '[/FORM_SUBMISSION]'].join('\n')
+  }
+
+  return [
+    '[FORM_SUBMISSION]',
+    ...entries,
+    '[/FORM_SUBMISSION]',
+  ].join('\n')
+}
+
+function rewritePersistedFormTurnMessages(
+  messages: Message[],
+  formAnswers: Record<string, string> | undefined,
+  toolCallId: string | undefined,
+): Message[] {
+  if (!formAnswers || !toolCallId) return messages
+
+  const rawRuntimeText = formResultRuntimeText(formAnswers)
+  let targetIndex = -1
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && message.content === rawRuntimeText) {
+      targetIndex = index
+      break
+    }
+  }
+  if (targetIndex < 0) return messages
+
+  const target = messages[targetIndex]!
+  const toolResultPayload = JSON.stringify(formAnswers)
+  const visibleMessage: Message = {
+    ...target,
+    content: formatFormSubmissionDisplayText(formAnswers),
+    createdAt: new Date(target.createdAt.getTime() + 1),
+    providerContent: undefined,
+    providerMeta: undefined,
+  }
+  const internalToolResultMessage: Message = {
+    id: `${target.id}__tool_result`,
+    role: 'user',
+    content: '',
+    createdAt: target.createdAt,
+    providerContent: toolResultProviderContent([
+      {
+        type: 'tool_result',
+        tool_use_id: toolCallId,
+        content: toolResultPayload,
+      },
+    ]),
+    providerMeta: makeProviderMeta({
+      visibility: 'internal',
+      transcriptKind: 'tool_result',
+      toolUseIds: [toolCallId],
+    }),
+  }
+
+  return [
+    ...messages.slice(0, targetIndex),
+    internalToolResultMessage,
+    visibleMessage,
+    ...messages.slice(targetIndex + 1),
+  ]
+}
+
+function buildMessagesToPersist(args: {
+  messages: Message[]
+  caseId: string
+  orgId: string
+  chatId: string
+  runId: string | null
+  formAnswers?: Record<string, string>
+  formToolCallId?: string
+}): Array<MessagePersistenceRecord & { orgId: string; chatId: string; runId: string | null }> {
+  const rewrittenMessages = rewritePersistedFormTurnMessages(
+    args.messages,
+    args.formAnswers,
+    args.formToolCallId,
+  )
+
+  return rewrittenMessages
+    .filter((message) => hasProviderOrDisplayContent(message))
+    .map((message) => ({
+      ...serializeMessageForPersistence(message, args.caseId),
+      orgId: args.orgId,
+      chatId: args.chatId,
+      runId: args.runId,
+    }))
+}
+
 function deriveCaseStatusFromRuntimeProcedure(
   runtimeProcedure: { status?: string } | null | undefined,
   currentCaseStatus: string | null | undefined,
@@ -136,6 +301,39 @@ async function writeProviderTranscriptPersistedTrace(
     })
   } catch (err) {
     console.error('[Intera] Failed to write provider transcript persistence trace:', err)
+  }
+}
+
+async function writeFormSubmissionTrace(args: {
+  caseId: string
+  orgId: string
+  chatId: string
+  runId: string | null
+  title?: string
+  description?: string
+  fields: FormTraceField[]
+  answers: Record<string, string>
+}): Promise<void> {
+  try {
+    await prisma.actionTrace.create({
+      data: {
+        caseId: args.caseId,
+        orgId: args.orgId,
+        chatId: args.chatId,
+        runId: args.runId,
+        actionType: 'form_submit',
+        title: args.title?.trim() ? `Form submitted: ${args.title.trim()}` : 'Form submitted',
+        detail: formatFormSubmissionTraceDetail(args),
+        payload: JSON.stringify({
+          title: args.title ?? null,
+          description: args.description ?? null,
+          fields: args.fields,
+          answers: args.answers,
+        }),
+      },
+    })
+  } catch (err) {
+    console.error('[Intera] Failed to write form submission trace:', err)
   }
 }
 
@@ -363,6 +561,10 @@ export async function POST(request: NextRequest) {
 
         // ── Form response: customer submitted form answers ──
         let formAnswers: Record<string, string> | undefined
+        let formToolCallId: string | undefined
+        let formTitle: string | undefined
+        let formDescription: string | undefined
+        let formFields: FormTraceField[] = []
         if (formResult && !message) {
           resolvedCaseId = formResult.caseId || resolvedCaseId
           const answers = (formResult.answers || {}) as Record<string, string>
@@ -374,11 +576,28 @@ export async function POST(request: NextRequest) {
             return
           }
           formAnswers = answers
+          formToolCallId =
+            typeof formResult.toolCallId === 'string' && formResult.toolCallId.trim().length > 0
+              ? formResult.toolCallId.trim()
+              : undefined
+          formTitle =
+            typeof formResult.title === 'string' && formResult.title.trim().length > 0
+              ? formResult.title.trim()
+              : undefined
+          formDescription =
+            typeof formResult.description === 'string' && formResult.description.trim().length > 0
+              ? formResult.description.trim()
+              : undefined
+          formFields = normalizeFormTraceFields((formResult as { fields?: unknown }).fields)
           runtimeInputSource = 'customer_form_result'
           // Format as tool_result so the model sees it exactly like any other
           // tool execution result — matching CC's AskUserQuestion pattern.
-          userMessage = `Tool ask_user_questions result: ${JSON.stringify(answers)}`
-          console.log(`[Intera] Form submitted for case ${resolvedCaseId}`)
+          userMessage = formResultRuntimeText(answers)
+          console.log('[Intera] Form submitted', {
+            chatId: resolvedChatId,
+            internalCaseId: resolvedCaseId,
+            fieldCount: formFields.length,
+          })
         }
 
         // ── Interaction response: customer selected an option ──
@@ -883,6 +1102,15 @@ export async function POST(request: NextRequest) {
             content: userMessage,
             contentBlocks,
             formAnswers,
+            metadata:
+              formToolCallId || formTitle || formDescription || formFields.length > 0
+                ? {
+                    ...(formToolCallId ? { toolCallId: formToolCallId } : {}),
+                    ...(formTitle ? { formTitle } : {}),
+                    ...(formDescription ? { formDescription } : {}),
+                    ...(formFields.length > 0 ? { formFields } : {}),
+                  }
+                : undefined,
             source: runtimeInputSource,
             origin: runtimeInputSource === 'human_task_result' ? 'human' : 'customer',
           })
@@ -911,6 +1139,15 @@ export async function POST(request: NextRequest) {
           content: userMessage,
           contentBlocks,
           formAnswers,
+          metadata:
+            formToolCallId || formTitle || formDescription || formFields.length > 0
+              ? {
+                  ...(formToolCallId ? { toolCallId: formToolCallId } : {}),
+                  ...(formTitle ? { formTitle } : {}),
+                  ...(formDescription ? { formDescription } : {}),
+                  ...(formFields.length > 0 ? { formFields } : {}),
+                }
+              : undefined,
           source: runtimeInputSource,
           origin: runtimeInputSource === 'human_task_result' ? 'human' : 'customer',
         })
@@ -1042,14 +1279,23 @@ export async function POST(request: NextRequest) {
                   todos: followupMem.todos ? JSON.stringify(followupMem.todos) : null,
                 },
               })
-              const msgsToPersist = result.messages
-                .filter((m) => hasProviderOrDisplayContent(m))
-                .map((m) => ({
-                  ...serializeMessageForPersistence(m, resolvedCaseId),
-                  orgId: resolvedOrgId,
-                  chatId: resolvedChatId,
-                  runId,
-                }))
+              const msgsToPersist = buildMessagesToPersist({
+                messages: result.messages,
+                caseId: resolvedCaseId,
+                orgId: resolvedOrgId,
+                chatId: resolvedChatId,
+                runId,
+                formAnswers:
+                  next.source === 'customer_form_result'
+                    ? (next.formAnswers ?? undefined)
+                    : undefined,
+                formToolCallId:
+                  next.source === 'customer_form_result' &&
+                  typeof next.metadata?.toolCallId === 'string' &&
+                  next.metadata.toolCallId.trim().length > 0
+                    ? next.metadata.toolCallId.trim()
+                    : undefined,
+              })
               if (msgsToPersist.length > 0) {
                 await prisma.$transaction(
                   msgsToPersist.map((msg) =>
@@ -1076,6 +1322,24 @@ export async function POST(request: NextRequest) {
                   runId,
                   msgsToPersist,
                 )
+              }
+              if (next.source === 'customer_form_result' && next.formAnswers) {
+                await writeFormSubmissionTrace({
+                  caseId: resolvedCaseId,
+                  orgId: resolvedOrgId,
+                  chatId: resolvedChatId,
+                  runId,
+                  title:
+                    typeof next.metadata?.formTitle === 'string' && next.metadata.formTitle.trim().length > 0
+                      ? next.metadata.formTitle.trim()
+                      : undefined,
+                  description:
+                    typeof next.metadata?.formDescription === 'string' && next.metadata.formDescription.trim().length > 0
+                      ? next.metadata.formDescription.trim()
+                      : undefined,
+                  fields: normalizeFormTraceFields(next.metadata?.formFields),
+                  answers: next.formAnswers,
+                })
               }
             } catch (e) {
               console.error('[Intera] Failed to persist followup result:', e)
@@ -1155,27 +1419,28 @@ export async function POST(request: NextRequest) {
         }
 
         // ── Persist messages to DB (always, even for casual chat) ──
-                try {
-                  const runId = getActiveProcedureRun(resolvedCaseId)?.runId ?? runtimeProcedure?.id ?? null
-                  const messagesToPersist = result.messages
-                    .filter((m) => hasProviderOrDisplayContent(m))
-                    .map((m) => ({
-                      ...serializeMessageForPersistence(m, resolvedCaseId),
-                      orgId: resolvedOrgId,
-                      chatId: resolvedChatId,
-                      runId,
-                    }))
+        try {
+          const runId = getActiveProcedureRun(resolvedCaseId)?.runId ?? runtimeProcedure?.id ?? null
+          const messagesToPersist = buildMessagesToPersist({
+            messages: result.messages,
+            caseId: resolvedCaseId,
+            orgId: resolvedOrgId,
+            chatId: resolvedChatId,
+            runId,
+            formAnswers,
+            formToolCallId,
+          })
 
           if (messagesToPersist.length > 0) {
             await prisma.$transaction(
               messagesToPersist.map((msg) =>
                 prisma.message.upsert({
                   where: { id: msg.id },
-                          update: {
-                            orgId: resolvedOrgId,
-                            chatId: resolvedChatId,
-                            runId,
-                            content: msg.content,
+                  update: {
+                    orgId: resolvedOrgId,
+                    chatId: resolvedChatId,
+                    runId,
+                    content: msg.content,
                     contentBlocks: msg.contentBlocks ?? undefined,
                     providerContent: (msg.providerContent ?? undefined) as any,
                     providerMeta: (msg.providerMeta ?? undefined) as any,
@@ -1185,13 +1450,26 @@ export async function POST(request: NextRequest) {
                 }),
               ),
             )
-                    await writeProviderTranscriptPersistedTrace(
-                      resolvedCaseId,
-                      resolvedOrgId,
-                      resolvedChatId,
-                      runId,
-                      messagesToPersist,
-                    )
+            await writeProviderTranscriptPersistedTrace(
+              resolvedCaseId,
+              resolvedOrgId,
+              resolvedChatId,
+              runId,
+              messagesToPersist,
+            )
+          }
+
+          if (formAnswers) {
+            await writeFormSubmissionTrace({
+              caseId: resolvedCaseId,
+              orgId: resolvedOrgId,
+              chatId: resolvedChatId,
+              runId,
+              title: formTitle,
+              description: formDescription,
+              fields: formFields,
+              answers: formAnswers,
+            })
           }
         } catch (err) {
           console.error('[Intera] Failed to persist messages:', err)
