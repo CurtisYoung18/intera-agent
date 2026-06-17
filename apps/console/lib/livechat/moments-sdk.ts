@@ -10,13 +10,22 @@ type CreateMomentsSDK = (options?: {
 
 declare global {
   interface Window {
-    MomentsSDK?: CreateMomentsSDK | { default?: CreateMomentsSDK; createMomentsSDK?: CreateMomentsSDK }
+    MomentsSDK?: MomentsSdkClient | CreateMomentsSDK | { default?: CreateMomentsSDK; createMomentsSDK?: CreateMomentsSDK }
     onMomentAsyncInit?: (createMomentsSDK: CreateMomentsSDK) => void
     __interaMomentsSdkPromise?: Promise<MomentsSdkClient | null>
   }
 }
 
 const MOMENTS_SDK_SRC = 'https://cdn.livechat-static.com/moments-sdk/moments-sdk-1.9.0.umd.min.js'
+
+function readExistingMomentsClient(): MomentsSdkClient | null {
+  if (typeof window === 'undefined') return null
+  const candidate = window.MomentsSDK
+  if (candidate && typeof candidate === 'object' && typeof candidate.close === 'function') {
+    return candidate
+  }
+  return null
+}
 
 function readCreateMomentsSDK(): CreateMomentsSDK | null {
   if (typeof window === 'undefined') return null
@@ -34,6 +43,12 @@ export function ensureMomentsSdk(options?: {
 }): Promise<MomentsSdkClient | null> {
   if (typeof window === 'undefined') return Promise.resolve(null)
   if (window.__interaMomentsSdkPromise) return window.__interaMomentsSdkPromise
+
+  const existingClient = readExistingMomentsClient()
+  if (existingClient) {
+    window.__interaMomentsSdkPromise = Promise.resolve(existingClient)
+    return window.__interaMomentsSdkPromise
+  }
 
   const createImmediately = readCreateMomentsSDK()
   if (createImmediately) {
@@ -65,13 +80,22 @@ export function ensureMomentsSdk(options?: {
 
     const existingScript = document.querySelector<HTMLScriptElement>('script[data-intera-moments-sdk="true"]')
     if (existingScript) {
-      const fallback = readCreateMomentsSDK()
-      if (fallback) initialize(fallback)
-      else existingScript.addEventListener('load', () => {
-        const loaded = readCreateMomentsSDK()
-        if (loaded) initialize(loaded)
-        else finish(null)
-      }, { once: true })
+      const existingClientAfterScript = readExistingMomentsClient()
+      if (existingClientAfterScript) {
+        finish(existingClientAfterScript)
+      } else {
+        const fallback = readCreateMomentsSDK()
+        if (fallback) initialize(fallback)
+        else existingScript.addEventListener('load', () => {
+          const loadedClient = readExistingMomentsClient()
+          if (loadedClient) finish(loadedClient)
+          else {
+            const loaded = readCreateMomentsSDK()
+            if (loaded) initialize(loaded)
+            else finish(null)
+          }
+        }, { once: true })
+      }
       existingScript.addEventListener('error', () => finish(null), { once: true })
       return
     }
@@ -81,9 +105,13 @@ export function ensureMomentsSdk(options?: {
     script.async = true
     script.dataset.interaMomentsSdk = 'true'
     script.addEventListener('load', () => {
-      const loaded = readCreateMomentsSDK()
-      if (loaded) initialize(loaded)
-      else finish(null)
+      const loadedClient = readExistingMomentsClient()
+      if (loadedClient) finish(loadedClient)
+      else {
+        const loaded = readCreateMomentsSDK()
+        if (loaded) initialize(loaded)
+        else finish(null)
+      }
     }, { once: true })
     script.addEventListener('error', () => finish(null), { once: true })
     document.body.appendChild(script)

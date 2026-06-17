@@ -7,6 +7,7 @@ describe('closeMomentIfPossible', () => {
     vi.useFakeTimers()
     vi.resetModules()
     window.__interaMomentsSdkPromise = undefined
+    window.MomentsSDK = undefined
   })
 
   afterEach(() => {
@@ -14,6 +15,7 @@ describe('closeMomentIfPossible', () => {
     vi.useRealTimers()
     vi.restoreAllMocks()
     window.__interaMomentsSdkPromise = undefined
+    window.MomentsSDK = undefined
   })
 
   it('falls back to browser history when no Moments SDK close handler is available', async () => {
@@ -26,6 +28,19 @@ describe('closeMomentIfPossible', () => {
 
     expect(closed).toBe(true)
     expect(backSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the injected LiveChat MomentsSDK object when the widget already provides one', async () => {
+    const closeSpy = vi.fn(async () => {})
+    window.MomentsSDK = { close: closeSpy }
+
+    const { ensureMomentsSdk, closeMomentIfPossible } = await import('@/lib/livechat/moments-sdk')
+    const sdk = await ensureMomentsSdk({ title: 'Transaction History Details' })
+    const closed = await closeMomentIfPossible({ title: 'Transaction History Details' })
+
+    expect(sdk).toBe(window.MomentsSDK)
+    expect(closed).toBe(true)
+    expect(closeSpy).toHaveBeenCalledTimes(1)
   })
 
   it('trusts sdk.close() when the official widget runtime is available', async () => {
