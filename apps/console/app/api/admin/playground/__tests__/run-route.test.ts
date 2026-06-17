@@ -4,7 +4,6 @@ const h = vi.hoisted(() => ({
   mockGetActiveOrgId: vi.fn(),
   mockGetActiveVendor: vi.fn(),
   mockRunPlaygroundTurn: vi.fn(),
-  mockAgentConfigFindUnique: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
@@ -14,12 +13,6 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/agent/playground-runner', () => ({
   runPlaygroundTurn: h.mockRunPlaygroundTurn,
-}))
-vi.mock('@/lib/db/repo-for-org', () => ({
-  repoForOrg: (orgId: string) => ({
-    orgId,
-    agentConfig: { findUnique: h.mockAgentConfigFindUnique },
-  }),
 }))
 
 import { POST } from '@/app/api/admin/playground/run/route'
@@ -44,7 +37,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.mockGetActiveOrgId.mockResolvedValue('org-1')
   h.mockGetActiveVendor.mockResolvedValue({ isAuthed: true, userId: 'user-1' })
-  h.mockAgentConfigFindUnique.mockResolvedValue({ id: 'agent-1' })
   h.mockRunPlaygroundTurn.mockImplementation(async function* (input: unknown) {
     yield { type: 'trace', data: { input }, timestamp: '2026-06-10T00:00:00.000Z' }
     yield { type: 'message_stop', data: { transition: 'next_turn' }, timestamp: '2026-06-10T00:00:00.000Z' }
@@ -137,32 +129,6 @@ describe('POST /api/admin/playground/run', () => {
     expect(h.mockRunPlaygroundTurn).toHaveBeenCalledWith(expect.objectContaining({
       playgroundConfig: { debug: false, toolExecutionMode: 'dry_run' },
     }))
-  })
-
-  it('rejects missing configId instead of running against a default agent', async () => {
-    const res = await POST(makeRequest({ message: 'hello' }))
-    const body = await res.json()
-
-    expect(res.status).toBe(400)
-    expect(body.ok).toBe(false)
-    expect(body.error.code).toBe('validation')
-    expect(h.mockRunPlaygroundTurn).not.toHaveBeenCalled()
-  })
-
-  it('rejects configId values outside the active org', async () => {
-    h.mockAgentConfigFindUnique.mockResolvedValue(null)
-
-    const res = await POST(makeRequest({ message: 'hello', configId: 'foreign-agent' }))
-    const body = await res.json()
-
-    expect(res.status).toBe(404)
-    expect(body.ok).toBe(false)
-    expect(body.error.code).toBe('not_found')
-    expect(h.mockAgentConfigFindUnique).toHaveBeenCalledWith({
-      where: { id: 'foreign-agent' },
-      select: { id: true },
-    })
-    expect(h.mockRunPlaygroundTurn).not.toHaveBeenCalled()
   })
 
   it('returns typed 401 when admin session is missing', async () => {

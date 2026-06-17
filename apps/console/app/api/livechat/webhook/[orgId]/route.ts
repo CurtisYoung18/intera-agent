@@ -7,7 +7,7 @@ import { handleIncomingEvent } from '@/lib/livechat/bridge'
 import { sendTextMessage, deactivateChat } from '@/lib/livechat/livechat-api'
 import { isDuplicateWebhook } from '@/lib/livechat/webhook-dedup'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
-import { resolveLiveChatConfigForOrg } from '@/lib/livechat/config-store'
+import { getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
 import type { InteraInteractionSubmit } from '@/lib/livechat/types'
 
 function getChatPresence(body: Record<string, unknown>): string[] {
@@ -31,14 +31,10 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
     method: 'POST',
     auth: 'webhook',
     async handler({ params }) {
-      const resolved = await resolveLiveChatConfigForOrg(params.orgId)
-      if (resolved.status === 'ambiguous') {
-        return NextResponse.json({ error: 'agentConfigId required for multi-agent LiveChat webhook' }, { status: 409 })
-      }
-      if (resolved.status !== 'resolved' || !resolved.config.enabled) {
-        return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
-      }
-      const { agentConfigId, config } = resolved
+      const resolved = await getLiveChatConfigForOrg(params.orgId)
+      const agentConfigId = resolved?.agentConfigId
+      const config = resolved?.config ?? null
+      if (!config?.enabled) return NextResponse.json({ error: 'Org not configured' }, { status: 404 })
 
       // Body-based secret_key validation (defineRoute only checks headers)
       if (config.webhookSecret) {

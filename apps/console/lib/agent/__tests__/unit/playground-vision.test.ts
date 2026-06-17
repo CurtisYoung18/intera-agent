@@ -21,7 +21,6 @@ const h = vi.hoisted(() => ({
   mockCaseFindMany: vi.fn(),
   mockCaseDeleteMany: vi.fn(),
   mockCaseUpsert: vi.fn(),
-  mockCaseTypeFindUnique: vi.fn(),
   mockProcedureRunFindFirst: vi.fn(),
   mockMessageFindMany: vi.fn(),
   mockMessageUpsert: vi.fn(),
@@ -93,7 +92,6 @@ vi.mock('@intera/shared/prisma', () => ({
       findUnique: vi.fn(async () => ({ gptbotsApiKey: null })),
     },
     caseType: {
-      findUnique: h.mockCaseTypeFindUnique,
       findMany: vi.fn(async () => []),
     },
     $transaction: h.mockTransaction,
@@ -159,7 +157,6 @@ beforeEach(() => {
   h.mockCaseCount.mockResolvedValue(0)
   h.mockCaseFindMany.mockResolvedValue([])
   h.mockCaseDeleteMany.mockResolvedValue({ count: 0 })
-  h.mockCaseTypeFindUnique.mockResolvedValue(null)
   h.mockCaseUpsert.mockResolvedValue({})
   h.mockProcedureRunFindFirst.mockResolvedValue(null)
   h.mockMessageFindMany.mockResolvedValue([])
@@ -288,7 +285,7 @@ describe('runPlaygroundTurn vision handling', () => {
   it('restores a provided chatId inside the current org and user boundary even after the case type changes', async () => {
     vi.stubEnv('OPENROUTER_API_KEY', 'mock-key')
     h.config = { ...h.config, model: 'openai/gpt-4o' }
-    h.mockCaseFindFirst.mockResolvedValue({ id: 'case-existing', type: 'deposit_not_credited' })
+    h.mockCaseFindFirst.mockResolvedValue({ id: 'case-existing' })
 
     await collect({
       orgId: 'org-1',
@@ -305,7 +302,7 @@ describe('runPlaygroundTurn vision handling', () => {
         chatId: 'pg_agent-1_1_a',
         userId: 'user-1',
       },
-      select: { id: true, type: true },
+      select: { id: true },
     })
     expect(h.mockAgentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
       caseId: 'case-existing',

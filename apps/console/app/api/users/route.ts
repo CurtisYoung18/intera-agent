@@ -1,7 +1,9 @@
 // GET /api/users — List user/profile keys for the selected agent.
 //
-// UserProfile.userId stores a profileKey ("user:<id>" or "chat:<id>").
-// Profiles, counts, and recency are selected-agent scoped.
+// UserProfile.userId stores a profileKey ("user:<id>" or "chat:<id>"). The
+// profile markdown is still legacy org-scoped storage; counts and recency here
+// are derived from selected-agent cases so the Operate UI never shows org-wide
+// user activity as if it belonged to the selected agent.
 //
 // Migrated to defineRoute + repoForOrg (Wave 1 G1/G2).
 // Scoped to the active org via the repo Proxy.
@@ -9,6 +11,7 @@
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { profileKey } from '@/lib/agent/identity'
+import { getUserProfileStorageScope, listUserProfilesByKeys } from '@/lib/db/user-profiles'
 import { caseIdFilterForScope, resolveRequiredAgentCaseScope } from '../_agent-scope'
 import { z } from 'zod'
 
@@ -74,10 +77,12 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
     }
 
     const keys = Array.from(grouped.keys())
+    const profileScope = await getUserProfileStorageScope(repo.raw as any).catch(() => 'legacy_org_profile' as const)
     const profiles = keys.length > 0
-      ? await repo.raw.userProfile.findMany({
-        where: { orgId: repo.orgId, agentConfigId: scope.agentConfigId, userId: { in: keys } },
-        select: { userId: true, profile: true, updatedAt: true },
+      ? await listUserProfilesByKeys(repo.raw as any, {
+        orgId: repo.orgId,
+        userIds: keys,
+        agentConfigId: scope.agentConfigId,
       })
       : []
     const profileByKey = new Map(profiles.map((profile) => [profile.userId, profile]))
@@ -105,7 +110,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
           lastCaseType: entry.lastCaseType,
           hasProfile: !!p?.profile && p.profile.trim().length > 0,
           lastSeenAt: entry.lastSeenAt?.toISOString() ?? p?.updatedAt.toISOString() ?? new Date(0).toISOString(),
-          profileScope: p ? 'agent_profile' : null,
+          profileScope: p ? profileScope : null,
         }
       })
 

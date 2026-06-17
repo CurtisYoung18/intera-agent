@@ -107,8 +107,6 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           // chatId lets the form webview deliver answers via /api/livechat/form-submit
           // (SDK-independent path — see BUG-F fix).
           chatId: ctx.sessionId,
-          orgId: ctx.orgId,
-          agentConfigId: ctx.agentConfigId,
           title: d.title ?? copy.fallbackTitle,
           description: d.description ?? copy.fallbackDescription,
           fields: JSON.stringify(fields),

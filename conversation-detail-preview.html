@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intera · 会话详情重设计原型</title>
+<style>
+  :root{
+    --bg:#fbfaf6; --surface:#fffefa; --card:#ffffff;
+    --ink:#1b2c33; --fog:#5f6b66; --faint:#9aa39e;
+    --line:rgba(0,0,0,0.09); --line2:rgba(0,0,0,0.16);
+    --teal:#357f7c; --teal-soft:#e3f1ee; --green:#128a20; --mark:#14b8a6;
+    --amber:#9a6b12; --amber-soft:#fbf0d8;
+    --indigo:#5b50b6; --indigo-soft:#ecebfb;
+    --blue:#2b6ca8; --blue-soft:#e7f0fa;
+    --pink:#a8497e; --pink-soft:#fbe9f1;
+    --vermillion:#c0392b; --verm-soft:#fbeae8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.55}
+  .wrap{max-width:1240px;margin:0 auto;padding:16px 20px 60px}
+  button{font:inherit;cursor:pointer}
+  .crumb{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--teal);text-transform:uppercase}
+
+  /* header */
+  .hdr{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-bottom:12px}
+  .hdr-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .back{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fog);border:1px solid var(--line2);background:#fff;border-radius:10px;padding:5px 10px}
+  h1{font-size:18px;margin:6px 0 0;letter-spacing:-.01em}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 10px}
+  .p-live{background:var(--teal-soft);color:var(--teal)}
+  .p-wait{background:var(--amber-soft);color:var(--amber)}
+  .icobtn{display:inline-flex;align-items:center;justify-content:center;height:32px;width:32px;border-radius:10px;border:1px solid var(--line2);background:#fff;color:var(--fog)}
+  /* consolidated overview strip */
+  .ovstrip{display:flex;flex-wrap:wrap;gap:18px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .ov{display:flex;flex-direction:column;gap:2px}
+  .ov .k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .ov .v{font-size:13px;font-weight:500}
+
+  .grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:14px;align-items:start}
+  .col-h{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin:0 2px 10px}
+
+  /* transcript */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:16px}
+  .msgs{display:flex;flex-direction:column;gap:12px}
+  .row{display:flex;gap:10px;max-width:86%}
+  .row.user{align-self:flex-end;flex-direction:row-reverse}
+  .av{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+  .av.a{background:var(--teal-soft);color:var(--teal)}
+  .av.u{background:#e8eef6;color:var(--blue)}
+  .bub{border-radius:14px;padding:9px 13px;font-size:13.5px;line-height:1.6}
+  .bub.a{background:#fff;border:1px solid var(--line)}
+  .bub.u{background:var(--teal);color:#fff}
+  .who{font-size:10.5px;color:var(--faint);margin:0 0 3px 2px}
+  /* inline events woven into the transcript */
+  .ev{align-self:center;display:inline-flex;align-items:center;gap:7px;font-size:11.5px;border-radius:999px;padding:4px 12px;cursor:pointer;border:1px dashed transparent;transition:.12s}
+  .ev:hover{filter:brightness(0.97)}
+  .ev .dot{width:7px;height:7px;border-radius:50%}
+  .ev-tool{background:var(--indigo-soft);color:var(--indigo)}
+  .ev-tool .dot{background:var(--indigo)}
+  .ev-proc{background:var(--teal-soft);color:var(--teal)}
+  .ev-proc .dot{background:var(--teal)}
+  .ev-handoff{background:var(--pink-soft);color:var(--pink);font-weight:600;border-style:solid;border-color:#e9b9d0}
+  .ev-handoff .dot{background:var(--pink)}
+  .ev .t{font-size:10.5px;opacity:.7;margin-left:2px}
+
+  /* right rail tabs */
+  .tabs{display:flex;gap:2px;background:#efeee8;padding:3px;border-radius:12px;margin-bottom:12px}
+  .tab{flex:1;border:0;background:transparent;border-radius:9px;padding:7px 6px;font-size:12.5px;color:var(--fog)}
+  .tab.active{background:#fff;color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .tabpanel{display:none}
+  .tabpanel.active{display:block}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .kv:last-child{border-bottom:0}
+  .kv .k{color:var(--fog)}
+  .kv .v{font-weight:500;text-align:right}
+  .runcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px}
+  .runcard .rt{font-size:13px;font-weight:500}
+  .runcard .rs{font-size:11px;color:var(--fog);margin-top:3px;font-family:ui-monospace,Menlo,monospace}
+  .tl{position:relative;padding-left:18px}
+  .tl::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  .tlitem{position:relative;padding:7px 0 9px}
+  .tlitem::before{content:"";position:absolute;left:-16px;top:11px;width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid var(--line2)}
+  .tlitem.hot::before{border-color:var(--indigo);background:var(--indigo)}
+  .tlitem .ti{font-size:12.5px;font-weight:500}
+  .tlitem .td{font-size:11.5px;color:var(--fog);margin-top:2px}
+  .tlitem .tt{font-size:10.5px;color:var(--faint);font-family:ui-monospace,Menlo,monospace}
+  .tlitem.hl{background:var(--indigo-soft);border-radius:8px;margin:0 -6px;padding-left:6px;padding-right:6px}
+  .tlitem{cursor:pointer}
+  .tlitem .chev{position:absolute;right:2px;top:9px;color:var(--faint);font-size:11px;transition:transform .15s}
+  .tlitem.open .chev{transform:rotate(90deg)}
+  .tldetail{display:none;margin:8px 0 2px}
+  .tlitem.open .tldetail{display:block}
+  .codeblk{margin:8px 0}
+  .codelabel{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--fog);margin-bottom:4px;font-weight:500}
+  .codelabel .tag{font-size:9.5px;border-radius:5px;padding:0 6px;font-weight:600}
+  .tag-in{background:var(--blue-soft);color:var(--blue)}
+  .tag-out{background:var(--teal-soft);color:var(--teal)}
+  .tag-prompt{background:var(--amber-soft);color:var(--amber)}
+  .tag-decision{background:var(--indigo-soft);color:var(--indigo)}
+  .codelabel .cp{font-size:10px;color:var(--blue);cursor:pointer;border:0;background:none}
+  pre.code{margin:0;background:#11201d;color:#d3eae2;border-radius:10px;padding:10px 12px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.65;white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:240px}
+  .rawbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .rawbar .toggle-all{font-size:11px;color:var(--blue);border:1px solid var(--line2);background:#fff;border-radius:8px;padding:3px 9px}
+  .memcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px;font-size:12.5px;line-height:1.6}
+  .memcard .ml{font-size:10.5px;color:var(--indigo);font-weight:600;margin-bottom:4px}
+  .btn{border:1px solid var(--line2);background:#fff;border-radius:10px;padding:7px 12px;font-size:12.5px;color:var(--ink)}
+  .btn-teal{background:var(--teal);border-color:var(--teal);color:#fff}
+  .adv{font-size:10.5px;color:var(--faint);background:#f1efe8;border-radius:6px;padding:1px 7px}
+  .metric{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .metric:last-child{border-bottom:0}
+  .metric .k{color:var(--fog)}
+  .note{font-size:11.5px;color:var(--faint);margin-top:10px;line-height:1.6}
+  svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div class="hdr-top">
+      <div style="min-width:0">
+        <button class="back">← 会话</button>
+        <div class="crumb" style="margin-top:8px">运营 · 会话详情</div>
+        <h1>会话 · JAYA113C88F</h1>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        <span class="pill p-live"><span style="width:7px;height:7px;border-radius:50%;background:var(--teal);display:inline-block"></span> 实时 · LiveChat</span>
+        <span class="pill p-wait">等待人工</span>
+        <button class="btn" title="导出">导出</button>
+        <button class="icobtn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/></svg></button>
+      </div>
+    </div>
+    <div class="ovstrip">
+      <div class="ov"><span class="k">用户</span><span class="v">JAYA113C88F</span></div>
+      <div class="ov"><span class="k">流程运行</span><span class="v">1 · 充值未到账</span></div>
+      <div class="ov"><span class="k">消息</span><span class="v">8 条</span></div>
+      <div class="ov"><span class="k">工具调用</span><span class="v">2 次</span></div>
+      <div class="ov"><span class="k">耗时</span><span class="v">1.2s</span></div>
+      <div class="ov"><span class="k">最近活动</span><span class="v">3 分钟前</span></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT: transcript as the primary canvas, events inline -->
+    <div class="panel">
+      <p class="col-h">对话记录</p>
+      <div class="msgs" id="msgs"></div>
+    </div>
+
+    <!-- RIGHT: one consistent tabbed rail -->
+    <div class="panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="overview">概览</button>
+        <button class="tab" data-tab="timeline">时间线</button>
+        <button class="tab" data-tab="memory">记忆</button>
+        <button class="tab" data-tab="analysis">分析</button>
+      </div>
+
+      <div class="tabpanel active" id="t-overview">
+        <div class="kv"><span class="k">用户</span><span class="v">JAYA113C88F</span></div>
+        <div class="kv"><span class="k">来源</span><span class="v">实时 · LiveChat</span></div>
+        <div class="kv"><span class="k">状态</span><span class="v" style="color:var(--amber)">等待人工</span></div>
+        <div class="kv"><span class="k">最近活动</span><span class="v">3 分钟前</span></div>
+        <p class="col-h" style="margin:16px 2px 6px">流程运行</p>
+        <div class="runcard">
+          <div class="rt">充值未到账</div>
+          <div class="rs">deposit_not_credited · 6 步 · 等待人工</div>
+        </div>
+        <p class="note">所有关键事实集中在这里，不再散落在头部行、指标卡和分析面板三处。</p>
+      </div>
+
+      <div class="tabpanel" id="t-timeline">
+        <div class="rawbar">
+          <span class="col-h" style="margin:0">执行时间线 · 可展开原始数据</span>
+          <button class="toggle-all" id="toggleAll">全部展开</button>
+        </div>
+        <div class="tl" id="tl"></div>
+        <p class="note">每个事件点开即看该步的工具 input/output、原始 Prompt 与模型决策；对话流里的事件徽章点一下会跳到这里并自动展开。</p>
+      </div>
+
+      <div class="tabpanel" id="t-memory">
+        <div class="memcard">
+          <div class="ml">本次会话摘要</div>
+          客户反映一笔入金（member_id JAYA113C88F）支付成功但余额未更新；已查询到入金记录但金额与订单不符，已转人工核实。
+        </div>
+        <div class="memcard">
+          <div class="ml">用户档案 · 跨会话</div>
+          历史 3 次会话，均为入金/补款类问题；偏好中文、夜间活跃。
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-teal">更新用户档案</button>
+          <button class="btn">查看完整档案 →</button>
+        </div>
+      </div>
+
+      <div class="tabpanel" id="t-analysis">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span class="col-h" style="margin:0">运行分析</span><span class="adv">高级 · 偏开发/成本</span>
+        </div>
+        <div class="metric"><span class="k">LLM 调用</span><span>4 次</span></div>
+        <div class="metric"><span class="k">Token</span><span>3.1K</span></div>
+        <div class="metric"><span class="k">总耗时</span><span>1.2s</span></div>
+        <div class="metric"><span class="k">工具阶段</span><span>0.4s</span></div>
+        <p class="note">成本/性能这类开发视角的数据收到独立 tab，不再占据运营主视野。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MSGS = [
+  {role:'user', text:'我充值还没到账，帮我查一下。', who:'客户'},
+  {role:'agent', text:'好的，请提供您的 member_id，我来核对最近一笔入金。', who:'Agent'},
+  {role:'user', text:'JAYA113C88F', who:'客户'},
+  {type:'proc', evId:'e1', label:'流程启动 · 充值未到账', t:'14:31:02'},
+  {type:'tool', evId:'e2', label:'调用工具 get_latest_deposit · 成功', t:'14:31:03'},
+  {role:'agent', text:'查到一笔入金记录，但到账金额与订单金额不一致，需要人工核实。', who:'Agent'},
+  {type:'handoff', evId:'e3', label:'转人工 · deposit_queue（证据冲突）', t:'14:31:05'},
+  {role:'agent', text:'已为您转接人工客服，请稍候。', who:'Agent'},
+];
+const TIMELINE = [
+  {id:'e0', ti:'Agent 推理 · 第 1 轮', td:'deepseek-v4-flash · 输入 824 tokens', tt:'14:31:01', detail:[
+    {tag:'tag-prompt', label:'原始 Prompt（发送给模型，节选）', body:`[system]
+你是 J1B 客服 Agent。处理"充值未到账"时：
+1) 先取 member_id，再调用 get_latest_deposit。
+2) 对比到账金额与订单金额；不一致则不得自行结案，转人工。
+
+[case: deposit_not_credited] 步骤 2｜查询入金状态
+
+[messages]
+user: 我充值还没到账，帮我查一下。
+assistant: 好的，请提供您的 member_id。
+user: JAYA113C88F`},
+    {tag:'tag-decision', label:'模型响应', body:`{
+  "action": "call_tool",
+  "tool": "get_latest_deposit",
+  "args": { "member_id": "JAYA113C88F" }
+}`}
+  ]},
+  {id:'e1', ti:'流程启动 · 充值未到账', td:'匹配案例类型 deposit_not_credited', tt:'14:31:02', detail:[
+    {tag:'tag-decision', label:'路由结果', body:`{
+  "caseType": "deposit_not_credited",
+  "confidence": 0.92,
+  "brief": "客户反映入金未到账，需核对最近一笔入金"
+}`}
+  ]},
+  {id:'e2', ti:'工具调用 · get_latest_deposit', td:'成功 · 412ms · 返回 1 条记录', tt:'14:31:03', detail:[
+    {tag:'tag-in', label:'输入 (input)', body:`{
+  "member_id": "JAYA113C88F"
+}`},
+    {tag:'tag-out', label:'输出 (output)', body:`{
+  "deposits": [
+    {
+      "txn_id": "DP-88231",
+      "amount": 500.00,
+      "order_amount": 800.00,
+      "currency": "CNY",
+      "status": "succeeded",
+      "paid_at": "2026-06-12T14:22:03Z"
+    }
+  ]
+}`}
+  ]},
+  {id:'e2b', ti:'证据判定 · 金额不一致', td:'硬门未通过：到账 500 ≠ 订单 800', tt:'14:31:04', detail:[
+    {tag:'tag-prompt', label:'判定 Prompt', body:`比较 paid amount 与 order amount 是否一致？
+paid=500.00, order=800.00
+不一致 → 不得结案，转人工。`},
+    {tag:'tag-decision', label:'判定结果', body:`{
+  "match": false,
+  "reason": "paid 500 != order 800",
+  "action": "escalate"
+}`}
+  ]},
+  {id:'e3', ti:'转人工 · deposit_queue', td:'原因：证据冲突，需人工核实', tt:'14:31:05', detail:[
+    {tag:'tag-in', label:'create_human_task 输入', body:`{
+  "queue": "deposit_queue",
+  "reason": "amount_mismatch",
+  "member_id": "JAYA113C88F",
+  "summary": "到账 500 与订单 800 不符，需人工核实补款",
+  "evidence_ref": "DP-88231"
+}`}
+  ]}
+];
+const TAG_LABEL = { 'tag-in':'IN', 'tag-out':'OUT', 'tag-prompt':'PROMPT', 'tag-decision':'DECISION' };
+function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+function renderMsgs(){
+  const el=document.getElementById('msgs'); el.innerHTML='';
+  MSGS.forEach(m=>{
+    if(m.type){
+      const cls=m.type==='tool'?'ev-tool':m.type==='handoff'?'ev-handoff':'ev-proc';
+      el.insertAdjacentHTML('beforeend',
+        `<div class="ev ${cls}" data-ev="${m.evId}"><span class="dot"></span>${m.label}<span class="t">${m.t}</span></div>`);
+    } else {
+      const u=m.role==='user';
+      el.insertAdjacentHTML('beforeend',
+        `<div class="row ${u?'user':'agent'}">
+           <div class="av ${u?'u':'a'}">${u?'客':'AI'}</div>
+           <div><div class="who">${m.who}</div><div class="bub ${u?'u':'a'}">${m.text}</div></div>
+         </div>`);
+    }
+  });
+  el.querySelectorAll('.ev').forEach(n=>n.onclick=()=>jumpToTimeline(n.dataset.ev));
+}
+function renderTimeline(){
+  const el=document.getElementById('tl'); el.innerHTML='';
+  TIMELINE.forEach(x=>{
+    const hot=x.id==='e3';
+    const blocks=(x.detail||[]).map(b=>`
+      <div class="codeblk">
+        <div class="codelabel"><span><span class="tag ${b.tag}">${TAG_LABEL[b.tag]}</span> ${b.label}</span><button class="cp" data-copy="${encodeURIComponent(b.body)}">复制</button></div>
+        <pre class="code">${escapeHtml(b.body)}</pre>
+      </div>`).join('');
+    el.insertAdjacentHTML('beforeend',
+      `<div class="tlitem ${hot?'hot':''}" data-id="${x.id}">
+         <span class="chev">&#9654;</span>
+         <div class="ti">${x.ti}</div><div class="td">${x.td}</div><div class="tt">${x.tt}</div>
+         <div class="tldetail">${blocks}</div>
+       </div>`);
+  });
+  el.querySelectorAll('.tlitem').forEach(n=>n.addEventListener('click',(e)=>{
+    const cp=e.target.closest('.cp');
+    if(cp){ e.stopPropagation(); const txt=decodeURIComponent(cp.dataset.copy);
+      if(navigator.clipboard) navigator.clipboard.writeText(txt).catch(()=>{});
+      cp.textContent='已复制'; setTimeout(()=>cp.textContent='复制',1200); return; }
+    n.classList.toggle('open');
+  }));
+}
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));
+  ['overview','timeline','memory','analysis'].forEach(n=>document.getElementById('t-'+n).classList.toggle('active',n===name));
+}
+function jumpToTimeline(evId){
+  switchTab('timeline');
+  document.querySelectorAll('.tlitem').forEach(i=>i.classList.remove('hl'));
+  const target=document.querySelector(`.tlitem[data-id="${evId}"]`);
+  if(target){target.classList.add('hl','open'); if(target.scrollIntoView) target.scrollIntoView({block:'nearest'});}
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+document.getElementById('toggleAll').onclick=()=>{
+  const items=[...document.querySelectorAll('.tlitem')];
+  const anyClosed=items.some(i=>!i.classList.contains('open'));
+  items.forEach(i=>i.classList.toggle('open',anyClosed));
+  document.getElementById('toggleAll').textContent=anyClosed?'全部收起':'全部展开';
+};
+renderMsgs();renderTimeline();
+</script>
+</body>
+</html>

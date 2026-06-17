@@ -139,15 +139,6 @@ describe('B1 — Anonymous /api/livechat/config is GET-only, non-sensitive', () 
     expect(body.showSkillStatus).toBe(true)
   })
 
-  it('requires agentConfigId instead of using a global livechat fallback', async () => {
-    const res = await anonGet(makeAnonRequest())
-    const body = await res.json()
-
-    expect(body.agentConfigId).toBeNull()
-    expect(body.enabled).toBe(false)
-    expect(body.requiresAgentConfigId).toBe(true)
-  })
-
   it('OPTIONS returns CORS headers', async () => {
     const res = await anonOptions()
     expect(res.status).toBe(204)

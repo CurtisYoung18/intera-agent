@@ -27,11 +27,6 @@ type AgentConfigLineageRow = {
   parentId: string | null
 }
 
-export type LiveChatOrgConfigResolution =
-  | { status: 'resolved'; agentConfigId: string; config: LiveChatConfig }
-  | { status: 'not_configured' }
-  | { status: 'ambiguous'; agentConfigIds: string[] }
-
 function hydrateFromChannelBinding(row: {
   orgId?: string | null
   agentConfigId: string
@@ -137,7 +132,7 @@ export async function getLiveChatConfigForFamily(
 
 export async function resolveLiveChatAgentConfigIdForOrg(orgId: string): Promise<string | null> {
   try {
-    const agents = await prisma.agentConfig.findMany({
+    const agent = await prisma.agentConfig.findFirst({
       where: {
         orgId,
         isActive: true,
@@ -153,71 +148,25 @@ export async function resolveLiveChatAgentConfigIdForOrg(orgId: string): Promise
         { id: 'asc' },
       ],
       select: { id: true },
-      take: 2,
     })
 
-    if (agents.length !== 1) {
-      if (agents.length > 1) {
-        console.warn('[LiveChat] Ambiguous org-scoped binding; agentConfigId required', {
-          orgId,
-          agentConfigIds: agents.map(agent => agent.id),
-        })
-      }
-      return null
-    }
-
-    return agents[0]?.id ?? null
+    return agent?.id ?? null
   } catch (err) {
     console.error('[LiveChat] Failed to resolve org-scoped binding:', err)
     return null
   }
 }
 
-export async function resolveLiveChatConfigForOrg(orgId: string): Promise<LiveChatOrgConfigResolution> {
-  try {
-    const agents = await prisma.agentConfig.findMany({
-      where: {
-        orgId,
-        isActive: true,
-        channelBindings: {
-          some: {
-            channel: 'livechat',
-            enabled: true,
-          },
-        },
-      },
-      orderBy: [
-        { updatedAt: 'desc' },
-        { id: 'asc' },
-      ],
-      select: { id: true },
-      take: 2,
-    })
-
-    if (agents.length === 0) return { status: 'not_configured' }
-    if (agents.length > 1) {
-      const agentConfigIds = agents.map(agent => agent.id)
-      console.warn('[LiveChat] Ambiguous org-scoped binding; agentConfigId required', { orgId, agentConfigIds })
-      return { status: 'ambiguous', agentConfigIds }
-    }
-
-    const agentConfigId = agents[0]!.id
-    const config = await getLiveChatConfigForFamily(agentConfigId)
-    if (!config) return { status: 'not_configured' }
-
-    return { status: 'resolved', agentConfigId, config }
-  } catch (err) {
-    console.error('[LiveChat] Failed to resolve org-scoped config:', err)
-    return { status: 'not_configured' }
-  }
-}
-
 export async function getLiveChatConfigForOrg(
   orgId: string,
 ): Promise<{ agentConfigId: string; config: LiveChatConfig } | null> {
-  const resolved = await resolveLiveChatConfigForOrg(orgId)
-  if (resolved.status !== 'resolved') return null
-  return { agentConfigId: resolved.agentConfigId, config: resolved.config }
+  const agentConfigId = await resolveLiveChatAgentConfigIdForOrg(orgId)
+  if (!agentConfigId) return null
+
+  const config = await getLiveChatConfigForFamily(agentConfigId)
+  if (!config) return null
+
+  return { agentConfigId, config }
 }
 
 export async function upsertLiveChatConfig(

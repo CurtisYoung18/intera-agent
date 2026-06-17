@@ -22,6 +22,10 @@ const h = vi.hoisted(() => ({
   userProfileUpsert: vi.fn(),
   caseFindMany: vi.fn(),
   chatSessionUpsert: vi.fn(),
+  toolFindMany: vi.fn(),
+  caseTypeFindMany: vi.fn(),
+  knowledgeSourceFindMany: vi.fn(),
+  agentConfigFindUnique: vi.fn(),
 }))
 
 vi.mock('@intera/shared/prisma', () => ({
@@ -29,6 +33,10 @@ vi.mock('@intera/shared/prisma', () => ({
     userProfile: { findUnique: h.userProfileFindUnique, upsert: h.userProfileUpsert },
     case: { findMany: h.caseFindMany },
     chatSession: { upsert: h.chatSessionUpsert },
+    tool: { findMany: h.toolFindMany },
+    caseType: { findMany: h.caseTypeFindMany },
+    knowledgeSource: { findMany: h.knowledgeSourceFindMany },
+    agentConfig: { findUnique: h.agentConfigFindUnique },
   },
 }))
 
@@ -72,6 +80,22 @@ function config(): AgentConfigData {
   }
 }
 
+function endOnlyProcedure() {
+  return {
+    version: 'v2' as const,
+    whenToUse: 'Use when the run only needs a clean finalize.',
+    steps: [
+      {
+        id: 'close',
+        title: 'Close',
+        guidance: 'Finalize immediately.',
+        actions: [{ id: 'finish', kind: 'end' as const, label: 'Finish', status: 'completed' as const }],
+        branches: [],
+      },
+    ],
+  }
+}
+
 function makeLoop(caseId: string): AgentLoop {
   const memory = createMemoryPersistence()
   return new AgentLoop({
@@ -97,12 +121,12 @@ async function resolveRuntimeTool(loop: AgentLoop, name: string, input: Record<s
     toolUse: { id: `toolu_${name}`, name, input },
   }
 
-	  await new RuntimeManagedToolResolver({
-	    caseId: anyLoop.deps.caseId,
-	    agentConfigId: anyLoop.deps.configId,
-	    orgId: anyLoop.deps.orgId,
+  await new RuntimeManagedToolResolver({
+    caseId: anyLoop.deps.caseId,
+    orgId: anyLoop.deps.orgId,
     userId: anyLoop.deps.userId,
     chatId: anyLoop.deps.chatId,
+    configId: anyLoop.deps.configId,
     config: anyLoop.deps.config,
     caseSchema: anyLoop.deps.caseSchema,
     messages: anyLoop.messages,
@@ -122,6 +146,11 @@ beforeEach(() => {
   h.userProfileFindUnique.mockResolvedValue(null)
   h.userProfileUpsert.mockResolvedValue({})
   h.caseFindMany.mockResolvedValue([])
+  h.chatSessionUpsert.mockResolvedValue({})
+  h.toolFindMany.mockResolvedValue([])
+  h.caseTypeFindMany.mockResolvedValue([])
+  h.knowledgeSourceFindMany.mockResolvedValue([])
+  h.agentConfigFindUnique.mockResolvedValue(null)
 })
 
 describe('R3 ToolRouter and prompt cache boundaries', () => {
@@ -147,6 +176,19 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(router.getTool('read_chat_memory')?.description).toContain('not ProcedureRun authority')
     expect(router.getTool('read_user_profile')?.description).toContain('never returns active ProcedureRun runtime state')
     expect((router.getTool('remember')?.inputSchema as { properties?: { scope?: { enum?: string[] } } })?.properties?.scope?.enum).toEqual(['user'])
+  })
+
+  it('keeps procedure catalog in {{case_types}} only, not in start_procedure tool description', async () => {
+    h.caseTypeFindMany.mockResolvedValue([
+      { type: 'deposit_issue', displayName: 'Deposit', description: 'Investigate deposit issues', icon: 'money' },
+    ])
+
+    const router = await ToolRouter.create('agent_1')
+    const startDescription = router.getTool('start_procedure')?.description ?? ''
+
+    expect(startDescription).toContain('Start or select a runtime ProcedureRun')
+    expect(startDescription).not.toContain('## Procedure Catalog')
+    expect(startDescription).not.toContain('deposit_issue')
   })
 
   it('handles get_current_time as a runtime-managed system tool', async () => {
@@ -207,6 +249,92 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
 })
 
 describe('R3 HookContext and memory boundaries', () => {
+  it('persistTurnMemory waits for chat memory/session writes before resolving', async () => {
+    let releaseMemoryWrite!: () => void
+    const saveMemoryGate = new Promise<void>((resolve) => { releaseMemoryWrite = resolve })
+    let saveMemoryResolved = false
+
+    const persistence = createMemoryPersistence().port
+    const saveMemory = vi.fn(async (...args: Parameters<typeof persistence.saveMemory>) => {
+      await saveMemoryGate
+      saveMemoryResolved = true
+      return persistence.saveMemory(...args)
+    })
+
+    const loop = new AgentLoop({
+      config: config(),
+      configId: 'agent_1',
+      caseId: 'r3-awaited-memory',
+      orgId: 'org_1',
+      userId: 'user_1',
+      chatId: 'chat_1',
+      systemPrompt: 'CORE_PROMPT',
+      coreSystemPrompt: 'CORE_PROMPT',
+      persistence: {
+        ...persistence,
+        saveMemory,
+      },
+      dryRun: false,
+    })
+
+    loop.loadMemory({
+      contextMap: '{}',
+      missingFacts: '[]',
+      toolsCalled: '[]',
+      toolResults: '{}',
+      keyEvents: '[]',
+      summary: 'Compacted summary',
+    })
+
+    let settled = false
+    const persistPromise = (loop as any).persistTurnMemory().then((result: unknown) => {
+      settled = true
+      return result
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(saveMemory).toHaveBeenCalled()
+    expect(h.chatSessionUpsert).toHaveBeenCalled()
+    expect(saveMemoryResolved).toBe(false)
+    expect(settled).toBe(false)
+
+    releaseMemoryWrite()
+
+    await persistPromise
+    expect(saveMemoryResolved).toBe(true)
+    expect(saveMemory).toHaveBeenCalledWith('r3-awaited-memory', expect.objectContaining({
+      caseId: 'r3-awaited-memory',
+      summary: 'Compacted summary',
+    }))
+  })
+
+  it('lets runtime-managed finalize_procedure complete an active end step before terminal finalize', async () => {
+    const caseId = 'r3-finalize-order'
+    recordInitialInputEvent(caseId, { content: 'close this cleanly' })
+    const started = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: endOnlyProcedure(),
+    })
+    const loop = makeLoop(caseId)
+
+    const output = await resolveRuntimeTool(loop, 'finalize_procedure', {
+      runId: started.run.runId,
+      status: 'completed',
+      conclusion: 'Done.',
+    }) as Record<string, unknown>
+
+    expect(output).toMatchObject({
+      ok: true,
+      status: 'completed',
+      runId: started.run.runId,
+    })
+    expect(procedureRunPromptTail(caseId)).toBe('')
+    closeSession(caseId)
+  })
+
   it('passes active ProcedureRun currentStepId into HookContext', () => {
     const caseId = 'r3-hook-context'
     recordInitialInputEvent(caseId, { content: 'deposit missing' })

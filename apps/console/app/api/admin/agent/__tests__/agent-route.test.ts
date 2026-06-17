@@ -88,17 +88,8 @@ describe('GET /api/admin/agent', () => {
     expect(res.status).toBe(401)
   })
 
-  it('rejects missing agentId instead of falling back to the first active agent', async () => {
+  it('returns config when authenticated', async () => {
     const res = await GET(req())
-    expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(body.ok).toBe(false)
-    expect(body.error.code).toBe('validation')
-    expect(h.mockScopedFindFirst).not.toHaveBeenCalled()
-  })
-
-  it('returns config when authenticated with agentId', async () => {
-    const res = await GET(req('http://localhost/api/admin/agent?agentId=cfg-1'))
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.ok).toBe(true)
@@ -114,16 +105,6 @@ describe('GET /api/admin/agent', () => {
 })
 
 describe('PUT /api/admin/agent', () => {
-  it('rejects missing agentId instead of updating the first active agent', async () => {
-    const res = await PUT(req('http://localhost/api/admin/agent', { model: 'openai/gpt-4o' }))
-    const body = await res.json()
-
-    expect(res.status).toBe(400)
-    expect(body.ok).toBe(false)
-    expect(body.error.code).toBe('validation')
-    expect(h.mockRawUpdate).not.toHaveBeenCalled()
-  })
-
   it('saves selected model, prompt, and generation parameters', async () => {
     const payload = {
       model: 'openai/gpt-4o',

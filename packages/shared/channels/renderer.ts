@@ -10,7 +10,6 @@ import type { RenderHint } from './render-hints'
 export interface RenderContext {
   caseId: string
   orgId: string
-  agentConfigId: string
   sessionId: string
   binding: ChannelBindingConfig
 }

@@ -20,8 +20,7 @@ import { getProcedureRuntime, recordInitialInputEvent } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
-import { parseProcedure } from '@intera/shared/contracts/case-types'
-import type { CaseSchemaConfig } from '@intera/shared/types'
+import { LOOP_HISTORY_REPLAY_LIMIT } from './history-window'
 import {
   hasProviderOrDisplayContent,
   hydrateMessageFromDb,
@@ -223,39 +222,6 @@ function buildCapabilityTruth(
   }
 }
 
-function parseJson(raw: string | null | undefined): unknown {
-  if (!raw) return {}
-  try { return JSON.parse(raw) } catch { return {} }
-}
-
-function schemaFromCaseTypeRow(caseType: {
-  type: string
-  displayName: string
-  description: string | null
-  icon: string
-  requiredFacts: string
-  defaultGoal: string
-  escalateOn: string
-  autoCloseConditions: string | null
-  procedure?: string | null
-  maxAutoTurns?: number | null
-}): CaseSchemaConfig {
-  const requiredFacts = parseJson(caseType.requiredFacts)
-  const escalateOn = parseJson(caseType.escalateOn)
-  return {
-    type: caseType.type,
-    displayName: caseType.displayName,
-    description: caseType.description || undefined,
-    icon: caseType.icon,
-    requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
-    defaultGoal: caseType.defaultGoal,
-    escalateOn: Array.isArray(escalateOn) ? escalateOn : [],
-    autoCloseConditions: parseJson(caseType.autoCloseConditions) as Record<string, unknown> | undefined,
-    procedure: parseProcedure(caseType.procedure) ?? undefined,
-    maxAutoTurns: typeof caseType.maxAutoTurns === 'number' ? caseType.maxAutoTurns : undefined,
-  }
-}
-
 function enrichTraceRecord(
   record: TraceRecord,
   toolDefinitions: Map<string, ToolDefinition>,
@@ -353,21 +319,18 @@ export async function* runPlaygroundTurn(input: {
   const message = formResult
     ? `Tool ask_user_questions result: ${JSON.stringify(formResult.answers)}`
     : input.message
-  const agentConfigId = typeof input.configId === 'string' && input.configId.trim().length > 0
-    ? input.configId.trim()
-    : null
-  if (!agentConfigId) throw new Error('configId is required')
+  const agentConfigId = input.configId || orgId
   const contentBlocks = normalizeContentBlocks(input.contentBlocks)
   const dryRun = pc.toolExecutionMode === 'dry_run'
   const userId = inputUserId || 'playground'
   const turnId = `pg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const startTime = Date.now()
   const createPlaygroundChatId = () => (
-    `pg_${agentConfigId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    `pg_${input.configId || 'default'}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   )
 
   // ── Load real config from DB ──
-  const agentConfig = await loadAgentConfig(agentConfigId)
+  const agentConfig = await loadAgentConfig(input.configId)
   if (pc.emitThinking !== undefined) { (agentConfig as any).extendedThinking = pc.emitThinking }
   const resolvedModel = resolveEffectiveModel(agentConfig)
 
@@ -424,18 +387,28 @@ export async function* runPlaygroundTurn(input: {
     },
   }
 
+  // ── Unified prompt assembly (matches production messages/route.ts) ──
+  const assembled = await buildModePrompt({
+    agentConfigId,
+    coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
+    hasActiveCase: true, // playground always simulates a case
+    caseSchema: null,
+    caseState: null,
+    sessionBinding: { userId },
+    availableTools,
+  })
+
   // ── Resolve or create Case for this session ──
   let caseId: string
   let effectiveChatId: string
   let bootstrapNewCase: boolean
-  let caseSchema: CaseSchemaConfig | null = null
 
   if (inputChatId) {
     // start_procedure mutates Case.type to the real case type, so Playground
     // session continuity must key on chatId + tenant boundary, not type.
     const existingCase = await prisma.case.findFirst({
       where: { orgId, chatId: inputChatId, userId },
-      select: { id: true, type: true },
+      select: { id: true },
     })
     if (!existingCase) {
       effectiveChatId = createPlaygroundChatId()
@@ -445,12 +418,6 @@ export async function* runPlaygroundTurn(input: {
       effectiveChatId = inputChatId
       bootstrapNewCase = false
       caseId = existingCase.id
-      if (!caseSchema && existingCase.type && existingCase.type !== 'playground') {
-        const row = await prisma.caseType.findUnique({
-          where: { agentConfigId_type: { agentConfigId, type: existingCase.type } },
-        }).catch(() => null)
-        caseSchema = row ? schemaFromCaseTypeRow(row) : null
-      }
     }
   } else {
     // First turn — check per-account cap
@@ -479,7 +446,7 @@ export async function* runPlaygroundTurn(input: {
     id: caseId,
     orgId,
     userId,
-    type: caseSchema?.type ?? 'playground',
+    type: 'playground',
     status: 'open',
     chatId: effectiveChatId,
   })
@@ -492,17 +459,6 @@ export async function* runPlaygroundTurn(input: {
     formAnswers: formResult?.answers,
   })
 
-  // ── Unified prompt assembly (matches production messages/route.ts) ──
-  const assembled = await buildModePrompt({
-    agentConfigId,
-    coreSystemPrompt: agentConfig.coreSystemPrompt ?? null,
-    hasActiveCase: !!caseSchema,
-    caseSchema,
-    caseState: null,
-    sessionBinding: { userId },
-    availableTools,
-  })
-
   const agentLoop = await AgentLoop.create({
     config: agentConfig,
     configId: agentConfigId,
@@ -511,7 +467,7 @@ export async function* runPlaygroundTurn(input: {
     userId,
     systemPrompt: assembled.prompt,
     coreSystemPrompt: assembled.basePrompt,
-    caseSchema,
+    caseSchema: null,
     chatId: effectiveChatId,
     bootstrapNewCase,
     persistence,     // ← Prisma port
@@ -541,7 +497,7 @@ export async function* runPlaygroundTurn(input: {
   const priorMessages = await prisma.message.findMany({
     where: { caseId },
     orderBy: { createdAt: 'asc' },
-    take: 40,
+    take: LOOP_HISTORY_REPLAY_LIMIT,
   })
   if (priorMessages.length > 0) {
     agentLoop.loadMessages(
@@ -631,7 +587,7 @@ export async function* runPlaygroundTurn(input: {
   // ── Aggregate traces ──
   const totalMs = Math.max(1, Date.now() - startTime)
   const trace = aggregateTraces(traces, startTime, pc.debug ?? false, applicableStages, capabilityTruth)
-  const caseType = latestProcedureCaseType(caseId) || caseSchema?.type || ''
+  const caseType = latestProcedureCaseType(caseId)
 
   const result: PlaygroundResult = {
     turnId,

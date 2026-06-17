@@ -25,9 +25,6 @@ export default function LiveChatTestPage() {
       >{`
         (function() {
           var storageKey = 'intera_livechat_chat_id';
-          var params = new URLSearchParams(window.location.search);
-          var orgId = params.get('orgId') || 'default';
-          var agentConfigId = params.get('agentConfigId') || params.get('agentId') || '';
           var lastStatus = null;
 
           function rememberChatId() {
@@ -40,10 +37,10 @@ export default function LiveChatTestPage() {
           }
 
           function markFreshStart() {
-	            try {
-	              var chatId = window.sessionStorage.getItem(storageKey);
-	              if (!chatId || !agentConfigId) return;
-	              var payload = JSON.stringify({ chatId: chatId, orgId: orgId, agentConfigId: agentConfigId });
+            try {
+              var chatId = window.sessionStorage.getItem(storageKey);
+              if (!chatId) return;
+              var payload = JSON.stringify({ chatId: chatId });
               if (navigator.sendBeacon) {
                 navigator.sendBeacon('/api/livechat/widget-session-close', new Blob([payload], { type: 'application/json' }));
                 return;

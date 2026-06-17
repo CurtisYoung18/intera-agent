@@ -4,7 +4,6 @@
 import { NextRequest } from 'next/server'
 import { getActiveOrgId, getActiveVendor } from '@/lib/auth'
 import { runPlaygroundTurn, type PlaygroundConfig } from '@/lib/agent/playground-runner'
-import { repoForOrg } from '@/lib/db/repo-for-org'
 import type { SSEEvent, ContentBlock } from '@intera/shared/types'
 
 const DEFAULT_PLAYGROUND_CONFIG: PlaygroundConfig = { debug: false, toolExecutionMode: 'runtime' }
@@ -31,24 +30,6 @@ export async function POST(request: NextRequest) {
   try { body = await request.json() } catch {
     return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'Invalid JSON body' } }), {
       status: 400, headers: { 'Content-Type': 'application/json' },
-    })
-  }
-  const configId = typeof body.configId === 'string' && body.configId.trim().length > 0
-    ? body.configId.trim()
-    : null
-  if (!configId) {
-    return new Response(JSON.stringify({ ok: false, error: { code: 'validation', message: 'configId is required' } }), {
-      status: 400, headers: { 'Content-Type': 'application/json' },
-    })
-  }
-  const repo = repoForOrg(orgId)
-  const agent = await repo.agentConfig.findUnique({
-    where: { id: configId },
-    select: { id: true },
-  })
-  if (!agent) {
-    return new Response(JSON.stringify({ ok: false, error: { code: 'not_found', message: 'Agent config not found' } }), {
-      status: 404, headers: { 'Content-Type': 'application/json' },
     })
   }
   const message = typeof body.message === 'string' ? body.message.trim() : ''
@@ -92,7 +73,7 @@ export async function POST(request: NextRequest) {
           message,
           formResult,
           playgroundConfig,
-          configId,
+          configId: body.configId ?? undefined,
           contentBlocks,
           chatId: body.chatId,
           userId: vendor.userId ?? 'playground',

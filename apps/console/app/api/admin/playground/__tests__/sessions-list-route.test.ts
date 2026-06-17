@@ -4,7 +4,6 @@ const h = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockGetActiveVendor: vi.fn(),
   mockCaseFindMany: vi.fn(),
-  mockAgentConfigFindFirst: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({
@@ -17,7 +16,6 @@ vi.mock('@/lib/db/repo-for-org', () => ({
     orgId: 'org-1',
     raw: {
       case: { findMany: h.mockCaseFindMany },
-      agentConfig: { findFirst: h.mockAgentConfigFindFirst },
     },
   }),
 }))
@@ -41,7 +39,6 @@ beforeEach(() => {
   h.mockGetSession.mockResolvedValue({ orgId: 'org-1', role: 'admin', userId: 'user-1' })
   h.mockGetActiveVendor.mockResolvedValue({ isAuthed: true, userId: 'user-1' })
   h.mockCaseFindMany.mockResolvedValue([])
-  h.mockAgentConfigFindFirst.mockResolvedValue({ id: 'agent-1' })
 })
 
 describe('GET /api/admin/playground/sessions', () => {
@@ -73,16 +70,6 @@ describe('GET /api/admin/playground/sessions', () => {
         createdAt: createdAt.toISOString(),
       },
     ])
-  })
-
-  it('rejects missing configId instead of listing a default agent bucket', async () => {
-    const res = await GET(makeRequest('http://localhost/api/admin/playground/sessions'))
-    const body = await res.json()
-
-    expect(res.status).toBe(400)
-    expect(body.ok).toBe(false)
-    expect(body.error.code).toBe('validation')
-    expect(h.mockCaseFindMany).not.toHaveBeenCalled()
   })
 
   it('does not query playground cases when the active vendor has no user id', async () => {

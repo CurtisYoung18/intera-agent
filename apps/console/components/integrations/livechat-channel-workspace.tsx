@@ -536,9 +536,9 @@ export default function LiveChatChannelWorkspace({
                 <div>
                   <label className={labelCls}>{t('livechat.authType')}</label>
                   <select value={config.authType ?? 'auto'} onChange={(event) => setConfig((current) => ({ ...current, authType: event.target.value }))} className={inputCls}>
-                    <option value="auto">auto</option>
-                    <option value="basic">basic (PAT)</option>
-                    <option value="bearer">bearer (Bot)</option>
+                    <option value="auto">{isZh ? '自动检测' : 'Auto-detect'}</option>
+                    <option value="basic">{isZh ? 'Basic（Account ID + Personal Access Token）' : 'Basic (Account ID + Personal Access Token)'}</option>
+                    <option value="bearer">{isZh ? 'Bearer（Bot Access Token）' : 'Bearer (Bot Access Token)'}</option>
                   </select>
                 </div>
               </div>

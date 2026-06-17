@@ -8,7 +8,7 @@ vi.mock('@/lib/agent/playground-runner', () => ({
 }))
 
 import { runPlaygroundTurn } from '@/lib/agent/playground-runner'
-import { buildRuntimeEvidence, parseScenarioFormSubmission, runScenarioAgentRuntime } from '../runtime-runner'
+import { buildRuntimeEvidence, runScenarioAgentRuntime } from '../runtime-runner'
 
 const scenario: SavedScenario = {
   id: 'scenario-runtime',
@@ -389,26 +389,5 @@ describe('runtime-backed Scenario evidence', () => {
       toolName: 'faq_lookup_default',
       title: 'Deposit FAQ',
     })
-  })
-})
-
-describe('Scenario form submissions', () => {
-  it('parses Playground-style form submission turns into structured answers', () => {
-    expect(parseScenarioFormSubmission([
-      '[Form submission]',
-      'member_id: JAYA113C88F',
-      'amount：500',
-      'payment_channel: bank transfer',
-    ].join('\n'))).toEqual({
-      answers: {
-        member_id: 'JAYA113C88F',
-        amount: '500',
-        payment_channel: 'bank transfer',
-      },
-    })
-  })
-
-  it('ignores ordinary customer text', () => {
-    expect(parseScenarioFormSubmission('member_id 是 JAYA113C88F')).toBeUndefined()
   })
 })

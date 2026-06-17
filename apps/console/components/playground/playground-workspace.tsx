@@ -565,8 +565,7 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
     async function loadSession(sessionChatId: string) {
       const cid = configId
-      if (!cid) return
-      const detailRes = await fetch(`/api/admin/playground/sessions/${sessionChatId}?configId=${encodeURIComponent(cid)}`)
+      const detailRes = await fetch(`/api/admin/playground/sessions/${sessionChatId}?configId=${encodeURIComponent(cid || 'default')}`)
       if (!detailRes.ok || cancelled) return
       const { data: detailData } = await detailRes.json() as { data: {
         chatId: string
@@ -652,14 +651,14 @@ export default function PlaygroundWorkspace({ surface = 'legacy' }: { surface?: 
 
     async function restore() {
       try {
-        if (!configId) return
         // If we have a chatId from localStorage (page refresh), load it directly
         if (initialChatId) {
           await loadSession(initialChatId)
           return
         }
         // Otherwise search for latest session by configId
-        const res = await fetch(`/api/admin/playground/sessions?configId=${encodeURIComponent(configId)}`)
+        const params = configId ? `?configId=${encodeURIComponent(configId)}` : ''
+        const res = await fetch(`/api/admin/playground/sessions${params}`)
         if (!res.ok || cancelled) return
         const { data } = await res.json() as { data: { sessions: Array<{ chatId: string; firstMessage: string; createdAt: string }> } }
         const latestSession = data.sessions?.[0]

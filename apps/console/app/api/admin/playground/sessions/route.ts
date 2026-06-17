@@ -1,7 +1,7 @@
 // GET /api/admin/playground/sessions — List playground sessions scoped by (account, agent)
 
 import { z } from 'zod'
-import { defineRoute, NotFoundError, ValidationError } from '@/lib/api/define-route'
+import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { getActiveVendor } from '@/lib/auth'
 
@@ -20,13 +20,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
       return apiOk({ sessions: [] })
     }
 
-    const configId = input?.configId?.trim() || null
-    if (!configId) throw new ValidationError('configId is required', { configId: 'Required' })
-    const agent = await repo.raw.agentConfig.findFirst({
-      where: { id: configId, orgId: repo.orgId },
-      select: { id: true },
-    })
-    if (!agent) throw new NotFoundError('Agent config not found')
+    const configId = input?.configId || 'default'
 
     const cases = await repo.raw.case.findMany({
       where: {

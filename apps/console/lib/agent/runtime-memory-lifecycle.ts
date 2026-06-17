@@ -2,6 +2,7 @@ import { prisma } from '@intera/shared/prisma'
 import type { AgentConfigData, Message } from '@intera/shared/types'
 import { mergeProfile } from '@intera/shared/memory/mergeProfile'
 import { recomputeProfileStats } from '@intera/shared/memory/recomputeStats'
+import { readUserProfile, upsertUserProfile } from '@/lib/db/user-profiles'
 import { ChatMemoryManager } from './memory'
 import { microCompact } from './microCompact'
 import { trySessionMemoryCompact } from './sessionMemoryCompact'
@@ -15,7 +16,7 @@ import { getActiveProcedureRun } from './session-store'
 
 export interface RuntimeMemoryLifecycleDeps {
   config: AgentConfigData
-  agentConfigId: string
+  configId: string
   caseId: string
   orgId: string
   userId: string
@@ -134,18 +135,20 @@ export class RuntimeMemoryLifecycle {
       const summary = result.summary
       if (!summary) return
 
-      const existing = await prisma.userProfile.findUnique({
-        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: key } },
-        select: { profile: true },
+      const existing = await readUserProfile(prisma as any, {
+        orgId: this.deps.orgId,
+        userId: key,
+        agentConfigId: this.deps.configId,
       }).catch(() => null)
       const maxTokens = this.deps.config.memoryStrategy.chatMemoryMaxTokens ?? 4000
       const { profile: merged, sections } = mergeProfile(existing?.profile ?? '', summary, maxTokens)
-      const stats = await recomputeProfileStats(prisma, key, this.deps.orgId, this.deps.agentConfigId)
+      const stats = await recomputeProfileStats(prisma, key, this.deps.orgId)
 
-      await prisma.userProfile.upsert({
-        where: { orgId_agentConfigId_userId: { orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, userId: key } },
-        create: { userId: key, orgId: this.deps.orgId, agentConfigId: this.deps.agentConfigId, profile: merged, sections, ...stats },
-        update: { profile: merged, sections, ...stats },
+      await upsertUserProfile(prisma as any, {
+        orgId: this.deps.orgId,
+        userId: key,
+        agentConfigId: this.deps.configId,
+        patch: { profile: merged, sections, ...stats },
       })
     } catch (err) {
       console.warn('[AgentLoop] compactUserProfile failed:', err)
