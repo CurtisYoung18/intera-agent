@@ -122,7 +122,7 @@ function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
   )
 }
 
-type DetailTab = 'timeline' | 'memory' | 'analysis'
+type DetailTab = 'timeline' | 'memory'
 
 export default function ConversationDetailWorkspace({ chatId }: { chatId: string }) {
   const decodedChatId = decodeURIComponent(chatId)
@@ -289,9 +289,8 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
 
   const latestStatus = session?.cases.length ? session.cases[session.cases.length - 1].status : null
   const navButtons: ReadonlyArray<readonly [DetailTab, string, string]> = [
-    ['timeline', '时间线', 'Timeline'],
-    ['memory', '记忆', 'Memory'],
-    ['analysis', '分析', 'Analysis'],
+    ...(unassignedTraces.length > 0 ? [['timeline', '会话级时间线', 'Chat-level timeline'] as const] : []),
+    ['memory', '记忆', 'Memory'] as const,
   ]
 
   return (
@@ -374,11 +373,31 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
       {/* 顶部：总览（指标 + 状态 + 流程运行） */}
       <section className="rounded-[26px] border border-black/[0.06] bg-white/[0.6] p-4 shadow-[var(--shadow-card)] sm:p-5">
         {metrics.llmCalls > 0 && (
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label={isZh ? 'LLM 调用' : 'LLM Calls'} value={String(metrics.llmCalls)} />
-            <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label={isZh ? 'Token' : 'Tokens'} value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
-            <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label={isZh ? '总耗时' : 'Wall Time'} value={fmtMs(metrics.turnWallMs)} />
-            <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label={isZh ? '工具阶段' : 'Tool Phase'} value={fmtMs(metrics.toolPhaseMs)} />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <MetricCard icon={<Cpu className="w-3.5 h-3.5" />} label={isZh ? 'LLM 调用' : 'LLM Calls'} value={String(metrics.llmCalls)} />
+              <MetricCard icon={<Zap className="w-3.5 h-3.5" />} label={isZh ? 'Token' : 'Tokens'} value={(metrics.totalTokens / 1000).toFixed(1) + 'K'} />
+              <MetricCard icon={<Clock className="w-3.5 h-3.5" />} label={isZh ? '总耗时' : 'Wall Time'} value={fmtMs(metrics.turnWallMs)} />
+              <MetricCard icon={<BarChart3 className="w-3.5 h-3.5" />} label={isZh ? '工具阶段' : 'Tool Phase'} value={fmtMs(metrics.toolPhaseMs)} />
+            </div>
+            <details className="overflow-hidden rounded-xl border border-black/[0.05] bg-white/40">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[11px] font-medium text-[var(--fog)] hover:bg-black/[0.02]">
+                <span>{isZh ? 'Token 与耗时明细' : 'Token & timing breakdown'}</span>
+                <span className="rounded-md bg-black/[0.05] px-1.5 py-0.5 text-[10px]">{isZh ? '高级' : 'Advanced'}</span>
+              </summary>
+              <div className="grid grid-cols-2 gap-2.5 border-t border-black/[0.04] px-3 py-3 sm:grid-cols-4">
+                <AnalysisStat label={isZh ? '输入 Token' : 'Input Tokens'} value={metrics.inputTokens.toLocaleString()} />
+                <AnalysisStat label={isZh ? '输出 Token' : 'Output Tokens'} value={metrics.outputTokens.toLocaleString()} />
+                <AnalysisStat label={isZh ? '缓存命中' : 'Cache Read'} value={metrics.cacheReadTokens.toLocaleString()} />
+                <AnalysisStat label={isZh ? '缓存写入' : 'Cache Write'} value={metrics.cacheWriteTokens.toLocaleString()} />
+                <AnalysisStat label={isZh ? '每次平均 Token' : 'Avg Tokens/Call'} value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
+                <AnalysisStat label={isZh ? '每次平均输出' : 'Avg Output/Call'} value={metrics.llmCalls > 0 ? (metrics.outputTokens / metrics.llmCalls).toFixed(0) : '0'} />
+                <AnalysisStat label={isZh ? '每秒 Token' : 'Tokens/sec'} value={metrics.turnWallMs > 0 ? ((metrics.outputTokens / (metrics.turnWallMs / 1000))).toFixed(0) : '0'} />
+                {metrics.compactTokens > 0 && (
+                  <AnalysisStat label={isZh ? '摘要 Token' : 'Compact Tokens'} value={metrics.compactTokens.toLocaleString()} />
+                )}
+              </div>
+            </details>
           </div>
         )}
         {session?.cases.length ? (
@@ -423,88 +442,21 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         ))}
       </div>
 
-      {/* Timeline & evidence — debug drill-down lives inside CaseTraceTimeline */}
+      {/* Chat-level timeline only — per-ProcedureRun evidence lives in the run sub-page */}
       {activeTab === 'timeline' && (
-        traces.length > 0 ? (
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-black/[0.06] bg-white/[0.66] p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-[13px] font-semibold text-[var(--mist)]">{isZh ? '时间线与证据' : 'Timeline & evidence'}</h2>
-                  <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
-                    {isZh
-                      ? '展开任一事件查看工具 input/output、原始 Prompt 与模型决策。'
-                      : 'Expand any event to inspect tool input/output, the raw prompt, and the model decision.'}
-                  </p>
-                </div>
-                <p className={`rounded-full border px-3 py-1.5 text-[11px] ${
-                  toolPairing.tone === 'warning'
-                    ? 'border-amber/18 bg-amber/[0.06] text-amber'
-                    : 'border-black/[0.06] bg-white/70 text-[var(--fog)]'
-                }`}>
-                  {toolPairing.label}
-                </p>
-              </div>
+        unassignedTraces.length > 0 ? (
+          <section className="rounded-2xl border border-black/[0.06] bg-white/[0.66] p-4">
+            <div className="mb-3">
+              <h3 className="text-[12px] font-semibold text-[var(--mist)]">{isZh ? '会话级时间线' : 'Chat-level timeline'}</h3>
+              <p className="mt-1 text-[11px] leading-5 text-[var(--fog)]">
+                {isZh ? '这些事件记录在会话层；单个流程运行的完整证据（含原始 Prompt、工具 input/output）请点上方「流程运行」进入详情查看。' : 'These events were recorded at the chat level. Open a ProcedureRun above for its full per-run evidence (raw prompt, tool input/output).'}
+              </p>
             </div>
-
-            {unassignedTraces.length > 0 ? (
-              <section className="rounded-2xl border border-black/[0.06] bg-white/[0.66] p-4">
-                <div className="mb-3">
-                  <h3 className="text-[12px] font-semibold text-[var(--mist)]">{isZh ? '会话级运行时事件' : 'Chat-level runtime events'}</h3>
-                  <p className="mt-1 text-[11px] text-[var(--fog)]">
-                    {isZh ? '这些事件记录在 chat 层，而不是单个流程运行之下。' : 'These events were recorded at the chat level instead of under a single ProcedureRun.'}
-                  </p>
-                </div>
-                <CaseTraceTimeline traces={unassignedTraces} t={t} groupByIteration={false} />
-              </section>
-            ) : null}
-
-            {session?.cases.map((caseItem) => {
-              const caseTraces = caseItem.runId ? (groupedCaseTraces.get(caseItem.runId) ?? []) : []
-              const caseSourceTruth = getRuntimeSourceTruth({ source: caseItem.source, userId: session.userId })
-
-              return (
-                <section key={caseItem.id} className="rounded-2xl border border-black/[0.06] bg-white/[0.66] p-4">
-                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <CasePill caseItem={caseItem} />
-                        <SourceTruthPill truth={caseSourceTruth} />
-                      </div>
-                      <p className="mt-2 text-[11px] leading-5 text-[var(--fog)]">
-                        {caseSourceTruth.isSynthetic
-                          ? (isZh ? '这个流程运行是从 Playground 导出的评审副本，证据偏评审用途。' : 'This ProcedureRun is a review copy from Playground export. Treat the evidence below as review-oriented runtime history.')
-                          : (isZh ? '这个流程运行承载了该会话的已记录运行证据。' : 'This ProcedureRun carries the recorded runtime evidence for this chat.')}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--fog)]">
-                      <span className="rounded-full border border-black/[0.06] bg-white/70 px-2.5 py-1">
-                        {caseTraces.length} {isZh ? '个事件' : 'events'}
-                      </span>
-                      <Link
-                        href={withAgent(`/operate/conversations/cases/${encodeURIComponent(caseItem.id)}`)}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-indigo/18 bg-indigo/[0.06] px-3 py-1.5 font-medium text-indigo transition-colors hover:bg-indigo/[0.1]"
-                      >
-                        {isZh ? '流程运行详情' : 'ProcedureRun detail'}
-                        <BarChart3 className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
-                  </div>
-
-                  {caseTraces.length > 0 ? (
-                    <CaseTraceTimeline traces={caseTraces} t={t} />
-                  ) : (
-                    <p className="rounded-2xl border border-dashed border-black/[0.08] bg-white/50 px-4 py-6 text-[11px] text-[var(--fog)]">
-                      {isZh ? '这个流程运行还没有记录到时间线证据。' : 'No timeline evidence was recorded for this ProcedureRun.'}
-                    </p>
-                  )}
-                </section>
-              )
-            })}
-          </div>
+            <CaseTraceTimeline traces={unassignedTraces} t={t} groupByIteration={false} />
+          </section>
         ) : (
           <p className="rounded-2xl border border-dashed border-black/[0.08] bg-white/50 px-4 py-8 text-center text-[12px] text-[var(--fog)]">
-            {isZh ? '这段会话还没有时间线证据。' : 'No timeline evidence for this conversation yet.'}
+            {isZh ? '没有会话级事件；请点上方「流程运行」查看完整时间线与证据。' : 'No chat-level events. Open a ProcedureRun above for its full timeline and evidence.'}
           </p>
         )
       )}
@@ -597,54 +549,8 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         </div>
       )}
 
-      {/* Analysis (advanced / cost & timing) */}
-      {activeTab === 'analysis' && (
-        metrics.llmCalls > 0 ? (
-          <div className="space-y-4 rounded-2xl border border-black/[0.06] bg-white/[0.66] p-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-[13px] font-semibold text-[var(--mist)]">{isZh ? 'Token 与耗时分析' : 'Token & Timing Analysis'}</h3>
-              <span className="rounded-md bg-black/[0.05] px-1.5 py-0.5 text-[10px] text-[var(--fog)]">{isZh ? '高级' : 'Advanced'}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              <AnalysisStat label={isZh ? '输入 Token' : 'Input Tokens'} value={metrics.inputTokens.toLocaleString()} />
-              <AnalysisStat label={isZh ? '输出 Token' : 'Output Tokens'} value={metrics.outputTokens.toLocaleString()} />
-              <AnalysisStat label={isZh ? '缓存命中' : 'Cache Read'} value={metrics.cacheReadTokens.toLocaleString()} sub={metrics.cacheReadTokens > 0 ? `${((metrics.cacheReadTokens / Math.max(metrics.totalTokens, 1)) * 100).toFixed(0)}% ${isZh ? '命中' : 'hit'}` : undefined} />
-              <AnalysisStat label={isZh ? '缓存写入' : 'Cache Write'} value={metrics.cacheWriteTokens.toLocaleString()} />
-              {metrics.compactTokens > 0 && (
-                <AnalysisStat label={isZh ? '摘要 Token' : 'Compact Tokens'} value={metrics.compactTokens.toLocaleString()} />
-              )}
-              <AnalysisStat label={isZh ? '每次平均 Token' : 'Avg Tokens/Call'} value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
-              <AnalysisStat label={isZh ? '每次平均输出' : 'Avg Output/Call'} value={metrics.llmCalls > 0 ? (metrics.outputTokens / metrics.llmCalls).toFixed(0) : '0'} />
-              <AnalysisStat label={isZh ? '每秒 Token' : 'Tokens/sec'} value={metrics.turnWallMs > 0 ? ((metrics.outputTokens / (metrics.turnWallMs / 1000))).toFixed(0) : '0'} />
-            </div>
-            {session && (
-              <div className="pt-2 border-t border-black/[0.04]">
-                <h4 className="text-[11px] font-semibold text-[var(--fog)] mb-2">{isZh ? '按流程运行汇总' : 'Per-ProcedureRun Summary'}</h4>
-                <div className="space-y-1.5">
-                  {session.cases.map((c) => {
-                    const caseTraces = traces.filter((tr) => tr.runId && tr.runId === c.runId)
-                    const caseTools = caseTraces.filter((tr) => normalizeTraceActionType(tr.actionType) === 'tool_call').length
-                    return (
-                      <div key={c.id} className="flex items-center gap-2 text-[11px]">
-                        <span className="w-16 text-[var(--fog)]/50">{c.runId ? c.runId.slice(0, 8) : 'chat'}</span>
-                        <span className="text-[var(--mist)]">{c.type.replace(/_/g, ' ')}</span>
-                        <span className="text-[var(--fog)]/50">· {caseTraces.length} {isZh ? '条轨迹' : 'traces'} · {caseTools} {isZh ? '个工具' : 'tools'}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="rounded-2xl border border-dashed border-black/[0.08] bg-white/50 px-4 py-8 text-center text-[12px] text-[var(--fog)]">
-            {isZh ? '本次会话没有可分析的 LLM 调用。' : 'No LLM calls to analyze in this conversation.'}
-          </p>
-        )
-      )}
-
       {/* 聊天框 — conversation transcript */}
-      <main className="overflow-y-auto rounded-[26px] border border-black/[0.06] bg-gradient-to-br from-white/[0.72] to-white/[0.42] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
+      <main className="flex-1 min-h-[480px] overflow-y-auto rounded-[26px] border border-black/[0.06] bg-gradient-to-br from-white/[0.72] to-white/[0.42] p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
         {loading ? (
           <div className="flex h-48 items-center justify-center">
             <OrganicLoader icon="spin" size={28} className="text-indigo/60" />
