@@ -74,11 +74,24 @@ const sourceEmpty = {
   enabled: true,
 }
 
+const sourceAccountLowTopK = {
+  id: 'kb_account_123456',
+  name: 'Account',
+  description: 'Account knowledge',
+  groupIds: JSON.stringify(['group-account']),
+  topK: 6,
+  embeddingRate: 0.9,
+  docCorrelation: 0.3,
+  rerankVersion: 'BGE-Rerank',
+  modelControlTopK: false,
+  enabled: true,
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   h.toolFindMany.mockResolvedValue([])
   h.caseTypeFindMany.mockResolvedValue([])
-  h.knowledgeSourceFindMany.mockResolvedValue([sourceDefault, sourceDeposit, sourceChineseName, sourceEmpty])
+  h.knowledgeSourceFindMany.mockResolvedValue([sourceDefault, sourceDeposit, sourceChineseName, sourceEmpty, sourceAccountLowTopK])
   h.knowledgeSourceFindFirst.mockResolvedValue(sourceDefault)
   h.knowledgeSourceUpdate.mockResolvedValue({})
   h.agentConfigFindUnique.mockResolvedValue({ gptbotsApiKey: 'agent-key' })
@@ -167,6 +180,41 @@ describe('generated knowledge-search tool names', () => {
       top_k: 4,
       group_ids: ['group-deposit'],
       embedding_rate: 0.8,
+    })
+  })
+
+  it('preserves a source default topK below 15 in runtime mode without rewriting the row', async () => {
+    const { ToolRouter } = await import('../../tools')
+    const { StreamingToolExecutor } = await import('../../streaming-tool-executor')
+    const router = await ToolRouter.create('agent-a', false)
+    const definition = router.getTool('kb_search_account')
+
+    expect(definition).toBeDefined()
+    h.knowledgeSourceFindFirst.mockResolvedValue(sourceAccountLowTopK)
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => (
+      new Response(JSON.stringify({ list: [{ score: 0.7 }] }), { status: 200 })
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await StreamingToolExecutor.executeAll(
+      [definition!],
+      [{ id: 'tool-1', name: 'kb_search_account', input: { query: 'account locked' } }],
+      undefined,
+      false,
+      'agent-a',
+    )
+
+    expect(h.knowledgeSourceUpdate).not.toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'kb_account_123456' },
+      data: expect.objectContaining({ topK: 15 }),
+    }))
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
+    expect(body).toMatchObject({
+      prompt: 'account locked',
+      top_k: 6,
+      group_ids: ['group-account'],
+      embedding_rate: 0.9,
     })
   })
 

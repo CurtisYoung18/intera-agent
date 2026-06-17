@@ -400,7 +400,8 @@ export class ToolRouter {
         where: { agentConfigId, enabled: true },
       })).filter((source) => hasKnowledgeSourceGroupIds(source.groupIds))
 
-      // Auto-heal: migrate pre-existing KB rows to BGE-Rerank + topK>=15 + docCorrelation=0.3
+      // Auto-heal legacy KB rows that still point at retired reranker defaults.
+      // Runtime must preserve the admin-configured topK instead of rewriting it.
       // Skipped entirely in dry-run (playground) so a turn performs ZERO DB writes.
       if (!dryRun) {
         const healOps: Promise<unknown>[] = []
@@ -409,7 +410,6 @@ export class ToolRouter {
           if (!ks.rerankVersion || ks.rerankVersion === 'Jina-reranker-v2-base-multilingual') {
             patches.rerankVersion = 'BGE-Rerank'
           }
-          if (ks.topK < 15) patches.topK = 15
           if (ks.docCorrelation === 0.5) patches.docCorrelation = 0.3
           if (Object.keys(patches).length > 0) {
             healOps.push(prisma.knowledgeSource.update({ where: { id: ks.id }, data: patches }))
