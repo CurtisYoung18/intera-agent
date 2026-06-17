@@ -358,7 +358,7 @@ export class CaseAgentLoop {
       !Array.isArray(finalizedPayload) &&
       (finalizedPayload as { ok?: boolean }).ok === false
     ) {
-      this.services.addMessage(this.services.makeUserMessage('[PROCEDURE RUNTIME] Finalization was blocked. Reconcile latest customer messages before retrying finalize_procedure.'))
+      this.services.addMessage(this.services.makeUserMessage('[PROCEDURE RUNTIME] Finalization was blocked. Review the latest customer messages and retry finalize_procedure using the current inputEpoch.'))
       return { type: 'continue' }
     }
     const stopEval = await this.services.getHookEngine().evaluate(

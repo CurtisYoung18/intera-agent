@@ -59,7 +59,7 @@ export class TurnPreflight {
         this.deps.addMessage({
           id: this.createId(),
           role: 'user',
-          content: hasImages ? pending.content : `[SYSTEM] Runtime input event (${pending.source}, epoch ${pending.inputEpoch}) arrived while you were working. Do not classify the customer's intent. Reconcile the latest inputEpoch before advancing any active ProcedureRun. Content: ${pending.content}`,
+          content: hasImages ? pending.content : `[SYSTEM] Runtime input event (${pending.source}, epoch ${pending.inputEpoch}) arrived while you were working. Do not classify the customer's intent. Use the latest inputEpoch before advancing any active ProcedureRun. Content: ${pending.content}`,
           contentBlocks: pending.contentBlocks,
           createdAt: this.deps.now?.() ?? new Date(),
         })
