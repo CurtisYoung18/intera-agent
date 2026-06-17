@@ -518,11 +518,11 @@ export default function BuildToolsPage() {
               ) : null}
 
               {channelTools.length > 0 ? (
-                <section>
+                <section data-testid="channel-tools-section">
                   <div className="mb-4 flex items-center gap-2">
                     <h2 className="text-[15px] font-semibold text-[var(--mist)]">Channel tools</h2>
                     <span className="rounded-full border border-purple/20 bg-purple/[0.08] px-2 py-0.5 text-[10px] font-medium text-purple">
-                      Runtime-managed
+                      Channel-managed
                     </span>
                   </div>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -666,17 +666,7 @@ export default function BuildToolsPage() {
                       return (
                         <div
                           key={tool.id || tool.name}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => openEdit(tool)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault()
-                              openEdit(tool)
-                            }
-                          }}
                           className="rounded-[24px] border border-black/[0.06] bg-white/[0.72] p-5 text-left shadow-[var(--shadow-card)] backdrop-blur-xl transition hover:border-indigo/18"
-                          aria-label={`Edit ${displayToolName(tool)}`}
                         >
                           <div className="mb-3 flex items-start gap-3">
                             <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${toolTone(tool)}`}>
@@ -738,10 +728,15 @@ export default function BuildToolsPage() {
 
                           <div className="flex items-center justify-between text-[10px] text-[var(--smoke)]">
                             <span>{tool.enabled ? 'Active' : 'Disabled'}</span>
-                            <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(tool)}
+                              aria-label={`Edit ${displayToolName(tool)}`}
+                              className="inline-flex items-center gap-1 rounded-full border border-indigo/18 bg-indigo/[0.06] px-2.5 py-1 text-[10px] font-medium text-indigo transition hover:bg-indigo/[0.12]"
+                            >
                               <Wrench className="h-3 w-3" />
                               Edit
-                            </span>
+                            </button>
                           </div>
                         </div>
                       )

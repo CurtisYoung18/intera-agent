@@ -187,9 +187,11 @@ describe('BuildToolsPage', () => {
 
     const runtimeSection = screen.getByTestId('runtime-tools-section')
     const customSection = screen.getByTestId('custom-tools-section')
+    const channelSection = screen.getByTestId('channel-tools-section')
 
     expect(within(runtimeSection).getByText('start_procedure')).toBeDefined()
     expect(within(customSection).queryByText('start_procedure')).toBeNull()
+    expect(within(channelSection).getByText('Channel tools').parentElement?.textContent ?? '').toContain('Channel-managed')
     expect(screen.getByText('Custom tools')).toBeDefined()
     expect(screen.queryByText('Business tools')).toBeNull()
   })
@@ -225,6 +227,9 @@ describe('BuildToolsPage', () => {
 
   it('routes toggles and endpoint tests through backend APIs', async () => {
     await renderPage()
+
+    const customToggle = screen.getByRole('button', { name: 'Disable lookup_balance' })
+    expect(customToggle.closest('[role="button"]')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Disable create_human_task' }))
     fireEvent.click(screen.getByRole('button', { name: 'Disable kb_search_account' }))
