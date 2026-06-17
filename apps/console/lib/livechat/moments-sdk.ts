@@ -21,8 +21,11 @@ const MOMENTS_SDK_SRC = 'https://cdn.livechat-static.com/moments-sdk/moments-sdk
 function readExistingMomentsClient(): MomentsSdkClient | null {
   if (typeof window === 'undefined') return null
   const candidate = window.MomentsSDK
-  if (candidate && typeof candidate === 'object' && typeof candidate.close === 'function') {
-    return candidate
+  if (!candidate || typeof candidate !== 'object') return null
+
+  const close = (candidate as { close?: unknown }).close
+  if (typeof close === 'function') {
+    return candidate as MomentsSdkClient
   }
   return null
 }
@@ -31,8 +34,13 @@ function readCreateMomentsSDK(): CreateMomentsSDK | null {
   if (typeof window === 'undefined') return null
   const candidate = window.MomentsSDK
   if (typeof candidate === 'function') return candidate
-  if (candidate && typeof candidate.createMomentsSDK === 'function') return candidate.createMomentsSDK
-  if (candidate && typeof candidate.default === 'function') return candidate.default
+  if (!candidate || typeof candidate !== 'object') return null
+
+  const createMomentsSDK = (candidate as { createMomentsSDK?: unknown }).createMomentsSDK
+  if (typeof createMomentsSDK === 'function') return createMomentsSDK as CreateMomentsSDK
+
+  const defaultExport = (candidate as { default?: unknown }).default
+  if (typeof defaultExport === 'function') return defaultExport as CreateMomentsSDK
   return null
 }
 
