@@ -76,8 +76,6 @@ export class HookContextBuilder {
               status: activeProcedureRun.status,
               currentStepId: activeProcedureRun.currentStepId,
               inputEpoch: activeProcedureRun.inputEpoch,
-              lastReconciledInputEpoch: activeProcedureRun.lastReconciledInputEpoch,
-              needsReconcile: activeProcedureRun.needsReconcile,
             }
           : undefined,
       },

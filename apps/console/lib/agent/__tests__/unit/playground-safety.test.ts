@@ -93,7 +93,7 @@ describe('Playground safety invariants', () => {
   it('all built-in system_info tools are correctly classified', () => {
     const systemInfoPatterns = [
       'read_chat_memory', 'read_user_profile',       'get_current_time', 'kb_search_docs', 'search_delay_notice',
-      'remember', 'reconcile_procedure_input',
+      'remember',
     ]
 
     for (const name of systemInfoPatterns) {

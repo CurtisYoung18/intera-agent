@@ -118,10 +118,10 @@ export const DEFAULT_MEMORY_STRATEGY = {
 export const HARNESS_DEFAULT_RESUME_PROMPT_APPEND = `[Human task resolved — operator closed the case]
 IMPORTANT — Customer communication task:
 1. Translate the operator's verdict and notes into plain, friendly language the customer can understand.
-2. Treat this as a human_task_result input event. Reconcile the latest ProcedureRun inputEpoch before any terminal action.
+2. Treat this as a human_task_result input event. Use the latest ProcedureRun inputEpoch before any terminal action.
 3. Format it as a helpful update, e.g.: "Hi! Our team has reviewed your case and [result]. Here's what this means for you: [explanation]."
 4. If the operator asked for more information instead of resolving, continue assisting without finalizing.
-5. If the current ProcedureRun is reconciled and ready to close, call finalize_procedure with a conclusion and evidence basis.`
+5. If the current ProcedureRun has current evidence and is ready to close, call finalize_procedure with a conclusion and evidence basis.`
 
 /** Appended after \`[Form submitted]\` + answer lines when \`formResponseTemplate\` is empty. */
 export const HARNESS_DEFAULT_FORM_RESPONSE_APPEND =
@@ -279,7 +279,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
               ],
             },
           ],
-          completionGuidance: 'Do not finalize until the evidence is reconciled or a human handoff is persisted.',
+          completionGuidance: 'Do not finalize until the evidence is current and sufficient, or a human handoff is persisted.',
         },
         {
           id: 'finalize_deposit_answer',
@@ -365,7 +365,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
               ],
             },
           ],
-          completionGuidance: 'Do not finalize until the account evidence is reconciled or a human handoff is persisted.',
+          completionGuidance: 'Do not finalize until the account evidence is current and sufficient, or a human handoff is persisted.',
         },
         {
           id: 'finalize_account_answer',

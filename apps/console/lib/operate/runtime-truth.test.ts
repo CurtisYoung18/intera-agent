@@ -35,17 +35,17 @@ describe('runtime-truth helpers', () => {
     expect(truth.shortLabel).toBe('Live runtime')
   })
 
-  it('classifies reconcile blocks as reconcile gates', () => {
+  it('classifies stale ProcedureRun guards as stale evidence', () => {
     const trace = classifyOperateTrace({
       actionType: 'loop_decision',
-      title: 'ProcedureRun reconcile gate blocked Tool: finalize_procedure',
+      title: 'Stale ProcedureRun finalize attempt blocked',
       detail: null,
-      payload: JSON.stringify({ inputEpoch: 4, lastReconciledInputEpoch: 3 }),
+      payload: JSON.stringify({ inputEpoch: 4, basedOnInputEpoch: 3, evidenceState: 'stale' }),
     })
 
-    expect(trace.kind).toBe('reconcile_gate')
+    expect(trace.kind).toBe('stale_evidence')
     expect(trace.status).toBe('block')
-    expect(trace.semanticLabel).toBe('Reconcile gate')
+    expect(trace.semanticLabel).toBe('Stale evidence')
   })
 
   it('classifies exported playground stage rows without pretending they are raw live traces', () => {

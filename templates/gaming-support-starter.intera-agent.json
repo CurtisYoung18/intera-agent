@@ -85,7 +85,7 @@
                 ]
               }
             ],
-            "completionGuidance": "Do not finalize until the deposit evidence is reconciled or a human handoff is persisted."
+            "completionGuidance": "Do not finalize until the deposit evidence is current and sufficient, or a human handoff is persisted."
           },
           {
             "id": "explain_deposit_next_step",
@@ -216,7 +216,7 @@
                 ]
               }
             ],
-            "completionGuidance": "Do not finalize until the deposit evidence is reconciled or a human handoff is persisted."
+            "completionGuidance": "Do not finalize until the deposit evidence is current and sufficient, or a human handoff is persisted."
           },
           {
             "id": "explain_deposit_next_step",

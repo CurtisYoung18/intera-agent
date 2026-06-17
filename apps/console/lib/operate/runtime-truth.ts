@@ -35,7 +35,6 @@ export type OperateTraceKind =
   | 'tool_call'
   | 'tool_result'
   | 'hook_decision'
-  | 'reconcile_gate'
   | 'stale_evidence'
   | 'procedure_runtime'
   | 'runtime_debug'
@@ -85,7 +84,7 @@ function toolNameFromTrace(
 ): string | undefined {
   if (typeof payload?.toolName === 'string' && payload.toolName.trim()) return payload.toolName
 
-  const match = trace.title.match(/(?:Tool(?: called| result)?|ProcedureRun reconcile gate blocked Tool):\s*(.+)$/)
+  const match = trace.title.match(/Tool(?: called| result)?:\s*(.+)$/)
   return match?.[1]?.trim()
 }
 
@@ -128,7 +127,6 @@ function isHookLoopDecision(title: string): boolean {
 
 function isProcedureRuntimeDecision(title: string): boolean {
   return (
-    title.includes('ProcedureRun reconcile') ||
     title.includes('Stale ProcedureRun') ||
     title.startsWith('Procedure selected inline:') ||
     title.startsWith('Procedure nudge:')
@@ -527,11 +525,10 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
 
   if (trace.actionType === 'loop_decision' && isProcedureRuntimeDecision(trace.title)) {
     const isStale = trace.title.includes('Stale') || payload?.evidenceState === 'stale' || payload?.stale === true
-    const isReconcile = trace.title.toLowerCase().includes('reconcile')
     return {
-      kind: isStale ? 'stale_evidence' : isReconcile ? 'reconcile_gate' : 'procedure_runtime',
+      kind: isStale ? 'stale_evidence' : 'procedure_runtime',
       status,
-      semanticLabel: isStale ? 'Stale evidence' : isReconcile ? 'Reconcile gate' : 'Procedure runtime',
+      semanticLabel: isStale ? 'Stale evidence' : 'Procedure runtime',
       title: trace.title || 'Procedure runtime',
       detailText: detailTextForTrace(trace, payload),
       payload,

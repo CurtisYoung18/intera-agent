@@ -54,7 +54,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
   {
     name: 'remember',
     description:
-      'Write a scoped memory item. Use scope="user" for long-term cross-chat profile. Chat-scoped fact writes are no longer accepted; rely on runtime evidence, form results, and tool results instead. Do not store ProcedureRun runtime state, currentStepId, needsReconcile, stale evidence, or completion authority.',
+      'Write a scoped memory item. Use scope="user" for long-term cross-chat profile. Chat-scoped fact writes are no longer accepted; rely on runtime evidence, form results, and tool results instead. Do not store ProcedureRun runtime state, currentStepId, inputEpoch, stale evidence, or completion authority.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,35 +128,9 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
     }),
   },
   {
-    name: 'reconcile_procedure_input',
-    description:
-      'Clear ProcedureRun reconciliation after reviewing all input events up to upToInputEpoch. This is a runtime action only; it does not write chat or user memory.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        runId: { type: 'string', description: 'Active ProcedureRun id.' },
-        upToInputEpoch: { type: 'number', description: 'Latest inputEpoch the model reconciled.' },
-        decision: { type: 'string', description: 'Short decision after reconciliation.' },
-        summary: { type: 'string', description: 'What changed or stayed the same after reconciliation.' },
-      },
-      required: ['runId', 'upToInputEpoch', 'decision', 'summary'],
-    },
-    isConcurrencySafe: false,
-    mode: 'system_managed',
-    enabled: true,
-    toolCategory: 'system_info',
-    displayVerb: { text: 'Reconciling input', icon: 'dots' },
-    zodSchema: z.object({
-      runId: z.string(),
-      upToInputEpoch: z.number(),
-      decision: z.string(),
-      summary: z.string(),
-    }),
-  },
-  {
     name: 'finalize_procedure',
     description:
-      'Finalize the active ProcedureRun with a customer-safe conclusion. Runtime blocks this if newer input needs reconciliation.',
+      'Finalize the active ProcedureRun with a customer-safe conclusion. Runtime blocks stale finalization attempts and incomplete ProcedureRuns.',
     inputSchema: {
       type: 'object',
       properties: {

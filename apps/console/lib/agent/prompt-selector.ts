@@ -71,7 +71,7 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
       systemPrompt,
       '',
       '## Procedure Definition Context',
-      'Use this Procedure definition as guidance. Runtime ProcedureRun state, current step, reconcile status, and evidence authority appear only in the dynamic tail below.',
+      'Use this Procedure definition as guidance. Runtime ProcedureRun state, current step, and evidence authority appear only in the dynamic tail below.',
       caseLoop.buildProcedurePrompt(),
     ].join('\n')
     return {

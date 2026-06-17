@@ -222,7 +222,7 @@ function toolNameFromTrace(record: TraceRecord, parsedPayload?: Record<string, u
   if (typeof toolName === 'string' && toolName.trim()) return toolName
 
   const title = record.title ?? ''
-  const match = title.match(/(?:Tool(?: called| result)?|ProcedureRun reconcile gate blocked Tool):\s*(.+)$/)
+  const match = title.match(/Tool(?: called| result)?:\s*(.+)$/)
   return match?.[1]?.trim() || undefined
 }
 
@@ -263,8 +263,7 @@ function isPassiveHookCheckpoint(record: TraceRecord): boolean {
 }
 
 function isProcedureRuntimeDecision(title: string): boolean {
-  return title.includes('ProcedureRun reconcile')
-    || title.includes('Stale ProcedureRun')
+  return title.includes('Stale ProcedureRun')
     || title.startsWith('Procedure selected inline:')
     || title.startsWith('Procedure nudge:')
 }

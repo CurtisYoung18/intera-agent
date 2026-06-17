@@ -16,7 +16,6 @@ describe('runtime-managed-tools', () => {
     expect(shouldPersistToolResultToChatMemory('read_chat_memory')).toBe(false)
     expect(shouldPersistToolResultToChatMemory('read_user_profile')).toBe(false)
     expect(shouldPersistToolResultToChatMemory('remember')).toBe(false)
-    expect(shouldPersistToolResultToChatMemory('reconcile_procedure_input')).toBe(false)
     expect(shouldPersistToolResultToChatMemory('finalize_procedure')).toBe(false)
     expect(shouldPersistToolResultToChatMemory('get_latest_deposit')).toBe(true)
 

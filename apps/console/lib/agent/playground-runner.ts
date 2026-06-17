@@ -59,7 +59,7 @@ function toolNameFromTrace(record: TraceRecord, payload?: Record<string, unknown
   if (typeof toolName === 'string' && toolName.trim()) return toolName
 
   const title = record.title ?? ''
-  const match = title.match(/(?:Tool(?: called| result)?|ProcedureRun reconcile gate blocked Tool):\s*(.+)$/)
+  const match = title.match(/Tool(?: called| result)?:\s*(.+)$/)
   return match?.[1]?.trim() || undefined
 }
 

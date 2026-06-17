@@ -15,7 +15,6 @@ import {
   filterRuntimeAuthorityKeys,
   finalizeProcedureRun,
   latestInputEpoch,
-  reconcileProcedureInput,
   recordProcedureToolResult,
 } from './session-store'
 
@@ -76,30 +75,6 @@ export class RuntimeManagedToolResolver {
 
       if (result.name === 'get_current_time') {
         this.replaceToolOutput(result, this.currentTimeToolOutput())
-      }
-
-      if (result.name === 'reconcile_procedure_input') {
-        const runId = String(input.runId || '')
-        const upToInputEpoch = Number(input.upToInputEpoch)
-        const decision = String(input.decision || '')
-        const summary = String(input.summary || '')
-        const reconcile = reconcileProcedureInput(this.deps.caseId, {
-          runId,
-          upToInputEpoch,
-          decision,
-          summary,
-        })
-        this.replaceToolOutput(result, reconcile.ok
-          ? {
-              ok: true,
-              cleared: reconcile.cleared,
-              runId,
-              upToInputEpoch,
-              latestInputEpoch: latestInputEpoch(this.deps.caseId),
-              note: 'Reconcile is a runtime action only; no chat or user memory was written.',
-            }
-          : { ok: false, error: reconcile.error },
-        )
       }
 
       if (result.name === 'finalize_procedure') {
@@ -374,7 +349,6 @@ export class RuntimeManagedToolResolver {
 export function shouldPersistToolResultToChatMemory(toolName: string): boolean {
   return ![
     'start_procedure',
-    'reconcile_procedure_input',
     'finalize_procedure',
     'remember',
     'read_chat_memory',
@@ -386,7 +360,6 @@ export function shouldPersistToolResultToChatMemory(toolName: string): boolean {
 export function shouldRecordProcedureEvidence(toolName: string): boolean {
   return ![
     'start_procedure',
-    'reconcile_procedure_input',
     'remember',
     'read_chat_memory',
     'read_user_profile',

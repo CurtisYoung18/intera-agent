@@ -86,8 +86,8 @@ describe('runtime-backed Scenario evidence', () => {
       {
         caseId: 'case-1',
         actionType: 'loop_decision',
-        title: 'ProcedureRun reconcile gate blocked Tool: finalize_procedure',
-        payload: JSON.stringify({ runId: 'run-1', inputEpoch: 2 }),
+        title: 'finalize_procedure blocked because the attempt was based on stale input',
+        payload: JSON.stringify({ runId: 'run-1', inputEpoch: 2, evidenceState: 'stale' }),
         createdAt: '2026-06-10T00:00:03.500Z',
       },
       {
@@ -142,8 +142,8 @@ describe('runtime-backed Scenario evidence', () => {
     expect(evidence.humanTransfer).toBe(true)
     expect(evidence.procedureStatus).toBeUndefined()
     expect(evidence.procedureOutcome).toBeUndefined()
-    expect(evidence.runtime?.staleEvidence).toHaveLength(1)
-    expect(evidence.runtime?.reconcileEvidence).toHaveLength(1)
+    expect(evidence.runtime?.staleEvidence).toHaveLength(2)
+    expect(evidence.runtime?.reconcileEvidence).toHaveLength(0)
     expect(evidence.runtime?.transition).toBe('waiting_human')
     expect(evidence.runtime?.transcriptHealth).toMatchObject({
       providerTranscriptPersisted: true,

@@ -164,7 +164,6 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(visibleNames).toEqual(expect.arrayContaining([
       'start_procedure',
       'finalize_procedure',
-      'reconcile_procedure_input',
       'remember',
       'read_chat_memory',
       'read_user_profile',
@@ -383,14 +382,14 @@ describe('R3 HookContext and memory boundaries', () => {
 
     const remember = await resolveRuntimeTool(loop, 'remember', {
       scope: 'chat',
-      facts: { memberId: 'M123', currentStepId: 'close', needsReconcile: false },
+      facts: { memberId: 'M123', currentStepId: 'close', inputEpoch: 2 },
       reason: 'customer provided member id',
     })
     const read = await resolveRuntimeTool(loop, 'read_chat_memory')
 
     expect((remember as any).ok).toBe(false)
     expect((remember as any).writtenKeys).toEqual([])
-    expect((remember as any).rejectedKeys.sort()).toEqual(['currentStepId', 'memberId', 'needsReconcile'].sort())
+    expect((remember as any).rejectedKeys.sort()).toEqual(['currentStepId', 'inputEpoch', 'memberId'].sort())
     expect(read).not.toHaveProperty('contextMap')
     expect(read).not.toHaveProperty('contextMapAvailable')
     expect(JSON.stringify(read)).not.toContain('currentStepId')

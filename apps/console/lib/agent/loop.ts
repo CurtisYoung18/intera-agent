@@ -447,7 +447,6 @@ export class AgentLoop {
       const streamEndedAt = streamPhase.streamEndedAt
       const blocks = streamPhase.blocks
       const toolExecutor = streamPhase.toolExecutor
-      const reconcileGateBlockedThisIteration = streamPhase.reconcileGateBlockedThisIteration
       const toolBasedOnEpoch = streamPhase.toolBasedOnEpoch
       const flushVisibleText = streamPhase.flushVisibleText
       const discardVisibleText = streamPhase.discardVisibleText
@@ -480,7 +479,7 @@ export class AgentLoop {
         if (textReplyRuntime.stale) {
           discardVisibleText()
           assistantMessage.content = ''
-          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-visible reply was withheld because newer input arrived before send. Call reconcile_procedure_input before any further tool use, finalization, or customer reply.'))
+          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-visible reply was withheld because newer input arrived before send. Continue from the latest runtime input before any further tool use, finalization, or customer reply.'))
           await this.traceWriter.write('loop_decision', 'Stale ProcedureRun text reply withheld', {
             basedOnInputEpoch: iterationBasedOnInputEpoch,
             latestInputEpoch: latestInputEpoch(this.deps.caseId),
@@ -622,7 +621,6 @@ export class AgentLoop {
 
       if (toolResults.length === 0) {
         const noToolTurn = await this.noToolTurnHandler.handle({
-          reconcileGateBlockedThisIteration,
           fullText,
           nudgeCount: this.nudgeCount,
           iterationCount: this.iterationCount,

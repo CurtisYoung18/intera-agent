@@ -15,7 +15,7 @@ import { classifyError } from './api/error-classifier'
 import { reactiveCompact } from './compact'
 import { writeDebugRequest, writeDebugResponse } from './debug-logger'
 import { buildHookHitCounts } from './turn-preflight'
-import { getActiveProcedureRun, recordProcedureToolCall } from './session-store'
+import { recordProcedureToolCall } from './session-store'
 import type { ChatMemoryManager } from './memory'
 import type { HookEngine } from './hook-engine'
 import type { HookContextBuilder } from './hook-context-builder'
@@ -50,7 +50,6 @@ export type LlmStreamPhaseResult =
       streamEndedAt: number
       blocks: Map<number, StreamContentBlock>
       toolExecutor: StreamingToolExecutor
-      reconcileGateBlockedThisIteration: boolean
       toolBasedOnEpoch: Map<string, number>
       flushVisibleText: () => void
       discardVisibleText: () => void
@@ -262,8 +261,6 @@ export class LlmStreamPhase {
     let fullText = ''
     let stopReason: string | null = null
     let usage: Record<string, unknown> | null = null
-    let reconcileGateBlockedThisIteration = false
-
     try {
       const streamResult = await consumeStream(stream, blocks, {
         sendEvent: streamSendEvent,
@@ -272,28 +269,6 @@ export class LlmStreamPhase {
         recordFirstToken: () => this.deps.profiler.recordFirstToken(),
         emitThinking: this.deps.emitThinking ?? false,
         onToolUseCompleted: async (toolUse: ToolUse, am: AssistantMessage | null) => {
-          const activeRun = getActiveProcedureRun(this.deps.caseId)
-          if (
-            activeRun?.needsReconcile &&
-            !['reconcile_procedure_input', 'read_chat_memory', 'read_user_profile'].includes(toolUse.name)
-          ) {
-            reconcileGateBlockedThisIteration = true
-            await this.deps.traceWriter.write('loop_decision', `ProcedureRun reconcile gate blocked Tool: ${toolUse.name}`, {
-              runId: activeRun.runId,
-              procedureId: activeRun.procedureId,
-              inputEpoch: activeRun.inputEpoch,
-              lastReconciledInputEpoch: activeRun.lastReconciledInputEpoch,
-              toolName: toolUse.name,
-            })
-            input.missingReasons.set(toolUse.id, 'hook_blocked')
-            input.pendingHookFeedback.push('[PROCEDURE RUNTIME] New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, call reconcile_procedure_input with the active runId and latest inputEpoch.')
-            if (!assistantPushed && am) {
-              this.deps.addMessage(am)
-              assistantPushed = true
-            }
-            return
-          }
-
           toolBasedOnEpoch.set(toolUse.id, input.iterationBasedOnInputEpoch)
           recordProcedureToolCall(this.deps.caseId, {
             toolName: toolUse.name,
@@ -442,7 +417,6 @@ export class LlmStreamPhase {
       streamEndedAt,
       blocks,
       toolExecutor,
-      reconcileGateBlockedThisIteration,
       toolBasedOnEpoch,
       flushVisibleText,
       discardVisibleText,

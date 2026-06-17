@@ -8,7 +8,6 @@ import { createMemoryPersistence } from '../../persistence-port'
 import { mockTextStream, mockToolUseStream } from '../mocks/anthropic'
 import {
   closeSession,
-  getActiveProcedureRun,
   recordInitialInputEvent,
   startProcedureRun,
 } from '../../session-store'
@@ -423,14 +422,14 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(streamedText).toContain('human specialist')
   })
 
-  it('nudges the model to reconcile when newer customer input blocks a tool call mid-procedure', async () => {
-    const caseId = 'case_reconcile_nudge'
+  it('allows latest-epoch tool calls after newer customer input without a reconcile nudge', async () => {
+    const caseId = 'case_new_input_no_reconcile_gate'
     recordInitialInputEvent(caseId, {
       content: '你好',
       source: 'customer_message',
       origin: 'customer',
     })
-    const started = startProcedureRun(caseId, {
+    startProcedureRun(caseId, {
       procedureId: 'deposit_issue',
       displayName: 'Deposit',
       procedure: {
@@ -460,30 +459,23 @@ describe('AgentLoop Hook checkpoints', () => {
 
     const engine = new HookEngine('agent_1')
     const { loop, events, sendEvent, client } = makeLoop(engine, [
-      mockToolUseStream('test_lookup', { memberId: 'JAYA11C5184' }, 'tool_blocked'),
-      mockToolUseStream('reconcile_procedure_input', {
-        runId: started.run.runId,
-        upToInputEpoch: 2,
-        decision: 'continue',
-        summary: 'Reviewed the latest customer input before continuing.',
-      }, 'tool_reconcile'),
+      mockToolUseStream('test_lookup', { memberId: 'JAYA11C5184' }, 'tool_lookup'),
       mockTextStream('请访问官网并点击 Sign Up 完成注册。'),
     ], config(), caseId)
 
     const result = await loop.run('怎么注册', sendEvent)
 
     expect(result.transition).toBe('next_turn')
-    expect(client.messages.stream).toHaveBeenCalledTimes(3)
+    expect(client.messages.stream).toHaveBeenCalledTimes(2)
     expect(events.some((event) =>
       event.type === 'message_stop' &&
       (event.data as { reason?: string }).reason === 'procedure_reconcile_nudge',
-    )).toBe(true)
+    )).toBe(false)
     const streamedText = events
       .filter((event) => event.type === 'text_delta')
       .map((event) => String(event.data))
       .join('')
     expect(streamedText).toContain('Sign Up')
-    expect(getActiveProcedureRun(caseId)?.needsReconcile).toBe(false)
 
     closeSession(caseId)
   })

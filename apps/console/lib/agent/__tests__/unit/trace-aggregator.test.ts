@@ -189,8 +189,8 @@ describe('aggregateTraces', () => {
       {
         caseId: 'c',
         actionType: 'loop_decision',
-        title: 'ProcedureRun reconcile gate blocked Tool: finalize_procedure',
-        payload: JSON.stringify({ inputEpoch: 4, lastReconciledInputEpoch: 3 }),
+        title: 'Stale ProcedureRun finalize attempt blocked',
+        payload: JSON.stringify({ inputEpoch: 4, basedOnInputEpoch: 3, evidenceState: 'stale' }),
         createdAt: new Date(t0 + 20).toISOString(),
       },
     ]
@@ -206,7 +206,7 @@ describe('aggregateTraces', () => {
 
     expect(procedure?.fired).toBe(true)
     expect(procedure?.status).toBe('block')
-    expect(procedure?.events?.[0]?.kind).toBe('runtime_guard')
+    expect(procedure?.events?.[0]?.kind).toBe('stale_evidence')
     expect(procedure?.events?.[0]?.detail).toContain('inputEpoch')
   })
 

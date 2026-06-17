@@ -533,6 +533,8 @@ export function startProcedureRun(caseId: string, input: {
         agentConfigId: input.agentConfigId ?? session.agentConfigId ?? resumed.agentConfigId,
         status: 'active',
         inputEpoch: session.latestInputEpoch,
+        lastReconciledInputEpoch: session.latestInputEpoch,
+        needsReconcile: false,
         reason: input.reason ?? resumed.reason,
         confidence: input.confidence ?? resumed.confidence,
         updatedAt: now,
@@ -626,11 +628,6 @@ export function recordProcedureToolResult(caseId: string, input: {
   const basedOn = input.basedOnInputEpoch ?? session.latestInputEpoch
   const stale = basedOn < session.latestInputEpoch
 
-  if (stale) {
-    run.needsReconcile = true
-    run.blockers = [...new Set([...run.blockers, 'New customer input arrived after this tool/action began.'])]
-  }
-
   const isKnowledgeTool = isKnowledgeToolForSession(session, input)
   const assessment = assessProcedureToolOutcome(
     input.toolName,
@@ -681,10 +678,6 @@ export function recordProcedureTextReply(caseId: string, input: {
   const stale = basedOn < session.latestInputEpoch
   const recordedAt = new Date().toISOString()
   let blockedReason: string | undefined
-  if (stale) {
-    run.needsReconcile = true
-    run.blockers = [...new Set([...run.blockers, 'A customer-visible reply was based on stale input.'])]
-  }
   if (!stale && promisesHumanHandoff(input.text) && !hasPersistedHandoffEvidence(run)) {
     blockedReason = 'A customer-facing human-handoff promise was drafted before create_human_task produced persisted evidence.'
     run.blockers = [...new Set([...run.blockers, blockedReason])]
@@ -726,38 +719,6 @@ export function recordProcedureTextReply(caseId: string, input: {
   return { stale, blockedReason, run: cloneRun(run) }
 }
 
-export function reconcileProcedureInput(caseId: string, input: {
-  runId: string
-  upToInputEpoch: number
-  decision: string
-  summary: string
-}): { ok: boolean; cleared: boolean; run?: ProcedureRunState; error?: string } {
-  const session = sessions.get(caseId)
-  const run = session?.procedureRuntime.activeProcedureRun
-  if (!session || !run || run.runId !== input.runId) {
-    return { ok: false, cleared: false, error: 'No matching active ProcedureRun.' }
-  }
-  run.lastReconciledInputEpoch = Math.max(run.lastReconciledInputEpoch, input.upToInputEpoch)
-  const cleared = input.upToInputEpoch >= session.latestInputEpoch
-  if (cleared) {
-    run.needsReconcile = false
-    run.blockers = run.blockers.filter((blocker) => !blocker.toLowerCase().includes('input'))
-  }
-  appendProcedureTimeline(session, run, {
-    origin: 'system',
-    source: 'reconcile',
-    summary: input.summary,
-    metadata: {
-      decision: input.decision,
-      upToInputEpoch: input.upToInputEpoch,
-      cleared,
-      memoryWrite: false,
-    },
-  })
-  scheduleRunPersist(session, run)
-  return { ok: true, cleared, run: cloneRun(run) }
-}
-
 export function finalizeProcedureRun(caseId: string, input: {
   runId?: string
   status?: 'completed' | 'cancelled'
@@ -769,18 +730,17 @@ export function finalizeProcedureRun(caseId: string, input: {
   if (!session || !run) return { ok: false, stale: false, error: 'No active ProcedureRun.' }
   if (input.runId && input.runId !== run.runId) return { ok: false, stale: false, error: 'runId does not match active ProcedureRun.' }
   const basedOn = input.basedOnInputEpoch ?? session.latestInputEpoch
-  const stale = basedOn < session.latestInputEpoch || run.needsReconcile
+  const stale = basedOn < session.latestInputEpoch
   if (stale) {
-    run.needsReconcile = true
     appendProcedureTimeline(session, run, {
       origin: 'system',
       source: 'tool_result',
       basedOnInputEpoch: basedOn,
-      summary: 'finalize_procedure blocked because the ProcedureRun needs reconciliation',
+      summary: 'finalize_procedure blocked because the attempt was based on stale input',
       metadata: { evidenceState: 'stale', terminal: true },
     })
     scheduleRunPersist(session, run)
-    return { ok: false, stale: true, run: cloneRun(run), error: 'Reconcile latest customer messages before finalizing.' }
+    return { ok: false, stale: true, run: cloneRun(run), error: 'Use the latest customer input before finalizing.' }
   }
   const finalizeBlockers = finalizationBlockers(run)
   if (finalizeBlockers.length > 0) {
@@ -863,7 +823,7 @@ export function procedureRunPromptTail(caseId: string): string {
   const lines: string[] = [
     '<procedure_run_runtime>',
     'This block is dynamic runtime context. It is not chat memory or user profile.',
-    'ProcedureRunState is the canonical authority for active/paused runs, currentStepId, inputEpoch, branch state, evidence, and reconcile requirements.',
+    'ProcedureRunState is the canonical authority for active/paused runs, currentStepId, inputEpoch, branch state, evidence, and completion requirements.',
   ]
   const renderRun = (run: ProcedureRunState, label: string) => {
     lines.push('')
@@ -871,8 +831,6 @@ export function procedureRunPromptTail(caseId: string): string {
     lines.push(`- runId: ${run.runId}`)
     lines.push(`- status: ${run.status}`)
     lines.push(`- inputEpoch: ${run.inputEpoch}`)
-    lines.push(`- lastReconciledInputEpoch: ${run.lastReconciledInputEpoch}`)
-    lines.push(`- needsReconcile: ${run.needsReconcile}`)
     lines.push(`- currentStepId: ${run.currentStepId ?? 'none'}`)
     const activeSignals = run.signals.filter((signal) => signal.active)
     if (activeSignals.length) {
@@ -890,20 +848,6 @@ export function procedureRunPromptTail(caseId: string): string {
           ? ` form=${JSON.stringify(entry.formAnswers)}`
           : ''
         lines.push(`- [epoch ${entry.inputEpoch}] ${entry.source}${form}${content ? ` content=${JSON.stringify(content.slice(0, 240))}` : ''}`)
-      }
-    }
-    if (run.needsReconcile) {
-      lines.push('')
-      lines.push('New customer messages arrived after the last tool/action began. Before calling another tool or finalizing, call reconcile_procedure_input with the active runId and latest inputEpoch.')
-      const unreconciled = run.timeline.filter((event) =>
-        event.inputEpoch > run.lastReconciledInputEpoch &&
-        (event.source === 'customer_message' || event.source === 'customer_form_result' || event.source === 'human_task_result')
-      )
-      if (unreconciled.length) {
-        lines.push('Unreconciled input events:')
-        for (const event of unreconciled.slice(-6)) {
-          lines.push(`- [epoch ${event.inputEpoch}] ${event.source}: ${event.summary || event.content || '(no content)'}`)
-        }
       }
     }
     if (run.blockers.length) {
@@ -1122,7 +1066,8 @@ function nextInputEpoch(session: CaseSession): number {
   const active = session.procedureRuntime.activeProcedureRun
   if (active) {
     active.inputEpoch = session.latestInputEpoch
-    active.needsReconcile = active.lastReconciledInputEpoch < session.latestInputEpoch
+    active.lastReconciledInputEpoch = session.latestInputEpoch
+    active.needsReconcile = false
     active.updatedAt = new Date().toISOString()
   }
   return session.latestInputEpoch
@@ -1153,6 +1098,10 @@ function scheduleRunPersist(session: CaseSession, run: ProcedureRunState): void 
 function toPersistedProcedureRun(session: CaseSession, run: ProcedureRunState): PersistedProcedureRunRecord {
   const agentConfigId = run.agentConfigId ?? session.agentConfigId ?? 'unknown'
   run.agentConfigId = agentConfigId
+  const state = cloneRun(run)
+  state.inputEpoch = run.inputEpoch
+  state.lastReconciledInputEpoch = run.inputEpoch
+  state.needsReconcile = false
   return {
     id: run.runId,
     caseId: session.caseId,
@@ -1160,10 +1109,10 @@ function toPersistedProcedureRun(session: CaseSession, run: ProcedureRunState): 
     procedureId: run.procedureId,
     status: run.status,
     inputEpoch: run.inputEpoch,
-    needsReconcile: run.needsReconcile,
+    needsReconcile: false,
     currentStepId: run.currentStepId,
     outcome: run.outcome ?? null,
-    state: cloneRun(run),
+    state,
   }
 }
 
@@ -1221,7 +1170,8 @@ function resumePausedRunForInput(session: CaseSession, event: RuntimeEvent): Pro
   resumed.reason = 'Resumed after human task result.'
   resumed.updatedAt = event.createdAt
   resumed.inputEpoch = session.latestInputEpoch
-  resumed.needsReconcile = resumed.lastReconciledInputEpoch < session.latestInputEpoch
+  resumed.lastReconciledInputEpoch = session.latestInputEpoch
+  resumed.needsReconcile = false
   session.procedureRuntime.activeProcedureRun = resumed
   appendProcedureTimeline(session, resumed, {
     origin: 'system',
@@ -1532,11 +1482,6 @@ function applyToolEvidenceToRun(
 
   const blockerKey = `action:${match.action?.id ?? match.step.id}`
   if (stale) {
-    setRunBlocker(
-      run,
-      blockerKey,
-      `Stale ${input.toolName} evidence must be reconciled before this step can advance.`,
-    )
     return
   }
 

@@ -241,7 +241,7 @@ const SEED_CASE_TYPES = [
         {
           id: 'investigate_order',
           title: 'Investigate order and channel',
-          guidance: 'Check order status and payment-channel status, then reconcile the evidence with the customer report.',
+          guidance: 'Check order status and payment-channel status, then compare the evidence with the customer report.',
           actions: [
             {
               id: 'query_order_status',
@@ -274,7 +274,7 @@ const SEED_CASE_TYPES = [
               ],
             },
           ],
-          completionGuidance: 'Do not finalize until the deposit evidence is reconciled or a human handoff is persisted.',
+          completionGuidance: 'Do not finalize until the deposit evidence is current and sufficient, or a human handoff is persisted.',
         },
         {
           id: 'finalize',

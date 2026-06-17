@@ -144,7 +144,6 @@ const REQUIRED_TOOLS = [
   'remember',
   'start_procedure',
   'finalize_procedure',
-  'reconcile_procedure_input',
   'check_latest_deposit_status',
   'check_latest_withdrawal_status',
   'turnover_withdraw_condition',
@@ -197,14 +196,14 @@ Procedure use:
 - When the customer intent matches a CaseType, start and follow that Procedure. Let Procedure steps inject the SOP context instead of overloading this core prompt.
 - For deposit, withdrawal, reset PIN, account/KYC, promotion status, transaction history, bet history, and game recommendation intents, call start_procedure before member-specific live tools.
 - If the request already clearly matches one of those CaseTypes, prefer start_procedure in the first tool turn instead of jumping straight to raw business tools.
-- Finish only after the required evidence is gathered, reconciled, or handed off to a human operator.
+- Finish only after the required evidence is current and sufficient, or handed off to a human operator.
 
 Safety:
 - Do not mention unsupported compensation, guarantees, backend errors, API keys, internal queues, or private implementation details.
 - Do not ask for passwords, OTPs, full card details, screenshots containing secrets, or withdrawal PIN values.`
 
 const RESUME_PROMPT = `When a human task is resolved, convert the operator verdict into a short customer-facing update.
-Reconcile the latest Procedure input first, then either continue helping or finalize the Procedure with the evidence basis.
+Use the latest Procedure input first, then either continue helping or finalize the Procedure with the evidence basis.
 Do not expose internal operator notes verbatim if they contain sensitive implementation details.`
 
 function loadEnv(): void {

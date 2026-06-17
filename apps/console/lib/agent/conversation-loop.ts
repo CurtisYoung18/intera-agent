@@ -31,7 +31,6 @@ export class ConversationLoop {
     'get_active_promotions', 'get_eligible_promotions', 'get_recommended_games',
     'get_bet_history', 'get_withdraw_conditions',
     'start_procedure',
-    'reconcile_procedure_input',
     'finalize_procedure',
     'remember',
     'ask_user_questions',  // needed for asking member_id before creating a case

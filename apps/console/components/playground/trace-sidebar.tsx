@@ -491,7 +491,6 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
 function evidenceKindLabel(event: PlaygroundTraceEvent): string {
   if (event.kind === 'hook_decision') return 'Hook'
   if (event.kind === 'stale_evidence') return 'Stale evidence'
-  if (event.label.toLowerCase().includes('reconcile')) return 'Reconcile gate'
   return 'Procedure runtime'
 }
 

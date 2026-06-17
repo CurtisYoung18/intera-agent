@@ -113,14 +113,14 @@ describe('TraceSidebar', () => {
         status: 'block',
         fired: true,
         ms: 0,
-        summary: 'ProcedureRun reconcile gate blocked Tool: finalize_procedure',
-        detail: [['loop_decision', 'inputEpoch: 4\nlastReconciledInputEpoch: 3']],
+        summary: 'Stale ProcedureRun finalize attempt blocked',
+        detail: [['loop_decision', 'inputEpoch: 4\nbasedOnInputEpoch: 3']],
         events: [{
           kind: 'runtime_guard',
           actionType: 'loop_decision',
-          label: 'ProcedureRun reconcile gate blocked Tool: finalize_procedure',
+          label: 'Stale ProcedureRun finalize attempt blocked',
           status: 'block',
-          detail: 'inputEpoch: 4\nlastReconciledInputEpoch: 3',
+          detail: 'inputEpoch: 4\nbasedOnInputEpoch: 3',
         }],
       },
       {
@@ -176,7 +176,7 @@ describe('TraceSidebar', () => {
     expect(screen.queryByText((_, node) => node?.textContent?.includes('Call requests a tool.') ?? false)).toBeNull()
     expect(screen.getAllByText('Mocked in Playground dry-run').length).toBeGreaterThan(0)
     expect(screen.getByText('Hook blocked Tool: query_order_status')).toBeTruthy()
-    expect(screen.getByText('ProcedureRun reconcile gate blocked Tool: finalize_procedure')).toBeTruthy()
+    expect(screen.getByText('Stale ProcedureRun finalize attempt blocked')).toBeTruthy()
     expect(screen.getAllByText(/get_latest_deposit/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/result/i).length).toBeGreaterThan(0)
   })

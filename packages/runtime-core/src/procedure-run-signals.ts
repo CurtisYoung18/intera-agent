@@ -53,7 +53,6 @@ export function refreshNoProgressSignal(run: ProcedureRunState): void {
   const latestProgressAt = latestProgressTimestamp(run, stepId)
   const repeatedInputs = run.timeline.filter((event) =>
     event.source === 'customer_message' &&
-    event.inputEpoch > run.lastReconciledInputEpoch &&
     (!latestProgressAt || event.createdAt >= latestProgressAt)
   )
   if (repeatedInputs.length >= 3) {

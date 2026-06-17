@@ -14,7 +14,6 @@ import {
   recordProcedureConditionEvaluation,
   recordProcedureToolCall,
   recordProcedureToolResult,
-  reconcileProcedureInput,
   recordProcedureTextReply,
   filterRuntimeAuthorityKeys,
   finalizeProcedureRun,
@@ -143,7 +142,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('uses one structured event shape for inputs, tools, replies, hooks, reconcile and controls', () => {
+  it('uses one structured event shape for inputs, tools, replies, hooks, and controls', () => {
     const caseId = 'r3-shared-shape'
     recordInitialInputEvent(caseId, { content: 'hello', source: 'customer_message', origin: 'customer' })
     const sources = [
@@ -153,7 +152,6 @@ describe('R3 runtime event protocol', () => {
       'tool_result',
       'text_reply',
       'hook_decision',
-      'reconcile',
       'control',
     ] as const
 
@@ -172,7 +170,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('keeps stale tool results as evidence until reconcile clears the current epoch', () => {
+  it('keeps stale tool results as evidence without blocking latest-epoch progress', () => {
     const caseId = 'r3-stale-tool'
     recordInitialInputEvent(caseId, { content: 'deposit missing' })
     const procedure = simpleToolProcedure('get_latest_deposit')
@@ -183,18 +181,24 @@ describe('R3 runtime event protocol', () => {
     recordInitialInputEvent(caseId, { content: 'amount is 500' })
     const stale = recordProcedureToolResult(caseId, { toolName: 'get_latest_deposit', toolUseId: 'tool-1', basedOnInputEpoch: 1, toolOutput: { ok: true } })
     expect(stale.stale).toBe(true)
-    expect(stale.run?.needsReconcile).toBe(true)
+    expect(stale.run?.needsReconcile).toBe(false)
     expect(stale.run?.currentStepId).toBe('lookup')
     expect(stale.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('active')
-
-    const partial = reconcileProcedureInput(caseId, { runId: started.run.runId, upToInputEpoch: 1, decision: 'not enough', summary: 'Only reconciled old input.' })
-    expect(partial.cleared).toBe(false)
-    const cleared = reconcileProcedureInput(caseId, { runId: started.run.runId, upToInputEpoch: 2, decision: 'continue', summary: 'Latest amount included.' })
-    expect(cleared.cleared).toBe(true)
+    expect(stale.run?.blockers.some((blocker) => blocker.toLowerCase().includes('reconcile'))).toBe(false)
 
     const fresh = recordProcedureToolResult(caseId, { toolName: 'get_latest_deposit', toolUseId: 'tool-2', basedOnInputEpoch: 2, toolOutput: { ok: true, status: 'needs_review' } })
     expect(fresh.stale).toBe(false)
     expect(fresh.run?.steps.find((step) => step.id === 'lookup')?.status).toBe('completed')
+    recordProcedureToolResult(caseId, {
+      toolName: 'finalize_procedure',
+      toolUseId: 'finish-1',
+      basedOnInputEpoch: 2,
+      toolOutput: { ok: true, status: 'completed' },
+    })
+    expect(finalizeProcedureRun(caseId, { runId: started.run.runId, basedOnInputEpoch: 2 })).toMatchObject({
+      ok: true,
+      stale: false,
+    })
     closeSession(caseId)
   })
 
@@ -264,7 +268,8 @@ describe('R3 runtime event protocol', () => {
     expect(stale.stale).toBe(true)
     expect(stale.run?.runId).toBe(started.run.runId)
     expect(stale.run?.currentStepId).toBe('lookup')
-    expect(stale.run?.needsReconcile).toBe(true)
+    expect(stale.run?.needsReconcile).toBe(false)
+    expect(stale.run?.blockers).toEqual([])
     closeSession(caseId)
   })
 
@@ -584,12 +589,6 @@ describe('R3 runtime event protocol', () => {
       status: 'matched',
     })
 
-    reconcileProcedureInput(caseId, {
-      runId: started.run.runId,
-      upToInputEpoch: 2,
-      decision: 'continue',
-      summary: 'Reviewed the latest deposit details.',
-    })
     const ended = recordProcedureToolResult(caseId, {
       toolName: 'finalize_procedure',
       toolUseId: 'end-1',
@@ -660,12 +659,6 @@ describe('R3 runtime event protocol', () => {
     })
     expect(run?.currentStepId).toBe('close')
 
-    reconcileProcedureInput(caseId, {
-      runId: started.run.runId,
-      upToInputEpoch: 2,
-      decision: 'continue',
-      summary: 'Reviewed the latest deposit details.',
-    })
     recordProcedureToolResult(caseId, {
       toolName: 'finalize_procedure',
       toolUseId: 'end-1',
@@ -869,7 +862,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('blocks a deposit-not-credited reply until transaction history runs after an inconsistency llm_eval match', () => {
+  it('keeps a deposit-not-credited Procedure open until transaction history runs after an inconsistency llm_eval match', () => {
     const caseId = 'r3-deposit-conflict-history-gate'
     recordInitialInputEvent(caseId, { content: 'My deposit has not arrived yet.' })
     const started = startProcedureRun(caseId, {
@@ -947,12 +940,6 @@ describe('R3 runtime event protocol', () => {
         deposit_time: '2026-06-16',
       },
     })
-    reconcileProcedureInput(caseId, {
-      runId: started.run.runId,
-      upToInputEpoch: 2,
-      decision: 'continue',
-      summary: 'Reviewed the customer-submitted deposit details.',
-    })
     recordProcedureToolResult(caseId, {
       toolName: 'get_latest_deposit',
       toolUseId: 'tool-lookup-1',
@@ -991,7 +978,17 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(reply.stale).toBe(false)
-    expect(reply.blockedReason).toContain('requires get_transaction_history before replying')
+    expect(reply.blockedReason).toBeUndefined()
+    expect(reply.run?.steps.find((step) => step.id === 'review_recent_transactions')?.status).not.toBe('completed')
+    expect(finalizeProcedureRun(caseId, {
+      runId: started.run.runId,
+      basedOnInputEpoch: 2,
+      summary: 'Procedure complete.',
+    })).toMatchObject({
+      ok: false,
+      stale: false,
+      error: expect.stringContaining('Review recent transactions'),
+    })
     closeSession(caseId)
   })
 
@@ -1316,7 +1313,7 @@ describe('R3 runtime event protocol', () => {
     expect(filterRuntimeAuthorityKeys({
       memberId: 'M123',
       currentStepId: 'lookup',
-      needsReconcile: true,
+      inputEpoch: 2,
       activeProcedureRun: { runId: 'r1' },
     })).toEqual({ memberId: 'M123' })
   })

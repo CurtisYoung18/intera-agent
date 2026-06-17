@@ -11,7 +11,6 @@ import {
   getProcedureRuntime,
   hydrateProcedureRuntime,
   latestInputEpoch,
-  reconcileProcedureInput,
   recordInitialInputEvent,
   recordProcedureConditionEvaluation,
   recordProcedureTextReply,
@@ -527,15 +526,6 @@ describe('ProcedureRun durability', () => {
     await expectHydratesToSameActivePaused(adapter, caseId)
 
     recordProcedureTextReply(caseId, { text: 'I found the deposit.', basedOnInputEpoch: 1 })
-    await expectHydratesToSameActivePaused(adapter, caseId)
-
-    const active = getActiveProcedureRun(caseId)
-    reconcileProcedureInput(caseId, {
-      runId: active?.runId ?? 'missing',
-      upToInputEpoch: 2,
-      decision: 'continue',
-      summary: 'Included the latest amount.',
-    })
     await expectHydratesToSameActivePaused(adapter, caseId)
 
     finalizeProcedureRun(caseId, {

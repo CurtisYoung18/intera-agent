@@ -544,18 +544,14 @@ function collectRuntimeEvidence(rawTrace: TraceRecord[]): {
   reconcileEvidence: Record<string, unknown>[]
 } {
   const staleEvidence: Record<string, unknown>[] = []
-  const reconcileEvidence: Record<string, unknown>[] = []
   for (const record of rawTrace) {
     const payload = parsePayload(record.payload)
     const title = record.title.toLowerCase()
     if (title.includes('stale') || payload?.evidenceState === 'stale') {
       staleEvidence.push({ title: record.title, payload: payload ?? record.detail ?? null })
     }
-    if (title.includes('reconcile') || payload?.source === 'reconcile') {
-      reconcileEvidence.push({ title: record.title, payload: payload ?? record.detail ?? null })
-    }
   }
-  return { staleEvidence, reconcileEvidence }
+  return { staleEvidence, reconcileEvidence: [] }
 }
 
 function collectTranscriptHealth(rawTrace: TraceRecord[]): NonNullable<NonNullable<ScenarioObservedEvidenceInput['runtime']>['transcriptHealth']> {

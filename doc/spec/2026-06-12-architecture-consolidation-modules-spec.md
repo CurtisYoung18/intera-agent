@@ -61,7 +61,7 @@ This section records what was checked in code, so the module problem statements 
 
 **Control-plane logic: medium-high stability.** The v2 hardening (`e169bf50`) shipped today with real enforcement and real tests:
 
-- Reconcile gate blocks Tools when `needsReconcile` except `reconcile_procedure_input`/`read_chat_memory`/`read_user_profile` (`loop.ts` ~L525-538).
+- Epoch/stale guards prevent stale Tool results, stale text replies, and stale finalization attempts from advancing Procedure state; there is no model-facing reconcile Tool or reconcile gate.
 - Stale text replies are withheld and traced (`loop.ts` ~L719-728).
 - Tool calls/results stamp `basedOnInputEpoch`; stale results become evidence without advancing steps (`session-store.ts: recordProcedureToolCall/recordProcedureToolResult`).
 - `llm_eval` conditions execute with evaluator receipts (`procedure-llm-evaluator.ts`, `evaluatePendingProcedureConditions`).
@@ -178,7 +178,7 @@ model ProcedureRun {
   procedureVersion String  @default("v2")
   status          String                   // active | paused | completed | cancelled
   inputEpoch      Int      @default(0)
-  needsReconcile  Boolean  @default(false)
+  needsReconcile  Boolean  @default(false) // legacy compatibility; runtime writes false
   currentStepId   String?
   outcome         String?                  // M6: resolved_by_agent | handed_off | abandoned | expired
   state           Json                     // steps, inputs, evidence, evaluations, signals, timeline, blockers
@@ -255,7 +255,7 @@ GET  /internal/health                     → { sessions, activeRuns, queueDepth
 
 ### 5.1 Problem
 
-`loop.ts` regrew from 1,352 to 2,037 lines because there is no Turn abstraction — the loop owns context assembly, model call, stream consumption, tool dispatch, hook checkpoints, memory, compaction, procedure overlay, and persistence, so every new behavior lands in the hub. The hardest invariants in the system (epoch/reconcile/stale-evidence) live mixed with IO in a 2,213-line session-store.
+`loop.ts` regrew from 1,352 to 2,037 lines because there is no Turn abstraction — the loop owns context assembly, model call, stream consumption, tool dispatch, hook checkpoints, memory, compaction, procedure overlay, and persistence, so every new behavior lands in the hub. The hardest invariants in the system (epoch/stale-evidence) live mixed with IO in a 2,213-line session-store.
 
 ### 5.2 Decision
 
@@ -267,7 +267,7 @@ Two deepenings, done while files move into `runtime-core` (M3 step 1), not as a 
 // Pure: no IO, no Date.now (clock injected), no prisma, no fetch.
 export function applyRunEvent(
   state: ProcedureRunState,
-  event: RunEvent,        // input | tool_call | tool_result | text_reply | reconcile | finalize | handoff | eval_receipt
+  event: RunEvent,        // input | tool_call | tool_result | text_reply | finalize | handoff | eval_receipt
   clock: () => string,
 ): { state: ProcedureRunState; effects: RunEffect[] }
 ```

@@ -171,8 +171,6 @@ type ProcedureRunState = {
   procedureId: string
   status: 'active' | 'paused' | 'completed' | 'cancelled'
   inputEpoch: number
-  lastReconciledInputEpoch: number
-  needsReconcile: boolean
   currentStepId: string | null
   steps: Array<{
     id: string
@@ -190,7 +188,7 @@ type ProcedureRunState = {
     eventId: string
     epoch: number
     origin: 'customer' | 'operator' | 'system' | 'human'
-    source: 'customer_message' | 'customer_form_result' | 'human_task_result' | 'tool_call' | 'tool_result' | 'text_reply' | 'hook_decision' | 'reconcile' | 'control'
+    source: 'customer_message' | 'customer_form_result' | 'human_task_result' | 'tool_call' | 'tool_result' | 'text_reply' | 'hook_decision' | 'control'
     at: string
     summary: string
     basedOnInputEpoch?: number
@@ -218,7 +216,7 @@ R3/M2 implementation boundary:
 - A chat/session may have one active ProcedureRun plus paused/pending ProcedureRuns hydrated from rows with `status IN ('active','paused')`.
 - Durable `ActionTrace` can record evidence/audit events, but active ProcedureRun state must not leak through confirmedFacts, UserProfile, case export, case detail payloads, or public memory APIs.
 - If a temporary internal mirror remains in ChatMemory/toolResults, API/export/compact/dashboard readers must filter it.
-- `ProcedureRunState` is the only authority for active run state. Compact summaries, ChatMemory, UserProfile, and raw model-visible tool_result history can provide context/evidence but cannot create, resume, complete, clear reconcile, or advance a ProcedureRun.
+- `ProcedureRunState` is the only authority for active run state. Compact summaries, ChatMemory, UserProfile, and raw model-visible tool_result history can provide context/evidence but cannot create, resume, complete, or advance a ProcedureRun.
 
 Do not add semantic intent classification for interleaved messages. Runtime should not decide whether the new message is a correction, cancellation, supplement, or a new issue. It should maintain a generic version invariant:
 
@@ -235,19 +233,7 @@ Epoch rules:
 - Tool calls record `basedOnInputEpoch` at enqueue/start time because streaming Tool execution begins before all results are drained.
 - Text replies record `basedOnInputEpoch` at generation start. If a newer input arrives before commit/send, runtime should withhold the stale reply where transport allows; if tokens have already streamed, it must not advance ProcedureRun and must trace the stale reply.
 - If a Tool result returns after `inputEpoch` has advanced, save the result as evidence but do not automatically complete or advance the step.
-- Mark `needsReconcile = true`.
-- The next prompt tail lists unreconciled timeline events and asks the same Core Agent to reconcile before more Tools or finalization.
-- `needsReconcile` clears only through a structured runtime action such as `reconcile_procedure_input({ runId, upToInputEpoch, decision, summary })`. Natural-language claims like "I considered the latest message" are not enough. The action updates ProcedureRun timeline/state only; business facts still go through `remember`.
-
-Prompt tail example:
-
-```text
-New customer messages arrived after the last tool/action began.
-Before calling another tool or finalizing, reconcile these messages with the active ProcedureRun.
-
-Unreconciled customer messages:
-[epoch 7] 是 bKash，金额 500
-```
+- No model-facing reconcile tool or reconcile gate is required. The next loop iteration receives the latest ProcedureRun tail and can act from the current `inputEpoch`; stale evidence remains visible but non-progressing.
 
 Before each Tool call:
 
@@ -259,7 +245,7 @@ requestedTool + active ProcedureRun + currentStepId
   -> ProcedureRun timeline updates
 ```
 
-HookEngine should stay stable for the AgentConfig. Dynamic Procedure/caseType/currentStep/reconcile data flows through `HookContext` per evaluation. Do not represent active Procedure state by recreating HookEngine.
+HookEngine should stay stable for the AgentConfig. Dynamic Procedure/caseType/currentStep data flows through `HookContext` per evaluation. Do not represent active Procedure state by recreating HookEngine.
 
 ProcedureStep Hook scope comes from the runtime timeline:
 
@@ -269,19 +255,18 @@ activeProcedureRun.currentStepId + requestedTool
 
 It should not be inferred from model todos or from "all Procedure steps that target this Tool."
 
-Reconcile gate:
+Epoch/stale evidence gate:
 
 ```text
-PreToolUse:
-  if procedureRun.needsReconcile:
-    block tool call
-    feedback: "Reconcile latest customer messages first."
-
 PostToolUse:
   if toolCall.basedOnInputEpoch < procedureRun.inputEpoch:
     save result as evidence
     do not complete step
-    mark needsReconcile = true
+
+Finalize:
+  if finalize.basedOnInputEpoch < procedureRun.inputEpoch:
+    ignore terminal transition
+    keep the ProcedureRun active
 ```
 
 This keeps the Core Agent stable, improves prompt-cache behavior, makes Procedure progress auditable, and prepares the UI for a visual ProcedureRun timeline.
@@ -311,7 +296,7 @@ Implications for Intera:
 - Hooks remain stable lifecycle events. P0 implements `PreToolUse`, `PostToolUse`, and `Stop`; future `UserPromptSubmit`, `PreCompact`, or `PostCompact`-style events can be added without changing the ProcedureRun mental model.
 - The stable Core Agent prompt and stable Tool contract should be separated from the dynamic ProcedureRun tail. Dynamic Procedure text must not be prepended before the stable prompt.
 - Memory Tools are not fake Tool results. `remember`, `read_chat_memory`, and `read_user_profile` must connect to real storage and real retrieval before being presented as a closed product loop.
-- Customer form results and human task results are input events. They increment `inputEpoch` and require the Agent to reconcile current state before any terminal action.
+- Customer form results and human task results are input events. They increment `inputEpoch`; terminal actions must be based on the latest input epoch.
 - `start_procedure(procedureId)` must be idempotent by request/event id and active run state. Retries or duplicate network requests should return the existing run or no-op safely, not create duplicate pending runs.
 - After consolidation M2, ProcedureRun state is restart-resilient through Postgres write-through plus hydration. The single-process assumption still applies to the transient in-memory message queue and live stream ownership until the M3 runtime split; multi-instance work/Redis leases remain frozen.
 
@@ -321,7 +306,7 @@ These three layers must stay separate:
 
 | Layer | Scope | Can contain | Must not do |
 |---|---|---|---|
-| `ProcedureRunState` | Current runtime/session | active/paused run, currentStepId, inputEpoch, needsReconcile, step status, stale/canonical evidence | Be restored from compact summary or public memory |
+| `ProcedureRunState` | Current runtime/session | active/paused run, currentStepId, inputEpoch, step status, stale/canonical evidence | Be restored from compact summary or public memory |
 | `ChatMemory` | Current chat | confirmed facts, tools run, key events, compact summary, open items, `remember(scope="chat")` facts | Decide canonical ProcedureRun step/state |
 | `UserProfile` | Cross-chat user | identity, contact info, preferences, long-term history, behavior patterns, `remember(scope="user")` facts | Store current ProcedureRun runtime state |
 
@@ -336,7 +321,6 @@ Compact may summarize:
 Compact must not assert:
 
 - `currentStepId = ...`
-- `needsReconcile = false`
 - active run completed
 - stale tool result advanced a step
 - paused/pending ProcedureRun authority

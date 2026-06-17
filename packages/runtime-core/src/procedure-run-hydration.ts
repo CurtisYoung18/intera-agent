@@ -41,8 +41,8 @@ export function hydratePersistedRun(record: PersistedProcedureRunRecord): Proced
     displayName: stringFrom(raw.displayName) ?? record.procedureId,
     status,
     inputEpoch: record.inputEpoch,
-    lastReconciledInputEpoch: numberFrom(raw.lastReconciledInputEpoch) ?? record.inputEpoch,
-    needsReconcile: record.needsReconcile,
+    lastReconciledInputEpoch: record.inputEpoch,
+    needsReconcile: false,
     currentStepId: stringFrom(raw.currentStepId) ?? null,
     steps: Array.isArray(raw.steps)
       ? raw.steps

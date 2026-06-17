@@ -29,7 +29,6 @@ export interface NoToolTurnHandlerDeps {
 }
 
 export interface NoToolTurnInput {
-  reconcileGateBlockedThisIteration: boolean
   fullText: string
   nudgeCount: number
   iterationCount: number
@@ -46,29 +45,6 @@ export class NoToolTurnHandler {
   constructor(private readonly deps: NoToolTurnHandlerDeps) {}
 
   async handle(input: NoToolTurnInput): Promise<NoToolTurnAction> {
-    if (
-      input.reconcileGateBlockedThisIteration &&
-      !input.fullText &&
-      input.nudgeCount < 3
-    ) {
-      const nudgeCount = input.nudgeCount + 1
-      const reconcileNudge = '[PROCEDURE RUNTIME] Your previous tool call was blocked because newer customer input arrived. ' +
-        'You MUST call reconcile_procedure_input next with the active runId and latest inputEpoch before any other tool call, finalization, or customer-visible reply.'
-      const assistantPushed = this.ensureAssistantPushed(input.assistantMessage, input.assistantPushed)
-      this.deps.addMessage(makeUserMessage(reconcileNudge))
-      await this.deps.traceWriter.write('loop_decision', 'Procedure nudge: reconcile required after blocked tool', {
-        stage: this.deps.getCurrentStage(),
-        nudgeCount,
-        iteration: input.iterationCount,
-      })
-      input.sendEvent({
-        type: 'message_stop',
-        data: { reason: 'procedure_reconcile_nudge', stage: this.deps.getCurrentStage() },
-        timestamp: this.timestamp(),
-      })
-      return { kind: 'continue', nudgeCount, iterationDelta: -1, assistantPushed }
-    }
-
     if (input.isProcedureMode && !input.fullText) {
       const hasPendingToolResults = this.deps.getMessages()
         .slice(-6)

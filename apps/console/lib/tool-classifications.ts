@@ -5,7 +5,6 @@
 /** System Tools — engine-managed, READ-ONLY. Auto-gifted to every agent. */
 export const SYSTEM_TOOL_NAMES = new Set([
   'start_procedure',
-  'reconcile_procedure_input',
   'finalize_procedure',
   'remember',
   'read_chat_memory',
