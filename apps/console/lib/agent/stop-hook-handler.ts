@@ -10,7 +10,7 @@ import type { HookEvaluationResult } from './hook-engine'
 import type { ChatMemoryManager } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
-import { escalationMessageFor, latestUserText } from './customer-messages'
+import { escalationMessageForRuntime, latestUserText } from './customer-messages'
 import { buildHumanHandoffQuestion } from './human-handoff'
 
 export type StopHookTerminalResult = {
@@ -71,7 +71,7 @@ export class StopHookHandler {
     }
 
     const messages = this.deps.getMessages()
-    const safeMessage = escalationMessageFor(latestUserText(messages))
+    const safeMessage = escalationMessageForRuntime(latestUserText(messages), this.deps.config)
 
     const queue = this.deps.caseSchema?.escalateOn?.[0] || 'general'
 

@@ -19,7 +19,7 @@ import type { ToolRouter } from './tools'
 import type { CaseAgentLoop } from './case-agent-loop'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
-import { escalationMessageFor, latestUserText } from './customer-messages'
+import { escalationMessageForRuntime, latestUserText } from './customer-messages'
 import { startProcedureRun } from './session-store'
 
 type CaseTypeRowLike = {
@@ -445,7 +445,7 @@ export async function processPendingHookToolCalls(
   // Customer-facing fallback
   sendEvent({
     type: 'text_delta',
-    data: escalationMessageFor(latestUserText(ctx.messages)),
+    data: escalationMessageForRuntime(latestUserText(ctx.messages), ctx.config),
     timestamp: new Date().toISOString(),
   })
   sendEvent({

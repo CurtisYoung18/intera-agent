@@ -129,6 +129,11 @@ const MANAGED_J1N_HOOK_NAMES = [
   'j1n_reset_pin_member_only',
   'j1n_no_status_claim_without_tool_evidence',
   'j1n_human_transfer_requires_task',
+  'j1n_romanized_nepali_output_guard',
+  'j1n_member_fact_collection_requires_form',
+  'j1n_reset_pin_claim_requires_tool',
+  'j1n_member_id_reply_requires_remember',
+  'j1n_transaction_history_method_type_guard',
 ] as const
 
 const ORG_ID = process.env.J1N_ORG_ID || 'default'
@@ -762,6 +767,98 @@ const HOOKS: HookSeed[] = [
       },
     },
   },
+  {
+    name: 'j1n_romanized_nepali_output_guard',
+    displayName: 'J1N Romanized Nepali output guard',
+    description: 'Block customer-facing replies that drift into Devanagari when the customer did not ask for Nepali script.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    severity: 'high',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { ifPattern: '[\\u0900-\\u097F]' },
+        always: true,
+        reason: 'Reply uses Devanagari script. J1N customer-facing replies must use Romanized Nepali / Latin script unless explicitly requested otherwise.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Rewrite the full customer reply in Romanized Nepali using Latin letters. Keep product names, field names, URLs, numeric values, and exact English policy phrases such as "cannot be changed" unchanged.',
+      },
+    },
+  },
+  {
+    name: 'j1n_member_fact_collection_requires_form',
+    displayName: 'J1N member fact collection requires form',
+    description: 'Block plain-text member/player ID collection so J1N uses ask_user_questions rich forms for missing required facts.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    severity: 'high',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: {
+          ifPattern: '(?:provide|enter|send|share|give|fill)\\s+(?:your\\s+)?(?:jaya(?:baji)?\\s+)?(?:member|player)\\s*(?:id|ID)|(?:member|player)\\s*(?:id|ID)\\s+(?:provide|enter|send|share|give|fill)|(?:member|player)\\s*(?:id|ID).{0,60}(?:dinuhos|dinus|dinu|pathaunus|pathaunu|chahinchha|chahincha|chaahincha|chaincha|required)|(?:member_id|player_id)',
+        },
+        requireTools: ['ask_user_questions'],
+        reason: 'Reply asks for member/player ID in plain text before a structured form was shown.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Use ask_user_questions to collect missing required facts instead of asking in plain text. For member-specific J1N procedures, include a member_id text field; when multiple required facts are missing, collect them in one form.',
+      },
+    },
+  },
+  {
+    name: 'j1n_reset_pin_claim_requires_tool',
+    displayName: 'J1N reset PIN claim requires tool',
+    description: 'Block withdrawal PIN reset success claims unless reset_withdrawal_pin was called in the current response.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    severity: 'high',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: {
+          ifPattern: '(?:withdrawal\\s*)?pin.{0,80}(?:reset|bhayo|confirmation|naya)|reset.{0,80}(?:withdrawal\\s*)?pin',
+        },
+        requireTools: ['reset_withdrawal_pin'],
+        reason: 'Reply claims or implies withdrawal PIN reset without reset_withdrawal_pin evidence.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Call reset_withdrawal_pin with the confirmed member_id before telling the customer the withdrawal PIN reset is done or in progress. Do not claim reset success from the request alone.',
+      },
+    },
+  },
+  {
+    name: 'j1n_member_id_reply_requires_remember',
+    displayName: 'J1N member ID reply requires remember',
+    description: 'Nudge J1N to persist stable member_id profile facts when a customer-facing reply references a JAYA member id.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    severity: 'medium',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { ifPattern: '\\bJAYA(?=[A-Z0-9]*\\d)[A-Z0-9]{4,}\\b' },
+        requireTools: ['remember'],
+        reason: 'Reply references a JAYA member_id but remember(scope="user") was not called.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Call remember(scope="user") with facts.member_id set to the customer-provided JAYA member_id and a short reason, unless the customer said it belongs to someone else. Then continue the customer reply.',
+      },
+    },
+  },
 ]
 
 const SCENARIOS: ScenarioSeed[] = [
@@ -1324,6 +1421,8 @@ async function main(): Promise<void> {
       throw new Error(`J1N seed aborted. Missing enabled knowledge sources: ${missingKnowledge.join(', ')}`)
     }
 
+    let hookBindingsWritten = 0
+
     await prisma.$transaction(async (tx) => {
       await tx.agentConfig.update({
         where: { id: agent.id },
@@ -1411,7 +1510,7 @@ async function main(): Promise<void> {
       }
 
       for (const hook of HOOKS) {
-        await tx.hook.upsert({
+        const hookRow = await tx.hook.upsert({
           where: { agentConfigId_name: { agentConfigId: agent.id, name: hook.name } },
           update: {
             displayName: hook.displayName,
@@ -1434,6 +1533,31 @@ async function main(): Promise<void> {
             enabled: hook.enabled,
           },
         })
+        await tx.hookBinding.upsert({
+          where: {
+            agentConfigId_hookId_scopeKey: {
+              agentConfigId: agent.id,
+              hookId: hookRow.id,
+              scopeKey: 'agent',
+            },
+          },
+          update: {
+            scopeType: 'agent',
+            scopeKey: 'agent',
+            caseTypeId: null,
+            procedureStepId: null,
+            toolId: null,
+            enabled: hook.enabled,
+          },
+          create: {
+            agentConfigId: agent.id,
+            hookId: hookRow.id,
+            scopeType: 'agent',
+            scopeKey: 'agent',
+            enabled: hook.enabled,
+          },
+        })
+        hookBindingsWritten += 1
       }
 
       const userProfilesUseAgentConfigId = await userProfilesHasAgentConfigId(tx)
@@ -1474,7 +1598,7 @@ async function main(): Promise<void> {
       seeded: {
         caseTypes: CASE_TYPES.length,
         hooks: HOOKS.length,
-        hookBindings: 0,
+        hookBindings: hookBindingsWritten,
         scenarios: scenarioResult.count,
         scenarioStore: scenarioResult.file,
         testMemberIds: TEST_MEMBER_IDS,

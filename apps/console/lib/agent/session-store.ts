@@ -928,6 +928,22 @@ export function hasSession(caseId: string): boolean {
   return !!s && !s.aborted && !s.resolved
 }
 
+/**
+ * Mark a preflight-only session as idle without cancelling its ProcedureRun.
+ *
+ * Used when the route starts a ProcedureRun, persists it, and returns a
+ * customer form before AgentLoop starts. The next POST should hydrate the
+ * durable ProcedureRun instead of queueing behind a non-existent loop.
+ */
+export function parkSessionUntilNextRequest(caseId: string): void {
+  const session = sessions.get(caseId)
+  if (!session) return
+  session.loop = null
+  session.aborted = false
+  session.resolved = true
+  session.lastActiveAt = Date.now()
+}
+
 // ─── TTL cleanup ──────────────────────────────────────────────────────────────
 
 /** Purge sessions idle longer than SESSION_TTL_MS. Runs every 5 minutes. */

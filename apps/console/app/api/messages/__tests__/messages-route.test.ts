@@ -9,7 +9,7 @@ const h = vi.hoisted(() => {
     $transaction: vi.fn(async (ops) => ops),
     humanTask: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     case: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), upsert: vi.fn(), update: vi.fn() },
-    caseType: { findUnique: vi.fn() },
+    caseType: { findUnique: vi.fn(), findMany: vi.fn() },
     procedureRun: { findFirst: vi.fn() },
     tool: { findMany: vi.fn() },
     knowledgeSource: { findMany: vi.fn() },
@@ -152,6 +152,7 @@ beforeEach(() => {
   h.prisma.case.upsert.mockResolvedValue({})
   h.prisma.case.update.mockResolvedValue({})
   h.prisma.caseType.findUnique.mockResolvedValue(null)
+  h.prisma.caseType.findMany.mockResolvedValue([])
   h.prisma.procedureRun.findFirst.mockResolvedValue(null)
   h.prisma.tool.findMany.mockResolvedValue([])
   h.prisma.knowledgeSource.findMany.mockResolvedValue([])

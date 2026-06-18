@@ -30,12 +30,28 @@ export const ESCALATION_TO_HUMAN: { zh: string; en: string } = {
   en: "I'm sorry — your issue needs help from a human specialist. We've created a support ticket and a specialist will contact you as soon as possible. Thank you for your patience.",
 }
 
+export const ROMANIZED_NEPALI_ESCALATION_TO_HUMAN =
+  'Yo case operator team le hernu parcha. Maile support task create gareko chu, team le chhito hernu hunecha. Dhanyabad.'
+
+export function prefersRomanizedNepaliFallback(config?: { coreSystemPrompt?: string | null }): boolean {
+  const prompt = config?.coreSystemPrompt ?? ''
+  return /romanized\s+nepali|jayabaji|j1n/i.test(prompt)
+}
+
 /**
  * Convenience helper: pick the escalation message that matches the locale of
  * `text` (the latest customer utterance).
  */
 export function escalationMessageFor(text: string | undefined | null): string {
   return ESCALATION_TO_HUMAN[detectCustomerLocale(text)]
+}
+
+export function escalationMessageForRuntime(
+  text: string | undefined | null,
+  config?: { coreSystemPrompt?: string | null },
+): string {
+  if (prefersRomanizedNepaliFallback(config)) return ROMANIZED_NEPALI_ESCALATION_TO_HUMAN
+  return escalationMessageFor(text)
 }
 
 // ---------------------------------------------------------------------------

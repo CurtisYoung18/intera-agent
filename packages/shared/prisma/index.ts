@@ -29,7 +29,9 @@ function loadEnvLayered(): void {
   // reverse so the monorepo root .env is applied first.
   for (const path of rootEnv.reverse()) loadDotEnv({ path })
   for (const path of appLocal.reverse()) loadDotEnv({ path, override: true })
-  for (const path of testLocal.reverse()) loadDotEnv({ path, override: true })
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+    for (const path of testLocal.reverse()) loadDotEnv({ path, override: true })
+  }
 }
 loadEnvLayered()
 
