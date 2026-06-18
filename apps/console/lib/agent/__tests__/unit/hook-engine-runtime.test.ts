@@ -272,6 +272,48 @@ describe('HookEngine bindings and handlers', () => {
       expect.objectContaining({ method: 'POST' }),
     )
   })
+
+  it('can express local-support promise blocking as an agent-scoped Stop Hook', async () => {
+    const engine = new HookEngine('agent_1')
+    engine.setHook({
+      name: 'support_promise_requires_handoff',
+      checkpoint: 'Stop',
+      handler: {
+        kind: 'declarative',
+        check: {
+          kind: 'rule',
+          forbiddenPhrases: [
+            'sthaniya sahayog ma pathaunchu',
+            'forward your concern to local support',
+          ],
+          reason: 'Reply promises local support handoff without durable handoff evidence.',
+        },
+        effect: {
+          decision: 'block',
+          guidance: 'Do not promise local support or department handoff unless create_human_task has created a durable task. Either call create_human_task or revise the answer to say the lookup failed and ask the customer to try again.',
+        },
+      },
+    })
+
+    const result = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [],
+      traceSummary: [],
+      replyDraft: 'Tapaiko eSewa transaction history herda technical samasya aayo. Kripaya kehi samaya pachi feri try garnuhos, yo sama ko laagi ma sthaniya sahayog ma pathaunchu.',
+    })
+
+    expect(result.summary).toBe('block')
+    expect(result.feedbackMessage).toContain('support_promise_requires_handoff')
+    expect(result.results[0]).toMatchObject({
+      hookName: 'support_promise_requires_handoff',
+      action: 'block',
+      reason: 'Reply promises local support handoff without durable handoff evidence.',
+    })
+  })
 })
 
 describe('AgentLoop Hook checkpoints', () => {
