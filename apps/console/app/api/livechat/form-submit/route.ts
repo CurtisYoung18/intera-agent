@@ -22,6 +22,7 @@ const fieldSchema = z.object({
       role: z.enum(['start', 'end']),
     }).optional(),
   }).optional(),
+  defaultValue: z.string().max(1000).optional(),
 })
 
 const formSchema = z.object({

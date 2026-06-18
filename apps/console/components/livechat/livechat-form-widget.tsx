@@ -28,6 +28,29 @@ function readErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function defaultValueForField(field: WidgetFormField): string {
+  const value = field.defaultValue ?? ''
+  if (field.type !== 'date' || !value) return value
+
+  const isoLike = value.match(/^(\d{4}-\d{2}-\d{2})(?:[ T].*)?$/)
+  if (isoLike) return isoLike[1]
+
+  const slashDate = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (slashDate) {
+    const [, day, month, year] = slashDate
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+
+  return value
+}
+
+function selectOptionsForField(field: WidgetFormField): string[] {
+  const options = field.options ?? []
+  const defaultValue = field.defaultValue?.trim()
+  if (!defaultValue || options.includes(defaultValue)) return options
+  return [defaultValue, ...options]
+}
+
 export default function LiveChatFormWidget({
   title,
   description,
@@ -98,6 +121,7 @@ export default function LiveChatFormWidget({
             options: field.options,
             placeholder: field.placeholder,
             validation: field.validation,
+            defaultValue: field.defaultValue,
           })),
           answers: values,
         }),
@@ -175,6 +199,7 @@ export default function LiveChatFormWidget({
                         name={field.key}
                         required={field.required}
                         placeholder={field.placeholder}
+                        defaultValue={defaultValueForField(field)}
                         rows={4}
                         className="w-full resize-y rounded-md border border-black/10 bg-white px-3 py-2.5 text-[14px] text-[#111827] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"
                       />
@@ -183,11 +208,11 @@ export default function LiveChatFormWidget({
                         id={field.key}
                         name={field.key}
                         required={field.required}
-                        defaultValue=""
+                        defaultValue={defaultValueForField(field)}
                         className="w-full rounded-md border border-black/10 bg-white px-3 py-2.5 text-[14px] text-[#111827] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"
                       >
                         <option value="">{locale === 'zh' ? '请选择' : 'Select'}</option>
-                        {(field.options ?? []).map((option) => (
+                        {selectOptionsForField(field).map((option) => (
                           <option key={option} value={option}>{option}</option>
                         ))}
                       </select>
@@ -209,6 +234,7 @@ export default function LiveChatFormWidget({
                         type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
                         required={field.required}
                         placeholder={field.placeholder}
+                        defaultValue={defaultValueForField(field)}
                         className="w-full rounded-md border border-black/10 bg-white px-3 py-2.5 text-[14px] text-[#111827] outline-none transition focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15"
                       />
                     )}

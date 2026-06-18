@@ -96,7 +96,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           toolCallId?: string
           title?: string
           description?: string
-          fields?: Array<{ id: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string }>
+          fields?: Array<{ id?: string; key?: string; type: string; label: string; required?: boolean; options?: string[]; placeholder?: string; defaultValue?: string }>
         }
         const formCaseId = d.caseId ?? caseId
         const fields = d.fields ?? []

@@ -42,6 +42,186 @@ export interface ToolExecutionResult {
   renderHints?: ToolDefinition['renderHints']
 }
 
+type ToolRepairErrorClass =
+  | 'ok_false'
+  | 'http_400'
+  | 'http_422'
+  | 'http_error'
+  | 'validation_error'
+  | 'network_error'
+
+interface ToolRepairEvent {
+  field: string
+  before: string
+  after: string
+  reason: string
+}
+
+interface ToolAttemptTrace {
+  attempt: number
+  input: Record<string, unknown>
+  errorClass?: ToolRepairErrorClass
+  httpStatus?: number
+  responseBody?: unknown
+  message?: string
+}
+
+interface ToolFailurePayload {
+  ok: false
+  error_class: ToolRepairErrorClass
+  message: string
+  http_status?: number
+  response_body?: unknown
+  attempts: ToolAttemptTrace[]
+  repairs: ToolRepairEvent[]
+  final_input: Record<string, unknown>
+}
+
+class ToolExecutionFailure extends Error {
+  constructor(
+    message: string,
+    readonly payload: ToolFailurePayload,
+  ) {
+    super(message)
+  }
+}
+
+class HttpToolFailure extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly statusText: string,
+    readonly responseBody: unknown,
+    readonly errorClass: ToolRepairErrorClass,
+  ) {
+    super(message)
+  }
+}
+
+class PayloadToolFailure extends Error {
+  constructor(
+    message: string,
+    readonly payload: unknown,
+    readonly errorClass: ToolRepairErrorClass,
+  ) {
+    super(message)
+  }
+}
+
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const MAX_REPAIR_ATTEMPTS = 3
+const READ_ONLY_QUERY_TOOL_NAMES = new Set([
+  'check_latest_deposit_status',
+  'check_latest_withdrawal_status',
+  'turnover_withdraw_condition',
+  'turnover_promotion_active_status',
+  'promotion',
+  'get_account_status',
+  'get_id_verification_details',
+  'get_recommend_games',
+  'get_transaction_history',
+  'get_bet_history',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function compactText(value: unknown, max = 4000): unknown {
+  if (typeof value !== 'string') return value
+  return value.length > max ? `${value.slice(0, max)}…` : value
+}
+
+function shallowInputCopy(input: Record<string, unknown>): Record<string, unknown> {
+  return { ...input }
+}
+
+function normalizeDateOnlyField(
+  input: Record<string, unknown>,
+  field: 'from_date' | 'to_date',
+  suffix: '00:00:00' | '23:59:59',
+  repairs: ToolRepairEvent[],
+): void {
+  const value = input[field]
+  if (typeof value !== 'string') return
+  const trimmed = value.trim()
+  if (!DATE_ONLY_PATTERN.test(trimmed)) return
+  const repaired = `${trimmed} ${suffix}`
+  input[field] = repaired
+  repairs.push({
+    field,
+    before: value,
+    after: repaired,
+    reason: 'date_only_to_Y-m-d_H:i:s',
+  })
+}
+
+function normalizeToolInputForExecution(
+  _toolName: string,
+  input: Record<string, unknown>,
+): { input: Record<string, unknown>; repairs: ToolRepairEvent[] } {
+  const next = shallowInputCopy(input)
+  const repairs: ToolRepairEvent[] = []
+
+  normalizeDateOnlyField(next, 'from_date', '00:00:00', repairs)
+  normalizeDateOnlyField(next, 'to_date', '23:59:59', repairs)
+
+  return { input: next, repairs }
+}
+
+function shouldAttemptToolRepair(definition: ToolDefinition): boolean {
+  if (definition.mode !== 'http') return false
+  if (definition.name.startsWith('kb_search_')) return true
+  if (definition.toolCategory === 'system_info') return true
+  return READ_ONLY_QUERY_TOOL_NAMES.has(definition.name)
+}
+
+function isRetryableWithoutInputRepair(errorClass: ToolRepairErrorClass, httpStatus?: number): boolean {
+  if (errorClass === 'network_error') return true
+  if (errorClass !== 'http_error') return false
+  return httpStatus === 429 || (httpStatus != null && httpStatus >= 500)
+}
+
+function stringifyFailureBody(body: unknown): string {
+  if (typeof body === 'string') return body
+  try {
+    return JSON.stringify(body)
+  } catch {
+    return String(body)
+  }
+}
+
+function classifyFailure(status: number | undefined, body: unknown, fallback: ToolRepairErrorClass): ToolRepairErrorClass {
+  const text = stringifyFailureBody(body).toLowerCase()
+  const looksLikeValidation = /\b(validation|invalid|required|missing|format|schema|does not match|must be|should be)\b/.test(text)
+  if (looksLikeValidation) return 'validation_error'
+  if (status === 400) return 'http_400'
+  if (status === 422) return 'http_422'
+  return fallback
+}
+
+async function readResponseBody(response: Response): Promise<unknown> {
+  const contentType = response.headers.get('content-type') ?? ''
+  const text = await response.text()
+  if (!text) return ''
+  if (contentType.includes('application/json')) {
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function payloadIndicatesFailure(payload: unknown): payload is Record<string, unknown> {
+  return isRecord(payload) && payload.ok === false
+}
+
 /**
  * StreamingToolExecutor — incremental tool execution during LLM streaming.
  *
@@ -171,6 +351,11 @@ export class StreamingToolExecutor {
     tool.status = 'executing'
     const startTime = Date.now()
 
+    const preExecutionRepair = normalizeToolInputForExecution(tool.name, tool.input)
+    if (preExecutionRepair.repairs.length > 0) {
+      tool.input = preExecutionRepair.input
+    }
+
     const toolUse: ToolUse = {
       id: tool.id,
       name: tool.name,
@@ -250,7 +435,9 @@ export class StreamingToolExecutor {
       } else if (tool.definition.mode === 'static_fixture') {
         output = await this.executeMock(tool.definition)
       } else {
-        output = await this.executeHttp(tool.definition, tool.input)
+        const httpResult = await this.executeHttpWithRepair(tool.definition, tool.input, preExecutionRepair.repairs)
+        tool.input = httpResult.input
+        output = httpResult.output
       }
 
       tool.status = 'completed'
@@ -261,9 +448,10 @@ export class StreamingToolExecutor {
       }
     } catch (error) {
       tool.status = 'error'
+      const failurePayload = error instanceof ToolExecutionFailure ? error.payload : undefined
       tool.result = {
         ok: false,
-        output: null,
+        output: failurePayload ?? null,
         error: error instanceof Error ? error.message : 'Unknown error',
         latencyMs: Date.now() - startTime,
       }
@@ -458,7 +646,15 @@ export class StreamingToolExecutor {
     const response = await fetch(resolvedEndpoint, fetchInit)
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      const responseBody = await readResponseBody(response)
+      const errorClass = classifyFailure(response.status, responseBody, 'http_error')
+      throw new HttpToolFailure(
+        `HTTP ${response.status}: ${response.statusText}${responseBody ? ` - ${stringifyFailureBody(responseBody).slice(0, 1000)}` : ''}`,
+        response.status,
+        response.statusText,
+        responseBody,
+        errorClass,
+      )
     }
 
     const data = await response.json()
@@ -474,6 +670,97 @@ export class StreamingToolExecutor {
       list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     }
     return data
+  }
+
+  private async executeHttpWithRepair(
+    definition: ToolDefinition,
+    input: Record<string, unknown>,
+    initialRepairs: ToolRepairEvent[],
+  ): Promise<{ output: unknown; input: Record<string, unknown> }> {
+    const canRepair = shouldAttemptToolRepair(definition)
+    const maxAttempts = canRepair ? MAX_REPAIR_ATTEMPTS : 1
+    let currentInput = shallowInputCopy(input)
+    const repairs = [...initialRepairs]
+    const attempts: ToolAttemptTrace[] = []
+    let lastFailure: {
+      message: string
+      errorClass: ToolRepairErrorClass
+      httpStatus?: number
+      responseBody?: unknown
+    } | null = null
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const normalized = normalizeToolInputForExecution(definition.name, currentInput)
+      currentInput = normalized.input
+      repairs.push(...normalized.repairs)
+
+      try {
+        const output = await this.executeHttp(definition, currentInput)
+        if (payloadIndicatesFailure(output)) {
+          const errorClass = classifyFailure(undefined, output, 'ok_false')
+          throw new PayloadToolFailure(`Tool returned ok:false (${errorClass})`, output, errorClass)
+        }
+        return { output, input: currentInput }
+      } catch (error) {
+        const failure = this.toStructuredFailure(error)
+        lastFailure = failure
+        attempts.push({
+          attempt,
+          input: shallowInputCopy(currentInput),
+          errorClass: failure.errorClass,
+          httpStatus: failure.httpStatus,
+          responseBody: compactText(failure.responseBody),
+          message: failure.message,
+        })
+
+        if (!canRepair || attempt >= maxAttempts) break
+
+        const repaired = normalizeToolInputForExecution(definition.name, currentInput)
+        const changed = repaired.repairs.length > 0
+        currentInput = repaired.input
+        repairs.push(...repaired.repairs)
+        if (!changed && !isRetryableWithoutInputRepair(failure.errorClass, failure.httpStatus)) break
+      }
+    }
+
+    const message = lastFailure?.message ?? `Tool "${definition.name}" failed.`
+    throw new ToolExecutionFailure(message, {
+      ok: false,
+      error_class: lastFailure?.errorClass ?? 'network_error',
+      message,
+      http_status: lastFailure?.httpStatus,
+      response_body: compactText(lastFailure?.responseBody),
+      attempts,
+      repairs,
+      final_input: currentInput,
+    })
+  }
+
+  private toStructuredFailure(error: unknown): {
+    message: string
+    errorClass: ToolRepairErrorClass
+    httpStatus?: number
+    responseBody?: unknown
+  } {
+    if (error instanceof HttpToolFailure) {
+      return {
+        message: error.message,
+        errorClass: error.errorClass,
+        httpStatus: error.status,
+        responseBody: error.responseBody,
+      }
+    }
+    if (error instanceof PayloadToolFailure) {
+      return {
+        message: error.message,
+        errorClass: error.errorClass,
+        responseBody: error.payload,
+      }
+    }
+    return {
+      message: error instanceof Error ? error.message : 'Unknown network/tool error',
+      errorClass: 'network_error',
+    }
   }
 
   private sleep(ms: number): Promise<void> {

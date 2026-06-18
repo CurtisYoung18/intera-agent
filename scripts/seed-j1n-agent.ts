@@ -202,7 +202,7 @@ const TOOL_DESCRIPTION_PATCHES: Record<string, string> = {
   read_user_profile: 'Read the long-term profile for the current customer. Use before asking for member_id when the latest message is member-specific but does not include one. If the profile contains a valid JAYA member_id or stable preference, use it as context unless the customer corrects it.',
   remember: 'Persist stable customer profile facts with scope="user". Use proactively when the customer naturally provides durable information such as member_id, preferred language/style, contact preference, or recurring support preference. Do not store one-off transaction details, screenshots, receipt ids, amounts, dates, tool results, active ProcedureRun state, or temporary case status.',
   start_procedure: 'Start a runtime ProcedureRun only when the intent matches an Available Procedure. procedureId must be one exact id from ## Available Procedures, such as a j1n_* id. Do not pass tool names, old GPTBots labels, or broad categories as procedureId.',
-  ask_user_questions: 'Show a structured form only when required facts are missing for a member-specific workflow, or when a money/funds issue is ambiguous and the customer must choose the issue type before any detailed form. Always provide title and a non-empty fields array. Do not use for ordinary FAQ, how-to, rules, limits, platform navigation, or policy questions that can be answered from KB.',
+  ask_user_questions: 'Show a structured form only when required facts are missing for a member-specific workflow, or when a money/funds issue is ambiguous and the customer must choose the issue type before any detailed form. Always provide title and a non-empty fields array. Do not use for ordinary FAQ, how-to, rules, limits, platform navigation, or policy questions that can be answered from KB. If the customer already provided details in text or an uploaded screenshot/image, prefill matching form fields with fields[].defaultValue or initialValues so the customer can confirm or edit them instead of retyping.',
   create_human_task: 'Create a human handoff task only for explicit human requests after an automated path was tried, unresolved disputes, sensitive account-risk cases, or conflicting/failed live evidence. Do not use for ordinary FAQ. If a pending task already exists, acknowledge the existing handoff instead of creating another one.',
   check_latest_deposit_status: 'Member-specific live lookup for latest/missing/pending deposit status. Requires non-empty member_id. Do not use for deposit FAQ such as methods, limits, crypto, or how-to deposit; use Deposit KB first.',
   check_latest_withdrawal_status: 'Member-specific live lookup for latest/current withdrawal status. Requires non-empty member_id. Do not use for withdrawal FAQ such as how to withdraw, process time, methods, crypto, or PIN rules; use Withdrawal KB first.',
@@ -213,8 +213,8 @@ const TOOL_DESCRIPTION_PATCHES: Record<string, string> = {
   get_account_status: 'Member-specific live lookup for current account state/restriction. Requires non-empty member_id. Do not use for account FAQ such as verification steps, bank-account count, username/real-name change, transaction history navigation, or VIP page; use Account/General KB first.',
   get_id_verification_details: 'Member-specific live lookup for current ID/KYC verification details. Requires non-empty member_id. Do not use for generic verification instructions; use Account KB first.',
   get_recommend_games: 'Member-specific personalized game recommendation. Requires non-empty member_id. Do not use for general game types, demo games, rules, or maintenance FAQ; use Game/General KB first.',
-  get_transaction_history: 'Member-specific transaction history lookup. Requires non-empty member_id and method. Do not use for generic instructions on how to view transaction history; use Account KB first.',
-  get_bet_history: 'Member-specific bet history lookup. Requires non-empty member_id. Do not use for generic instructions on how to check betting history; use General KB first.',
+  get_transaction_history: 'Member-specific transaction history lookup. Requires non-empty member_id and method. Do not use for generic instructions on how to view transaction history; use Account KB first. The method parameter is the transaction type only and must be exactly "deposit" or "withdraw". Never pass payment rails/channels such as eSewa, Bank, Khalti, online banking, or transfer method as method. If the customer mentions a rail/channel but does not say deposit or withdraw, collect two separate form fields: method = deposit|withdraw and payment_channel = eSewa|Bank|Khalti|Other. Pass only method to this tool; keep payment_channel as context for the answer unless a future API explicitly supports it. If the customer asks for both deposit and withdrawal history, call this tool twice, once with method="deposit" and once with method="withdraw".',
+  get_bet_history: 'Member-specific bet history lookup. Requires non-empty member_id, from_date, and to_date. Do not use for generic instructions on how to check betting history; use General KB first. from_date and to_date must be exact strings in Y-m-d H:i:s format, for example "2026-06-10 00:00:00" and "2026-06-18 23:59:59". Do not call this tool with date-only values like "2026-06-10". If the customer provides only dates, expand the start date to 00:00:00 and the end date to 23:59:59 before calling. If using ask_user_questions, collect text datetime fields or clearly request the full Y-m-d H:i:s format.',
 }
 
 const TEST_MEMBER_IDS = ['JAYA1197202', 'JAYA1108F7C', 'JAYA117FFEB'] as const
@@ -712,7 +712,33 @@ const CASE_TYPES: CaseTypeSeed[] = [
   },
 ]
 
-const HOOKS: HookSeed[] = []
+const HOOKS: HookSeed[] = [
+  {
+    name: 'j1n_transaction_history_method_type_guard',
+    displayName: 'Transaction history method type guard',
+    description: 'Blocks transaction-history calls where method is a payment rail/channel instead of deposit or withdraw.',
+    checkpoint: 'PreToolUse',
+    handlerKind: 'declarative',
+    severity: 'medium',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        always: true,
+        match: {
+          tools: ['get_transaction_history'],
+          ifPattern: '"method"\\s*:\\s*"(?!deposit"|withdraw")[^"]+"',
+        },
+        reason: 'get_transaction_history.method must be deposit or withdraw, not a payment rail/channel.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'get_transaction_history.method must be exactly "deposit" or "withdraw". If the customer mentions eSewa, Bank, Khalti, online banking, or another payment rail/channel, treat it as payment_channel context, not method. Ask the customer to choose deposit or withdraw, then retry get_transaction_history with only method=deposit|withdraw. Keep the payment channel only as context unless a future API explicitly supports it.',
+      },
+    },
+  },
+]
 
 const SCENARIOS: ScenarioSeed[] = [
   {

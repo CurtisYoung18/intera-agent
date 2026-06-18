@@ -252,6 +252,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'Display a structured form to the customer to collect required information. ' +
       'Use this when you need the customer to provide specific details (amount, payment method, ' +
       'screenshots, etc.). Do not ask for those details in plain text when this tool can collect them. ' +
+      'If the customer already provided a value in text or an uploaded image/screenshot, prefill the matching field with defaultValue or initialValues so they can confirm or edit it. ' +
       'The form will appear as a floating card in the chat UI. ' +
       'Once the customer submits, you will receive their answers and can continue.',
     inputSchema: {
@@ -285,9 +286,14 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
                   },
                 },
               },
+              defaultValue: { type: 'string', description: 'Optional prefilled value inferred from prior customer text or image. The customer can confirm or edit it.' },
             },
             required: ['key', 'label', 'type'],
           },
+        },
+        initialValues: {
+          type: 'object',
+          description: 'Optional map of field key to prefilled value inferred from prior text or image. These values are merged into fields that do not already have defaultValue.',
         },
       },
       required: ['title', 'fields'],
@@ -313,7 +319,9 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
             role: z.enum(['start', 'end']),
           }).optional(),
         }).optional(),
+        defaultValue: z.string().optional(),
       })).min(1),
+      initialValues: z.record(z.unknown()).optional(),
     }),
   },
 ]

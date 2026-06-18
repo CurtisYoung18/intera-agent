@@ -73,6 +73,7 @@ export interface FormField {
       role: 'start' | 'end'
     }
   }
+  defaultValue?: string
 }
 
 export interface WidgetPayload {

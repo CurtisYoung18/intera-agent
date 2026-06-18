@@ -11,13 +11,13 @@ describe('livechat form widget helpers', () => {
   it('parses field payloads using either key or id', () => {
     const fields = parseWidgetFields(JSON.stringify([
       { key: 'member_id', type: 'text', label: 'Member ID', required: true },
-      { id: 'amount', type: 'number', label: 'Amount' },
+      { id: 'amount', type: 'number', label: 'Amount', defaultValue: 800 },
       { type: 'text', label: 'Missing key' },
     ]))
 
     expect(fields).toEqual([
-      { key: 'member_id', type: 'text', label: 'Member ID', required: true, options: undefined, placeholder: undefined },
-      { key: 'amount', type: 'number', label: 'Amount', required: false, options: undefined, placeholder: undefined },
+      { key: 'member_id', type: 'text', label: 'Member ID', required: true, options: undefined, placeholder: undefined, defaultValue: undefined },
+      { key: 'amount', type: 'number', label: 'Amount', required: false, options: undefined, placeholder: undefined, defaultValue: '800' },
     ])
   })
 

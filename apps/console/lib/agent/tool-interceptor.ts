@@ -591,11 +591,12 @@ function normalizeAskUserQuestionsPayload(
 } | null {
   const rawTitle = typeof toolInput.title === 'string' ? toolInput.title.trim() : ''
   const rawDescription = typeof toolInput.description === 'string' ? toolInput.description : ''
+  const initialValues = isRecord(toolInput.initialValues) ? toolInput.initialValues : {}
   const rawFields = Array.isArray(toolInput.fields)
     ? toolInput.fields.filter((field): field is Record<string, unknown> => Boolean(field) && typeof field === 'object')
     : []
   const validFields = rawFields
-    .map(normalizeFormField)
+    .map((field) => normalizeFormField(field, initialValues))
     .filter((field): field is Record<string, unknown> => Boolean(field))
 
   if (rawTitle && validFields.length > 0) {
@@ -623,17 +624,29 @@ function normalizeAskUserQuestionsPayload(
   }
 }
 
-function normalizeFormField(field: Record<string, unknown>): Record<string, unknown> | null {
-  const key = typeof field.key === 'string' ? field.key.trim() : ''
+function normalizeFormField(field: Record<string, unknown>, initialValues: Record<string, unknown> = {}): Record<string, unknown> | null {
+  const key = typeof field.key === 'string'
+    ? field.key.trim()
+    : typeof field.id === 'string'
+      ? field.id.trim()
+      : ''
   const label = typeof field.label === 'string' ? field.label.trim() : humanizeFieldKey(key)
   const type = typeof field.type === 'string' ? field.type : 'text'
   if (!key || !label) return null
+  const existingDefaultValue = field.defaultValue
+  const inferredDefaultValue = existingDefaultValue == null ? initialValues[key] : existingDefaultValue
+  const defaultValue = typeof inferredDefaultValue === 'string'
+    ? inferredDefaultValue
+    : typeof inferredDefaultValue === 'number' || typeof inferredDefaultValue === 'boolean'
+      ? String(inferredDefaultValue)
+      : undefined
   return {
     ...field,
     key,
     label,
     type: ['text', 'number', 'select', 'textarea', 'file', 'date'].includes(type) ? type : 'text',
     required: field.required !== false,
+    ...(defaultValue != null ? { defaultValue } : {}),
   }
 }
 

@@ -102,10 +102,12 @@ const SEED_TOOLS = [
   },
   {
     name: 'ask_user_questions',
-    description: 'Collect structured information from the user via a form. Use this instead of plain-text questions.',
+    description: 'Collect structured information from the user via a form. Use this instead of plain-text questions. If the customer already provided values in text or image, prefill matching fields with defaultValue or initialValues so they can confirm or edit.',
     inputSchema: JSON.stringify({
       type: 'object',
       properties: {
+        title: { type: 'string', description: 'Optional form title' },
+        description: { type: 'string', description: 'Optional form description' },
         fields: {
           type: 'array',
           items: {
@@ -113,11 +115,16 @@ const SEED_TOOLS = [
             properties: {
               key: { type: 'string', description: 'Field identifier (e.g. txnId, amount, member_id)' },
               label: { type: 'string', description: 'User-visible question text' },
+              type: { type: 'string', enum: ['text', 'number', 'select', 'textarea', 'file', 'date'], description: 'Input type' },
               required: { type: 'boolean', default: false },
+              placeholder: { type: 'string' },
+              options: { type: 'array', items: { type: 'string' } },
+              defaultValue: { type: 'string', description: 'Optional prefilled value inferred from text or image' },
             },
+            required: ['key', 'label'],
           },
         },
-        title: { type: 'string', description: 'Optional form title' },
+        initialValues: { type: 'object', description: 'Optional map of field key to prefilled value' },
       },
       required: ['fields'],
     }),

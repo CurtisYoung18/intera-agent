@@ -133,7 +133,7 @@ describe('LiveChatRenderer', () => {
         toolCallId: 'toolu_form_1',
         title: 'Deposit details',
         description: 'Please fill in the requested details.',
-        fields: [{ id: 'name', type: 'text', label: 'Name' }],
+        fields: [{ id: 'name', type: 'text', label: 'Name', defaultValue: 'Jaklee' }],
       }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_card')
@@ -145,6 +145,8 @@ describe('LiveChatRenderer', () => {
       expect(card.buttons[0]!.url).toContain('view=form')
       expect(card.buttons[0]!.url).toContain('toolCallId=toolu_form_1')
       expect(card.buttons[0]!.url).toContain('description=Please+fill+in+the+requested+details.')
+      const fields = JSON.parse(new URL(card.buttons[0]!.url).searchParams.get('fields') ?? '[]')
+      expect(fields[0]).toMatchObject({ id: 'name', defaultValue: 'Jaklee' })
     })
 
     it('localizes the button label when the form request is Chinese', () => {

@@ -21,6 +21,7 @@ export interface WidgetFormField {
       role: 'start' | 'end'
     }
   }
+  defaultValue?: string
 }
 
 const SUPPORTED_WIDGET_FIELD_TYPES = new Set<WidgetFormFieldType>([
@@ -64,6 +65,12 @@ function normalizeField(input: unknown): WidgetFormField | null {
     ? candidate.options.filter((option): option is string => typeof option === 'string' && option.trim().length > 0)
     : undefined
   const validation = normalizeFieldValidation(candidate.validation)
+  const rawDefaultValue = candidate.defaultValue
+  const defaultValue = typeof rawDefaultValue === 'string'
+    ? rawDefaultValue
+    : typeof rawDefaultValue === 'number' || typeof rawDefaultValue === 'boolean'
+      ? String(rawDefaultValue)
+      : undefined
 
   return {
     key,
@@ -75,6 +82,7 @@ function normalizeField(input: unknown): WidgetFormField | null {
       ? candidate.placeholder
       : undefined,
     ...(validation ? { validation } : {}),
+    ...(defaultValue != null ? { defaultValue } : {}),
   }
 }
 

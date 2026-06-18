@@ -36,8 +36,9 @@ describe('LiveChatFormWidget', () => {
         caseId="case-1"
         toolCallId="toolu_form_1"
         fields={[
-          { key: 'amount', type: 'number', label: 'Amount', required: true },
-          { key: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'] },
+          { key: 'amount', type: 'number', label: 'Amount', required: true, defaultValue: '1500' },
+          { key: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'], defaultValue: 'eSewa Wallet' },
+          { key: 'transaction_date', type: 'date', label: 'Transaction date', required: true, defaultValue: '2026-06-16 09:54' },
         ]}
       />,
     )
@@ -46,8 +47,9 @@ describe('LiveChatFormWidget', () => {
       expect(mockEnsureMomentsSdk).toHaveBeenCalledWith({ title: 'Deposit details' })
     })
 
-    fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '800' } })
-    fireEvent.change(screen.getByLabelText(/Payment channel/), { target: { value: 'Bank transfer' } })
+    expect((screen.getByLabelText(/Amount/) as HTMLInputElement).value).toBe('1500')
+    expect((screen.getByLabelText(/Payment channel/) as HTMLSelectElement).value).toBe('eSewa Wallet')
+    expect((screen.getByLabelText(/Transaction date/) as HTMLInputElement).value).toBe('2026-06-16')
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
     await waitFor(() => {
@@ -67,12 +69,14 @@ describe('LiveChatFormWidget', () => {
       title: 'Deposit details',
       description: 'Please fill in the requested details.',
       fields: [
-        { id: 'amount', type: 'number', label: 'Amount', required: true, options: undefined, placeholder: undefined },
-        { id: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'], placeholder: undefined },
+        { id: 'amount', type: 'number', label: 'Amount', required: true, options: undefined, placeholder: undefined, defaultValue: '1500' },
+        { id: 'payment_channel', type: 'select', label: 'Payment channel', required: true, options: ['Bank transfer', 'bKash'], placeholder: undefined, defaultValue: 'eSewa Wallet' },
+        { id: 'transaction_date', type: 'date', label: 'Transaction date', required: true, options: undefined, placeholder: undefined, defaultValue: '2026-06-16 09:54' },
       ],
       answers: {
-        amount: '800',
-        payment_channel: 'Bank transfer',
+        amount: '1500',
+        payment_channel: 'eSewa Wallet',
+        transaction_date: '2026-06-16',
       },
     }))
 
