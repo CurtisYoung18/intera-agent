@@ -556,6 +556,24 @@ describe('tool-interceptor start_procedure truth alignment', () => {
               type: 'text',
               required: true,
               placeholder: noisyPlaceholder,
+            }, {
+              key: 'amount',
+              label: 'Deposit Amount',
+              type: 'number',
+              required: true,
+              placeholder: '1500',
+            }, {
+              key: 'transaction_id',
+              label: 'Transaction ID',
+              type: 'text',
+              required: true,
+              placeholder: 'ESEWA984211',
+            }, {
+              key: 'deposit_date',
+              label: 'Deposit Date and Time',
+              type: 'text',
+              required: true,
+              placeholder: '2026-06-16 09:54',
             }],
           },
         },
@@ -566,10 +584,27 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
       type: 'form_request',
       data: expect.objectContaining({
-        fields: [expect.objectContaining({
-          key: 'member_id',
-          placeholder: 'JAYA...',
-        })],
+        fields: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'member_id',
+            placeholder: 'JAYA...',
+          }),
+          expect.objectContaining({
+            key: 'amount',
+            placeholder: '1500',
+            defaultValue: '1500',
+          }),
+          expect.objectContaining({
+            key: 'transaction_id',
+            placeholder: 'ESEWA984211',
+            defaultValue: 'ESEWA984211',
+          }),
+          expect.objectContaining({
+            key: 'deposit_date',
+            placeholder: '2026-06-16 09:54',
+            defaultValue: '2026-06-16 09:54',
+          }),
+        ]),
       }),
     }))
 

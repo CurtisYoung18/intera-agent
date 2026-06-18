@@ -662,6 +662,10 @@ function normalizeFormField(field: Record<string, unknown>, initialValues: Recor
       .slice(0, 50)
     : undefined
   const cleanedDefaultValue = cleanFormString(defaultValue, FORM_FIELD_LIMITS.defaultValue)
+  const inferredFromPlaceholder = cleanedDefaultValue == null && placeholder && shouldPromotePlaceholderToDefault(placeholder)
+    ? placeholder
+    : undefined
+  const effectiveDefaultValue = cleanedDefaultValue ?? inferredFromPlaceholder
 
   const normalized = {
     ...field,
@@ -677,7 +681,7 @@ function normalizeFormField(field: Record<string, unknown>, initialValues: Recor
   if (options && options.length > 0) normalized.options = options
   else delete normalized.options
 
-  if (cleanedDefaultValue != null) normalized.defaultValue = cleanedDefaultValue
+  if (effectiveDefaultValue != null) normalized.defaultValue = effectiveDefaultValue
   else delete normalized.defaultValue
 
   return normalized
@@ -696,6 +700,20 @@ function looksLikeEncodedBlob(value: string): boolean {
   const compact = value.replace(/\s+/g, '')
   const encodedChars = compact.match(/[A-Za-z0-9+/=_-]/g)?.length ?? 0
   return encodedChars / Math.max(compact.length, 1) > 0.9
+}
+
+function shouldPromotePlaceholderToDefault(value: string): boolean {
+  const normalized = value.trim()
+  if (!normalized) return false
+  if (normalized.length > 120) return false
+  if (normalized.includes('...')) return false
+  if (/[?？]$/.test(normalized)) return false
+
+  const lower = normalized.toLowerCase()
+  if (/^(e\.?g\.?|example|sample|enter|select|choose|please|your|input|type|provide)\b/.test(lower)) return false
+  if (/\b(e\.?g\.?|example|sample|placeholder|optional|required|yyyy|dd\/mm|mm\/dd|your|please enter|select one)\b/.test(lower)) return false
+
+  return true
 }
 
 function defaultPlaceholderForField(key: string): string | undefined {
