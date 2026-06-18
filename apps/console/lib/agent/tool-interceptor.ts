@@ -611,17 +611,25 @@ function normalizeAskUserQuestionsPayload(
   const requiredFacts = Array.isArray(ctx.caseSchema?.requiredFacts)
     ? ctx.caseSchema.requiredFacts.filter((fact): fact is string => typeof fact === 'string' && fact.trim().length > 0)
     : []
-  const fallbackFields = (requiredFacts.length > 0 ? requiredFacts : ['member_id'])
+  const fallbackFacts = requiredFacts.length > 0 ? requiredFacts : ['member_id']
+  const fallbackFields = fallbackFacts
     .map(formFieldFromFact)
     .filter((field): field is Record<string, unknown> => Boolean(field))
 
   if (fallbackFields.length === 0) return null
   return {
-    title: rawTitle || fallbackFormTitle(requiredFacts),
-    description: rawDescription || fallbackFormDescription(requiredFacts),
+    title: rawTitle || fallbackFormTitle(fallbackFacts),
+    description: rawDescription || fallbackFormDescription(fallbackFacts),
     fields: fallbackFields,
     repaired: true,
   }
+}
+
+const FORM_FIELD_LIMITS = {
+  label: 120,
+  placeholder: 180,
+  option: 120,
+  defaultValue: 500,
 }
 
 function normalizeFormField(field: Record<string, unknown>, initialValues: Record<string, unknown> = {}): Record<string, unknown> | null {
@@ -630,7 +638,10 @@ function normalizeFormField(field: Record<string, unknown>, initialValues: Recor
     : typeof field.id === 'string'
       ? field.id.trim()
       : ''
-  const label = typeof field.label === 'string' ? field.label.trim() : humanizeFieldKey(key)
+  const label = cleanFormString(
+    typeof field.label === 'string' ? field.label : undefined,
+    FORM_FIELD_LIMITS.label,
+  ) ?? humanizeFieldKey(key)
   const type = typeof field.type === 'string' ? field.type : 'text'
   if (!key || !label) return null
   const existingDefaultValue = field.defaultValue
@@ -640,14 +651,56 @@ function normalizeFormField(field: Record<string, unknown>, initialValues: Recor
     : typeof inferredDefaultValue === 'number' || typeof inferredDefaultValue === 'boolean'
       ? String(inferredDefaultValue)
       : undefined
-  return {
+  const placeholder = cleanFormString(
+    typeof field.placeholder === 'string' ? field.placeholder : undefined,
+    FORM_FIELD_LIMITS.placeholder,
+  ) ?? defaultPlaceholderForField(key)
+  const options = Array.isArray(field.options)
+    ? field.options
+      .map((option) => cleanFormString(typeof option === 'string' ? option : undefined, FORM_FIELD_LIMITS.option))
+      .filter((option): option is string => Boolean(option))
+      .slice(0, 50)
+    : undefined
+  const cleanedDefaultValue = cleanFormString(defaultValue, FORM_FIELD_LIMITS.defaultValue)
+
+  const normalized = {
     ...field,
     key,
     label,
     type: ['text', 'number', 'select', 'textarea', 'file', 'date'].includes(type) ? type : 'text',
     required: field.required !== false,
-    ...(defaultValue != null ? { defaultValue } : {}),
-  }
+  } as Record<string, unknown>
+
+  if (placeholder) normalized.placeholder = placeholder
+  else delete normalized.placeholder
+
+  if (options && options.length > 0) normalized.options = options
+  else delete normalized.options
+
+  if (cleanedDefaultValue != null) normalized.defaultValue = cleanedDefaultValue
+  else delete normalized.defaultValue
+
+  return normalized
+}
+
+function cleanFormString(value: string | undefined, max: number): string | undefined {
+  const trimmed = value?.replace(/\s+/g, ' ').trim()
+  if (!trimmed) return undefined
+  if (looksLikeEncodedBlob(trimmed)) return undefined
+  return trimmed.length > max ? trimmed.slice(0, max).trimEnd() : trimmed
+}
+
+function looksLikeEncodedBlob(value: string): boolean {
+  if (value.length > 240 && (value.match(/\.\.\./g)?.length ?? 0) >= 3) return true
+  if (value.length < 320) return false
+  const compact = value.replace(/\s+/g, '')
+  const encodedChars = compact.match(/[A-Za-z0-9+/=_-]/g)?.length ?? 0
+  return encodedChars / Math.max(compact.length, 1) > 0.9
+}
+
+function defaultPlaceholderForField(key: string): string | undefined {
+  if (key === 'member_id') return 'JAYA...'
+  return undefined
 }
 
 function formFieldFromFact(fact: string): Record<string, unknown> {

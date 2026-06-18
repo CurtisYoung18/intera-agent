@@ -510,4 +510,114 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     }))
     expect(result.toolResults[0]?.toolUse?.status).toBe('completed')
   })
+
+  it('sanitizes malformed form fields and uses a specific fallback title without case schema', async () => {
+    const sendEvent = vi.fn()
+    const noisyPlaceholder = `e.g. JAYAxxxxx${'1234abcd...'.repeat(80)}`
+
+    await interceptToolResults(
+      {
+        caseId: 'case-form-noisy',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'ask_user_questions',
+        output: { ok: true },
+        latencyMs: 1,
+        toolUse: {
+          id: 'toolu_noisy_form',
+          name: 'ask_user_questions',
+          status: 'completed',
+          input: {
+            title: 'Member ID for Deposit Check',
+            fields: [{
+              key: 'member_id',
+              label: 'Member ID',
+              type: 'text',
+              required: true,
+              placeholder: noisyPlaceholder,
+            }],
+          },
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'form_request',
+      data: expect.objectContaining({
+        fields: [expect.objectContaining({
+          key: 'member_id',
+          placeholder: 'JAYA...',
+        })],
+      }),
+    }))
+
+    sendEvent.mockClear()
+    await interceptToolResults(
+      {
+        caseId: 'case-form-fallback',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'ask_user_questions',
+        output: { ok: false, error: 'Input validation failed' },
+        latencyMs: 1,
+        toolUse: {
+          id: 'toolu_empty_form_no_schema',
+          name: 'ask_user_questions',
+          status: 'error',
+          input: {},
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'form_request',
+      data: expect.objectContaining({
+        title: 'Member ID Required',
+      }),
+    }))
+  })
 })

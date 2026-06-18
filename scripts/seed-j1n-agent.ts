@@ -738,6 +738,30 @@ const HOOKS: HookSeed[] = [
       },
     },
   },
+  {
+    name: 'j1n_no_status_claim_without_tool_evidence',
+    displayName: 'No status claim without live evidence',
+    description: 'Blocks direct approved/credited/successful status claims from screenshots unless a live lookup tool already ran.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    severity: 'high',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: {
+          ifPattern: '\\b(successful\\s+cha|credited|credit\\s+bhayeko|wallet\\s+ma\\s+credit|approved\\s+cha|status\\s+pani\\s+approved)\\b',
+        },
+        requireToolsAny: ['check_latest_deposit_status', 'get_transaction_history'],
+        reason: 'Reply appears to claim a live deposit/transaction status without live tool evidence.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Do not conclude approved, successful, or credited solely from a screenshot. You may say the screenshot shows those values, then collect Member ID with ask_user_questions and include extracted receipt fields as prefilled confirmation fields before live verification.',
+      },
+    },
+  },
 ]
 
 const SCENARIOS: ScenarioSeed[] = [
