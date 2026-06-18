@@ -440,7 +440,7 @@ describe('livechat bridge', () => {
 
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'chat-1',
-      'Service is temporarily unavailable. Our systems are recovering — please try again shortly.',
+      'Service is temporarily unavailable. Our systems are recovering - please try again shortly.',
       'bot-token',
       'lic-1',
       undefined,
@@ -522,6 +522,34 @@ describe('livechat bridge', () => {
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'chat-1',
       'Welcome back.',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
+  it('uses configured customer copy when /api/messages is unavailable', async () => {
+    const event = { type: 'message', text: 'hello' } satisfies IncomingEvent
+    mockFetch.mockResolvedValueOnce(new Response('Request body too large', { status: 502 }))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      event,
+      makeConfig({
+        failureMessages: {
+          engine_unreachable: 'We are reconnecting the assistant. Please try again in a moment.',
+        },
+      }),
+      'agent-1',
+    )
+
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'We are reconnecting the assistant. Please try again in a moment.',
       'bot-token',
       'lic-1',
       undefined,

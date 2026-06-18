@@ -16,6 +16,12 @@ const fieldSchema = z.object({
   required: z.boolean().optional(),
   options: z.array(z.string().min(1).max(200)).max(50).optional(),
   placeholder: z.string().max(400).optional(),
+  validation: z.object({
+    dateRange: z.object({
+      pairId: z.string().min(1).max(120).optional(),
+      role: z.enum(['start', 'end']),
+    }).optional(),
+  }).optional(),
 })
 
 const formSchema = z.object({

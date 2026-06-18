@@ -488,20 +488,6 @@ export class AgentLoop {
           stopReason = null
           continue
         }
-        if (textReplyRuntime.blockedReason) {
-          discardVisibleText()
-          assistantMessage.content = ''
-          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-facing human-handoff promise was withheld because no persisted create_human_task evidence exists yet. Call create_human_task first or revise the reply so it does not claim that handoff is already arranged.'))
-          await this.traceWriter.write('loop_decision', 'Unsafe human-handoff promise withheld', {
-            basedOnInputEpoch: iterationBasedOnInputEpoch,
-            latestInputEpoch: latestInputEpoch(this.deps.caseId),
-            runId: textReplyRuntime.run?.runId,
-            blockedReason: textReplyRuntime.blockedReason,
-          })
-          stopReason = null
-          continue
-        }
-
         const stopEval = await this.hookEngine.evaluate('Stop', {
           ...this.hookContextBuilder.build('Stop', {
             replyDraft: fullText,

@@ -1,7 +1,7 @@
 // apps/chat/lib/livechat/bridge.ts
 // Orchestrates: LiveChat webhook → /api/messages SSE → LiveChat API calls.
 
-import type { LiveChatConfig, IncomingEvent, ContentBlock } from './types'
+import type { LiveChatConfig, IncomingEvent, ContentBlock, LiveChatFailureReason } from './types'
 import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, closeSession, rotateSessionCase, type BridgeSessionRow } from './session-store'
 import { LiveChatRenderer } from '@/channels/livechat/renderer'
 import { confirmProcedureHumanHandoff } from '@/lib/agent/session-store'
@@ -16,6 +16,7 @@ import { enqueueRetry } from './retry-queue'
 
 import { downloadAndEncode, isLikelyImageAttachment, resolveRenderableImageUrls } from './image-utils'
 import { getInternalMessagesUrl } from './internal-messages-url'
+import { liveChatFailureMessage } from './failure-messages'
 import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
 import type { SSEEvent } from '@intera/shared/types'
@@ -263,13 +264,9 @@ async function flushBufferedTextAsMessages(
 }
 
 async function sendFailureNotice(
-  chatId: string, config: LiveChatConfig, reason: 'engine_unreachable' | 'stream_truncated' | 'action_failed',
+  chatId: string, config: LiveChatConfig, reason: LiveChatFailureReason,
 ): Promise<void> {
-  const msg = {
-    engine_unreachable: 'Service is temporarily unavailable. Our systems are recovering — please try again shortly.',
-    stream_truncated: 'Sorry, the response was interrupted. Please resend your message.',
-    action_failed: 'A technical issue occurred and has been logged. If you do not receive a response soon, please contact support.',
-  }[reason]
+  const msg = liveChatFailureMessage(config, reason)
   await sendTextMessage(chatId, msg, config.botAccessToken, config.licenseId, config.region, config.authType, config.accountId).catch(() => {})
 }
 
@@ -467,7 +464,10 @@ export async function handleIncomingEvent(
     return
   }
 
-  const livechatRenderer = new LiveChatRenderer(config.showSkillStatus)
+  const livechatRenderer = new LiveChatRenderer(config.showSkillStatus, {
+    failureMessages: config.failureMessages,
+    transferMessage: config.transferMessage,
+  })
   const binding: ChannelBindingConfig = {
     channel: 'livechat',
     enabled: config.enabled,

@@ -1,35 +1,31 @@
-import type { ProcedureRuntimeSignal } from '@intera/shared/types'
+import type { ProcedureRuntimeSignal, ProcedureRuntimeSignalDetector } from '@intera/shared/types'
 import type { ProcedureRunState } from './procedure-run-state'
 
 export function updateSignalsFromInput(run: ProcedureRunState, content: string): void {
   const text = content.trim()
   if (!text) return
 
-  if (isExplicitHumanRequest(text)) {
-    setProcedureSignal(run, 'explicit_human_request', 'Customer explicitly asked for a person.')
-  }
-  if (isKnowledgeGapRequest(text)) {
-    setProcedureSignal(run, 'knowledge_gap', 'Customer asked where to find something or lacked context.')
+  for (const detector of getRuntimeSignalDetectors(run)) {
+    if (matchesDetector(detector, text)) {
+      setProcedureSignal(run, detector.signal, detector.reason || 'Procedure runtime signal detector matched customer input.')
+    }
   }
 }
 
-function isExplicitHumanRequest(text: string): boolean {
-  return [
-    /(?:speak|talk|chat|connect|transfer|hand(?:\s+me)?)\s+(?:me\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|person|agent|specialist|representative)/i,
-    /\b(?:human|live)\s+(?:agent|support|person)\b/i,
-    /\b(?:real|actual)\s+person\b/i,
-    /人工|真人|客服|专员/,
-  ].some((pattern) => pattern.test(text))
+function getRuntimeSignalDetectors(run: ProcedureRunState): ProcedureRuntimeSignalDetector[] {
+  const detectors = run.definition?.runtimeSignalDetectors
+  return Array.isArray(detectors) ? detectors : []
 }
 
-function isKnowledgeGapRequest(text: string): boolean {
-  return [
-    /where\s+(?:do|can)\s+i\s+find/i,
-    /how\s+do\s+i\s+find/i,
-    /what(?:'s| is)\s+the\s+link/i,
-    /which\s+page/i,
-    /哪里.*找|在哪.*找|去哪里.*找|什么页面|什么链接/,
-  ].some((pattern) => pattern.test(text))
+function matchesDetector(detector: ProcedureRuntimeSignalDetector, text: string): boolean {
+  for (const pattern of detector.patterns) {
+    try {
+      if (new RegExp(pattern, 'i').test(text)) return true
+    } catch {
+      continue
+    }
+  }
+  return false
 }
 
 function setProcedureSignal(run: ProcedureRunState, signal: ProcedureRuntimeSignal, reason: string): void {

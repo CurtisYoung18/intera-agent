@@ -12,6 +12,7 @@ import {
   DEFAULT_MODEL,
   CORE_SYSTEM_PROMPT,
   DEFAULT_MEMORY_STRATEGY,
+  HUMAN_HANDOFF_PROMISE_PATTERN,
 } from '../defaults/index'
 
 function loadEnv(): void {
@@ -176,6 +177,27 @@ const SEED_HOOKS = [
     enabled: true,
   },
   {
+    name: 'human_handoff_promise_requires_task',
+    description: 'Block replies that promise human support before create_human_task has actually run',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { ifPattern: HUMAN_HANDOFF_PROMISE_PATTERN },
+        requireTools: ['create_human_task'],
+        reason: 'Reply promises human support before a persisted human task exists.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Call create_human_task before promising human support, or revise the reply so it does not imply handoff is arranged.',
+      },
+    }),
+    severity: 'critical',
+    enabled: true,
+  },
+  {
     name: 'human_review_before_finalize',
     description: 'Require human review before case finalization when activated by a case type',
     checkpoint: 'Stop',
@@ -292,7 +314,7 @@ const SEED_CASE_TYPES = [
       ],
     }),
     maxAutoTurns: 10,
-    hookBindings: ['investigate_before_resolve', 'human_review_before_finalize'],
+    hookBindings: ['investigate_before_resolve', 'human_handoff_promise_requires_task', 'human_review_before_finalize'],
     enabled: true,
   },
 ]

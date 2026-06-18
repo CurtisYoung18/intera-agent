@@ -211,9 +211,33 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     expect(h.startProcedureRun.mock.calls[0]?.[1]).not.toHaveProperty('procedureInputs')
   })
 
-  it('corrects explicit withdrawal messages when the model selects a deposit procedure', async () => {
+  it('does not rewrite the selected procedure from hardcoded money-movement keywords', async () => {
     h.prisma.caseType.findUnique.mockImplementation(async ({ where }: any) => {
       const type = where.agentConfigId_type.type
+      if (type === 'deposit_not_credited') {
+        return {
+          type: 'deposit_not_credited',
+          displayName: 'Deposit not credited',
+          description: 'Investigate a deposit that did not reach the account.',
+          icon: 'D',
+          requiredFacts: '["memberId","txid"]',
+          defaultGoal: 'Resolve the deposit-not-credited issue.',
+          escalateOn: '[]',
+          autoCloseConditions: null,
+          maxAutoTurns: 3,
+          procedure: JSON.stringify({
+            version: 'v2',
+            whenToUse: 'Use for deposit issues',
+            steps: [{
+              id: 'collect_deposit',
+              title: 'Collect deposit details',
+              guidance: 'Ask for deposit proof.',
+              actions: [{ id: 'ask_deposit', kind: 'ask', label: 'Ask for deposit details', fields: ['txid'] }],
+              branches: [],
+            }],
+          }),
+        }
+      }
       if (type === 'withdrawal_not_credited') {
         return {
           type: 'withdrawal_not_credited',
@@ -242,9 +266,9 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     })
     h.startProcedureRun.mockReturnValue({
       run: {
-        runId: 'run-withdrawal',
-        procedureId: 'withdrawal_not_credited',
-        currentStepId: 'collect_withdrawal',
+        runId: 'run-deposit',
+        procedureId: 'deposit_not_credited',
+        currentStepId: 'collect_deposit',
         inputEpoch: 1,
       },
       pausedRun: null,
@@ -256,7 +280,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
 
     const result = await interceptToolResults(
       {
-        caseId: 'case-withdrawal',
+        caseId: 'case-deposit',
         orgId: 'org-a',
         agentConfigId: 'agent-a',
         userId: 'user-1',
@@ -294,27 +318,27 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     )
 
     expect(h.prisma.caseType.findUnique).toHaveBeenCalledWith({
+      where: { agentConfigId_type: { agentConfigId: 'agent-a', type: 'deposit_not_credited' } },
+    })
+    expect(h.prisma.caseType.findUnique).not.toHaveBeenCalledWith({
       where: { agentConfigId_type: { agentConfigId: 'agent-a', type: 'withdrawal_not_credited' } },
     })
-    expect(h.startProcedureRun).toHaveBeenCalledWith('case-withdrawal', expect.objectContaining({
-      procedureId: 'withdrawal_not_credited',
-      reason: expect.stringContaining('Runtime routing correction'),
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-deposit', expect.objectContaining({
+      procedureId: 'deposit_not_credited',
+      reason: 'Customer reports funds not credited.',
     }))
     expect(activateProcedureContext).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'withdrawal_not_credited',
-      displayName: 'Withdrawal not credited',
+      type: 'deposit_not_credited',
+      displayName: 'Deposit not credited',
     }))
     expect(result.toolResults[0]?.output).toMatchObject({
       ok: true,
       mode: 'inline_procedure',
       requestedProcedureId: 'deposit_not_credited',
-      routingCorrection: {
-        from: 'deposit_not_credited',
-        to: 'withdrawal_not_credited',
-      },
-      procedureId: 'withdrawal_not_credited',
-      caseType: 'withdrawal_not_credited',
-      runId: 'run-withdrawal',
+      routingCorrection: null,
+      procedureId: 'deposit_not_credited',
+      caseType: 'deposit_not_credited',
+      runId: 'run-deposit',
     })
   })
 })

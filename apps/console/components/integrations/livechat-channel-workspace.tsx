@@ -33,6 +33,11 @@ type LiveChatConfig = {
   agentAccountId?: string
   transferGroupId?: number
   transferMessage?: string
+  failureMessages?: {
+    engine_unreachable?: string
+    stream_truncated?: string
+    action_failed?: string
+  }
 }
 
 type LiveChatGroup = {
@@ -61,9 +66,9 @@ const MOMENT_PRESETS: MomentPreset[] = [
     label: 'Deposit Issue',
     title: 'Deposit Information',
     fields: [
-      { id: 'txnId', type: 'text', label: 'Transaction ID', required: true, placeholder: 'e.g. TX20260514001' },
+      { id: 'txnId', type: 'text', label: 'Transaction ID', required: true, placeholder: 'e.g. TXN-123456' },
       { id: 'amount', type: 'number', label: 'Deposit Amount', required: true },
-      { id: 'paymentMethod', type: 'select', label: 'Payment Method', required: true, options: ['WeChat Pay', 'Alipay', 'Bank Transfer', 'bKash', 'Nagad'] },
+      { id: 'paymentMethod', type: 'select', label: 'Payment Method', required: true, options: ['Wallet', 'Bank Transfer', 'Card', 'Other'] },
       { id: 'date', type: 'date', label: 'Deposit Date' },
       { id: 'notes', type: 'textarea', label: 'Additional Notes', placeholder: 'Any error messages or screenshots...' },
     ],
@@ -72,7 +77,7 @@ const MOMENT_PRESETS: MomentPreset[] = [
     label: 'Account Issue',
     title: 'Account Information',
     fields: [
-      { id: 'memberId', type: 'text', label: 'Member ID', required: true, placeholder: 'e.g. JAYA113C88F' },
+      { id: 'memberId', type: 'text', label: 'Member ID', required: true, placeholder: 'e.g. member-123' },
       { id: 'issueType', type: 'select', label: 'Issue Type', required: true, options: ['Login Failed', 'Account Locked', 'Balance Discrepancy', 'Profile Update', 'Other'] },
       { id: 'symptoms', type: 'textarea', label: 'Describe the Issue', required: true, placeholder: 'What happened? When did it start?' },
     ],
@@ -128,6 +133,7 @@ export default function LiveChatChannelWorkspace({
     authType: 'auto',
     accountId: '',
     agentAccountId: '',
+    failureMessages: {},
   })
   const [origConfig, setOrigConfig] = useState<LiveChatConfig | null>(null)
   const [loading, setLoading] = useState(true)
@@ -340,6 +346,19 @@ export default function LiveChatChannelWorkspace({
     if (!validateBeforePersist(nextConfig)) return
     setConfig(nextConfig)
     await saveNow(nextConfig)
+  }
+
+  const updateFailureMessage = (
+    key: keyof NonNullable<LiveChatConfig['failureMessages']>,
+    value: string,
+  ) => {
+    setConfig((current) => ({
+      ...current,
+      failureMessages: {
+        ...(current.failureMessages ?? {}),
+        [key]: value || undefined,
+      },
+    }))
   }
 
   function formatLastChecked(value: string | null) {
@@ -686,18 +705,59 @@ export default function LiveChatChannelWorkspace({
       ) : null}
 
       {activeTab === 'handoff' ? (
-        <div className={`max-w-2xl space-y-4 ${cardCls}`}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.escalationStrategy')}</p>
-          <div>
-            <label className={labelCls}>{t('livechat.transferMessage')}</label>
-            <textarea
-              className={inputCls}
-              rows={3}
-              value={config.transferMessage ?? ''}
-              onChange={(event) => setConfig((current) => ({ ...current, transferMessage: event.target.value || undefined }))}
-              placeholder={isZh ? '正在为您转接人工客服，请稍候...' : 'Transferring you to a human agent, please wait...'}
-            />
-          </div>
+        <div className="max-w-3xl space-y-4">
+          <section className={cardCls}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.escalationStrategy')}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-[var(--fog)]">{t('livechat.escalationDesc')}</p>
+            <div className="mt-4">
+              <label className={labelCls}>{t('livechat.transferMessage')}</label>
+              <textarea
+                className={inputCls}
+                rows={3}
+                value={config.transferMessage ?? ''}
+                onChange={(event) => setConfig((current) => ({ ...current, transferMessage: event.target.value || undefined }))}
+                placeholder={isZh ? '正在为您转接人工客服，请稍候...' : 'Transferring you to a human agent, please wait...'}
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.transferMessageHint')}</p>
+            </div>
+          </section>
+
+          <section className={cardCls}>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.failureMessages')}</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-[var(--fog)]">{t('livechat.failureMessagesHint')}</p>
+            <div className="mt-4 grid gap-4">
+              <div>
+                <label className={labelCls}>{t('livechat.failureMessage.engineUnreachable')}</label>
+                <textarea
+                  className={inputCls}
+                  rows={2}
+                  value={config.failureMessages?.engine_unreachable ?? ''}
+                  onChange={(event) => updateFailureMessage('engine_unreachable', event.target.value)}
+                  placeholder={isZh ? '服务暂时不可用，请稍后重试。' : 'Service is temporarily unavailable. Please try again shortly.'}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>{t('livechat.failureMessage.streamTruncated')}</label>
+                <textarea
+                  className={inputCls}
+                  rows={2}
+                  value={config.failureMessages?.stream_truncated ?? ''}
+                  onChange={(event) => updateFailureMessage('stream_truncated', event.target.value)}
+                  placeholder={isZh ? '回复被中断了，请重新发送一次。' : 'Sorry, the response was interrupted. Please resend your message.'}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>{t('livechat.failureMessage.actionFailed')}</label>
+                <textarea
+                  className={inputCls}
+                  rows={2}
+                  value={config.failureMessages?.action_failed ?? ''}
+                  onChange={(event) => updateFailureMessage('action_failed', event.target.value)}
+                  placeholder={isZh ? '处理时遇到技术问题，请稍后重试或联系人工。' : 'A technical issue occurred. Please try again or contact support.'}
+                />
+              </div>
+            </div>
+          </section>
         </div>
       ) : null}
 

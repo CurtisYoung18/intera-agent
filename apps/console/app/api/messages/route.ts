@@ -26,7 +26,6 @@ import {
   type RuntimeEventSource,
 } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
-import { classifyExplicitMoneyMovementTopic } from '@/lib/agent/money-movement-routing'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
@@ -343,29 +342,11 @@ type CaseRoutingDecision =
   | { kind: 'existing'; caseId: string }
   | { kind: 'new' }
 
-function resolveCaseByExplicitMoneyMovement(
-  userMessage: string,
-  activeCases: Array<{ id: string; type: string }>,
-): CaseRoutingDecision | null {
-  const topic = classifyExplicitMoneyMovementTopic(userMessage)
-  if (!topic) return null
-
-  const targetCase = activeCases.find((activeCase) => {
-    if (topic === 'deposit') return activeCase.type.includes('deposit')
-    return activeCase.type.includes('withdrawal')
-  })
-
-  return targetCase ? { kind: 'existing', caseId: targetCase.id } : { kind: 'new' }
-}
-
 async function resolveCaseByIntent(
   userMessage: string,
   activeCases: Array<{ id: string; type: string }>,
   fallbackCaseId: string,
 ): Promise<CaseRoutingDecision> {
-  const explicitMoneyMovement = resolveCaseByExplicitMoneyMovement(userMessage, activeCases)
-  if (explicitMoneyMovement) return explicitMoneyMovement
-
   const model = process.env.HUB_ROUTING_MODEL || DEFAULT_MEMORY_MODEL
 
   const caseList = activeCases

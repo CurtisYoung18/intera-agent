@@ -97,6 +97,7 @@ export default function LiveChatFormWidget({
             required: field.required,
             options: field.options,
             placeholder: field.placeholder,
+            validation: field.validation,
           })),
           answers: values,
         }),

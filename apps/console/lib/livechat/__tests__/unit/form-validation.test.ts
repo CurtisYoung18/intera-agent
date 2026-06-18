@@ -3,6 +3,29 @@ import { describe, expect, it } from 'vitest'
 import { validateFormAnswers } from '../../form-validation'
 
 describe('validateFormAnswers', () => {
+  it('rejects reversed date ranges declared by field validation metadata', () => {
+    expect(validateFormAnswers(
+      [
+        {
+          id: 'requested_window_start',
+          type: 'date',
+          label: 'Requested Start',
+          validation: { dateRange: { pairId: 'requested_window', role: 'start' } },
+        },
+        {
+          id: 'requested_window_end',
+          type: 'date',
+          label: 'Requested End',
+          validation: { dateRange: { pairId: 'requested_window', role: 'end' } },
+        },
+      ],
+      { requested_window_start: '2026-06-18', requested_window_end: '2026-06-01' },
+    )).toEqual({
+      ok: false,
+      error: 'Requested Start must be earlier than Requested End.',
+    })
+  })
+
   it('rejects reversed from/to date fields', () => {
     expect(validateFormAnswers(
       [

@@ -137,6 +137,12 @@ export interface DefaultHookSeed {
   enabled: boolean
 }
 
+export const HUMAN_HANDOFF_PROMISE_PATTERN = [
+  String.raw`(?:\b(?:i|we)\s+(?:have|'ve)\s+(?:created|opened|submitted|arranged|escalated)\s+(?:a\s+)?(?:ticket|case|handoff|human support request)\b)`,
+  String.raw`(?:\b(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)\b)`,
+  String.raw`(?:已为您创建工单|已经为您创建工单|已安排人工|将安排人工|正在(?:为您|帮您)?人工处理|(?:为您|帮您)?人工处理(?:中|。|，|,|$)|已转人工|已经转人工|已为您转接|客服会(?:尽快)?(?:联系|回复)您|(?:人工|客服|专员)(?:会|将)(?:尽快)?(?:联系|回复)您|专员将尽快与您联系)`,
+].join('|')
+
 export const DEFAULT_HOOKS: DefaultHookSeed[] = [
   {
     name: 'no_high_risk_account_change',
@@ -176,6 +182,27 @@ export const DEFAULT_HOOKS: DefaultHookSeed[] = [
       },
     }),
     severity: 'high',
+    enabled: true,
+  },
+  {
+    name: 'human_handoff_promise_requires_task',
+    description: 'Block replies that promise human support before create_human_task has actually run',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    handler: JSON.stringify({
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { ifPattern: HUMAN_HANDOFF_PROMISE_PATTERN },
+        requireTools: ['create_human_task'],
+        reason: 'Reply promises human support before a persisted human task exists.',
+      },
+      effect: {
+        decision: 'block',
+        guidance: 'Call create_human_task before promising human support, or revise the reply so it does not imply handoff is arranged.',
+      },
+    }),
+    severity: 'critical',
     enabled: true,
   },
   {
@@ -296,7 +323,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
         },
       ],
     }),
-    hookBindings: ['investigate_before_resolve', 'human_review_before_finalize'],
+    hookBindings: ['investigate_before_resolve', 'human_handoff_promise_requires_task', 'human_review_before_finalize'],
     maxAutoTurns: 10,
   },
   {
@@ -382,7 +409,7 @@ export const DEFAULT_CASE_TYPES: DefaultCaseTypeSeed[] = [
         },
       ],
     }),
-    hookBindings: ['investigate_before_resolve'],
+    hookBindings: ['investigate_before_resolve', 'human_handoff_promise_requires_task'],
     maxAutoTurns: 10,
   },
 ]

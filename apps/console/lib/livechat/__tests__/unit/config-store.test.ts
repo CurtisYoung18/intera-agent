@@ -51,13 +51,18 @@ describe('config-store', () => {
         licenseId: 'lic456',
         showSkillStatus: true,
         enabled: true,
-        credentials: '{}',
+        credentials: JSON.stringify({
+          failureMessages: {
+            engine_unreachable: 'Custom unavailable message',
+          },
+        }),
       })
       const config = await getLiveChatConfig('cust-b')
       expect(config).not.toBeNull()
       expect(config!.botAccessToken).toBe('tok123')
       expect(config!.licenseId).toBe('lic456')
       expect(config!.enabled).toBe(true)
+      expect(config!.failureMessages?.engine_unreachable).toBe('Custom unavailable message')
     })
 
     it('downgrades enabled bindings with missing credentials to disabled runtime config', async () => {

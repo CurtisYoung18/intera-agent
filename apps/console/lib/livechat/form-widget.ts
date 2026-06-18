@@ -15,6 +15,12 @@ export interface WidgetFormField {
   required: boolean
   options?: string[]
   placeholder?: string
+  validation?: {
+    dateRange?: {
+      pairId?: string
+      role: 'start' | 'end'
+    }
+  }
 }
 
 const SUPPORTED_WIDGET_FIELD_TYPES = new Set<WidgetFormFieldType>([
@@ -57,6 +63,7 @@ function normalizeField(input: unknown): WidgetFormField | null {
   const options = Array.isArray(candidate.options)
     ? candidate.options.filter((option): option is string => typeof option === 'string' && option.trim().length > 0)
     : undefined
+  const validation = normalizeFieldValidation(candidate.validation)
 
   return {
     key,
@@ -67,6 +74,26 @@ function normalizeField(input: unknown): WidgetFormField | null {
     placeholder: typeof candidate.placeholder === 'string' && candidate.placeholder.trim().length > 0
       ? candidate.placeholder
       : undefined,
+    ...(validation ? { validation } : {}),
+  }
+}
+
+function normalizeFieldValidation(value: unknown): WidgetFormField['validation'] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  const dateRange = record.dateRange
+  if (!dateRange || typeof dateRange !== 'object' || Array.isArray(dateRange)) return undefined
+  const range = dateRange as Record<string, unknown>
+  const role = range.role === 'start' || range.role === 'end' ? range.role : undefined
+  if (!role) return undefined
+  const pairId = typeof range.pairId === 'string' && range.pairId.trim()
+    ? range.pairId.trim()
+    : undefined
+  return {
+    dateRange: {
+      ...(pairId ? { pairId } : {}),
+      role,
+    },
   }
 }
 

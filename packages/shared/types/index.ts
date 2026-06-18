@@ -414,6 +414,12 @@ export type ProcedureRuntimeSignal =
   | 'no_progress_loop'
   | 'knowledge_gap'
 
+export interface ProcedureRuntimeSignalDetector {
+  signal: ProcedureRuntimeSignal
+  patterns: string[]
+  reason?: string
+}
+
 export type ProcedureCondition =
   | {
       id?: string
@@ -497,6 +503,7 @@ export interface ProcedureV2 {
   overview?: string
   knowledgeGuidance?: string
   handoffGuidance?: string
+  runtimeSignalDetectors?: ProcedureRuntimeSignalDetector[]
   steps: ProcedureV2Step[]
 }
 

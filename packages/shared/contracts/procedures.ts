@@ -30,6 +30,13 @@ export const PROCEDURE_RUNTIME_SIGNALS = [
 export const procedureRuntimeSignalSchema = z.enum(PROCEDURE_RUNTIME_SIGNALS)
 export type ProcedureRuntimeSignalContract = z.infer<typeof procedureRuntimeSignalSchema>
 
+export const procedureRuntimeSignalDetectorSchema = z.object({
+  signal: procedureRuntimeSignalSchema,
+  patterns: z.array(z.string().min(1)).default([]),
+  reason: z.string().optional(),
+})
+export type ProcedureRuntimeSignalDetectorContract = z.infer<typeof procedureRuntimeSignalDetectorSchema>
+
 export const procedureConditionSchema = z.discriminatedUnion('kind', [
   z.object({
     id: z.string().min(1).optional(),
@@ -119,6 +126,7 @@ export const procedureV2Schema = z.object({
   overview: z.string().optional(),
   knowledgeGuidance: z.string().optional(),
   handoffGuidance: z.string().optional(),
+  runtimeSignalDetectors: z.array(procedureRuntimeSignalDetectorSchema).default([]),
   steps: z.array(procedureV2StepSchema).min(1, 'at least one step is required'),
 })
 export type ProcedureV2Contract = z.infer<typeof procedureV2Schema>

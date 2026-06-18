@@ -25,6 +25,11 @@ const livechatConfigSchema = z.object({
   enabled: z.boolean(),
   transferGroupId: z.number().optional(),
   transferMessage: z.string().optional(),
+  failureMessages: z.object({
+    engine_unreachable: z.string().optional(),
+    stream_truncated: z.string().optional(),
+    action_failed: z.string().optional(),
+  }).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -42,6 +47,7 @@ export async function GET(request: NextRequest) {
             licenseId: '',
             showSkillStatus: true,
             enabled: false,
+            failureMessages: {},
           },
         })
       }
@@ -60,6 +66,7 @@ export async function GET(request: NextRequest) {
             licenseId: '',
             showSkillStatus: true,
             enabled: false,
+            failureMessages: {},
           },
         })
       }

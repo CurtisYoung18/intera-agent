@@ -196,6 +196,17 @@ describe('LiveChatRenderer', () => {
         }),
       ])
     })
+
+    it('uses configured transfer copy for the handoff card subtitle', () => {
+      const r = new LiveChatRenderer(true, { transferMessage: 'A human specialist is joining this chat now.' })
+      const actions = r.render(makeEvent('human_task_created', {
+        question: 'Need help with payment.',
+      }), makeCtx())
+      const a = actions[0]!
+      expect(a.type).toBe('send_card')
+      const card = (a as { type: 'send_card'; card: { subtitle?: string } }).card
+      expect(card.subtitle).toBe('A human specialist is joining this chat now.')
+    })
   })
 
   describe('unknown event', () => {
@@ -212,7 +223,15 @@ describe('LiveChatRenderer', () => {
       const actions = r.render(makeEvent('error', { message: 'LLM API error' }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_text')
-      expect((a as { text: string }).text).toContain('temporarily unavailable')
+      expect((a as { text: string }).text).toContain('response was interrupted')
+    })
+
+    it('uses configured stream interruption copy', () => {
+      const r = new LiveChatRenderer(true, {
+        failureMessages: { stream_truncated: 'Custom retry message.' },
+      })
+      const actions = r.render(makeEvent('error', { message: 'LLM API error' }), makeCtx())
+      expect(actions[0]).toEqual({ type: 'send_text', text: 'Custom retry message.' })
     })
   })
 })

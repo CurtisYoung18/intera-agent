@@ -29,7 +29,15 @@ export interface LiveChatConfig {
   enabled: boolean
   transferGroupId?: number
   transferMessage?: string
+  failureMessages?: LiveChatFailureMessages
 }
+
+export type LiveChatFailureReason =
+  | 'engine_unreachable'
+  | 'stream_truncated'
+  | 'action_failed'
+
+export type LiveChatFailureMessages = Partial<Record<LiveChatFailureReason, string>>
 
 // intera_widget_payload variants
 export type WidgetPayloadKind =
@@ -59,6 +67,12 @@ export interface FormField {
   required?: boolean
   options?: string[]
   placeholder?: string
+  validation?: {
+    dateRange?: {
+      pairId?: string
+      role: 'start' | 'end'
+    }
+  }
 }
 
 export interface WidgetPayload {

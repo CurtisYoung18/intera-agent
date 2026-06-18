@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { AgentConfigData, SSEEvent, ToolDefinition } from '@intera/shared/types'
-import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
+import { DEFAULT_HOOKS, DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { AgentLoop } from '../../loop'
 import { ToolRouter } from '../../tools'
 import { HookEngine } from '../../hook-engine'
@@ -313,6 +313,43 @@ describe('HookEngine bindings and handlers', () => {
       action: 'block',
       reason: 'Reply promises local support handoff without durable handoff evidence.',
     })
+  })
+
+  it('ships human handoff promise blocking as a visible default Stop Hook', async () => {
+    const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
+    expect(defaultHook).toBeDefined()
+
+    const engine = new HookEngine('agent_1')
+    engine.setHook(defaultHook!)
+
+    const withoutTask = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [],
+      traceSummary: [],
+      replyDraft: '已安排人工客服为您继续处理，请稍候。',
+    })
+    expect(withoutTask.summary).toBe('block')
+    expect(withoutTask.results[0]).toMatchObject({
+      hookName: 'human_handoff_promise_requires_task',
+      action: 'block',
+      reason: 'Reply promises human support before a persisted human task exists.',
+    })
+
+    const withTask = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [{ name: 'create_human_task' }],
+      traceSummary: [],
+      replyDraft: '已安排人工客服为您继续处理，请稍候。',
+    })
+    expect(withTask.summary).toBe('allow')
   })
 })
 

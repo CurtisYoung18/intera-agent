@@ -3,6 +3,12 @@ type FormFieldLike = {
   key?: string
   type?: string
   label?: string
+  validation?: {
+    dateRange?: {
+      pairId?: string
+      role?: 'start' | 'end'
+    }
+  }
 }
 
 type DateRangePair = {
@@ -16,7 +22,7 @@ export type FormValidationResult =
   | { ok: true }
   | { ok: false; error: string }
 
-const EXPLICIT_DATE_RANGE_PAIRS = [
+const LEGACY_DATE_RANGE_PAIRS = [
   ['from_date', 'to_date'],
   ['from_time', 'to_time'],
   ['from_at', 'to_at'],
@@ -40,6 +46,60 @@ function isDateField(field: FormFieldLike | undefined): boolean {
   return field?.type === 'date'
 }
 
+function appendPair(
+  pairs: DateRangePair[],
+  seen: Set<string>,
+  startField: FormFieldLike | undefined,
+  endField: FormFieldLike | undefined,
+  startId: string,
+  endId: string,
+): void {
+  if (!isDateField(startField) || !isDateField(endField)) return
+  const key = `${startId}->${endId}`
+  if (seen.has(key)) return
+  seen.add(key)
+  pairs.push({
+    startId,
+    endId,
+    startLabel: displayLabel(startField, startId),
+    endLabel: displayLabel(endField, endId),
+  })
+}
+
+function discoverConfiguredDateRangePairs(
+  fields: FormFieldLike[],
+  byId: Map<string, FormFieldLike>,
+  pairs: DateRangePair[],
+  seen: Set<string>,
+): void {
+  const grouped = new Map<string, { start?: string; end?: string }>()
+  for (const field of fields) {
+    const id = fieldId(field)
+    if (!id) continue
+    const dateRange = field.validation?.dateRange
+    if (!dateRange?.role) continue
+    const pairId = dateRange.pairId?.trim() || 'default'
+    const current = grouped.get(pairId) ?? {}
+    current[dateRange.role] = id
+    grouped.set(pairId, current)
+  }
+
+  for (const group of grouped.values()) {
+    if (!group.start || !group.end) continue
+    appendPair(pairs, seen, byId.get(group.start), byId.get(group.end), group.start, group.end)
+  }
+}
+
+function discoverLegacyDateRangePairs(
+  byId: Map<string, FormFieldLike>,
+  pairs: DateRangePair[],
+  seen: Set<string>,
+): void {
+  for (const [startId, endId] of LEGACY_DATE_RANGE_PAIRS) {
+    appendPair(pairs, seen, byId.get(startId), byId.get(endId), startId, endId)
+  }
+}
+
 function discoverDateRangePairs(fields: FormFieldLike[]): DateRangePair[] {
   const byId = new Map<string, FormFieldLike>()
   for (const field of fields) {
@@ -49,20 +109,8 @@ function discoverDateRangePairs(fields: FormFieldLike[]): DateRangePair[] {
 
   const pairs: DateRangePair[] = []
   const seen = new Set<string>()
-  for (const [startId, endId] of EXPLICIT_DATE_RANGE_PAIRS) {
-    const startField = byId.get(startId)
-    const endField = byId.get(endId)
-    if (!isDateField(startField) || !isDateField(endField)) continue
-    const key = `${startId}->${endId}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    pairs.push({
-      startId,
-      endId,
-      startLabel: displayLabel(startField, startId),
-      endLabel: displayLabel(endField, endId),
-    })
-  }
+  discoverConfiguredDateRangePairs(fields, byId, pairs, seen)
+  discoverLegacyDateRangePairs(byId, pairs, seen)
 
   return pairs
 }

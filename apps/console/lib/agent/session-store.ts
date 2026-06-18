@@ -66,8 +66,6 @@ import {
   finalizationBlockers,
   findHandoffMatch,
   findLatestPersistedHandoffEvidence,
-  hasPersistedHandoffEvidence,
-  promisesHumanHandoff,
 } from '@intera/runtime-core/procedure-run-finalization'
 import {
   assessProcedureToolOutcome,
@@ -670,33 +668,25 @@ export function recordProcedureTextReply(caseId: string, input: {
   text: string
   basedOnInputEpoch?: number
   alreadyStreamed?: boolean
-}): { stale: boolean; blockedReason?: string; run?: ProcedureRunState } {
+}): { stale: boolean; run?: ProcedureRunState } {
   const session = sessions.get(caseId)
   const run = session?.procedureRuntime.activeProcedureRun
   if (!session || !run) return { stale: false }
   const basedOn = input.basedOnInputEpoch ?? session.latestInputEpoch
   const stale = basedOn < session.latestInputEpoch
   const recordedAt = new Date().toISOString()
-  let blockedReason: string | undefined
-  if (!stale && promisesHumanHandoff(input.text) && !hasPersistedHandoffEvidence(run)) {
-    blockedReason = 'A customer-facing human-handoff promise was drafted before create_human_task produced persisted evidence.'
-    run.blockers = [...new Set([...run.blockers, blockedReason])]
-  }
   upsertEvidence(run, {
     id: `text:${recordedAt}:${basedOn}`,
     kind: 'text_reply',
     label: stale
       ? 'Stale customer-facing reply withheld'
-      : blockedReason
-        ? 'Unsafe human-handoff promise withheld'
-        : 'Customer-facing reply drafted',
-    state: stale || blockedReason ? 'stale' : 'canonical',
+      : 'Customer-facing reply drafted',
+    state: stale ? 'stale' : 'canonical',
     createdAt: recordedAt,
     basedOnInputEpoch: basedOn,
     metadata: {
       textPreview: input.text.slice(0, 240),
       alreadyStreamed: input.alreadyStreamed === true,
-      blockedReason,
     },
   })
   appendProcedureTimeline(session, run, {
@@ -705,18 +695,15 @@ export function recordProcedureTextReply(caseId: string, input: {
     basedOnInputEpoch: basedOn,
     summary: stale
       ? `Stale text reply${input.alreadyStreamed ? ' already streamed' : ''}`
-      : blockedReason
-        ? 'Unsafe human-handoff promise withheld'
-        : `Current text reply${input.alreadyStreamed ? ' already streamed' : ''}`,
+      : `Current text reply${input.alreadyStreamed ? ' already streamed' : ''}`,
     metadata: {
       textPreview: input.text.slice(0, 240),
-      evidenceState: stale || blockedReason ? 'stale' : 'canonical',
+      evidenceState: stale ? 'stale' : 'canonical',
       alreadyStreamed: input.alreadyStreamed === true,
-      blockedReason,
     },
   })
   scheduleRunPersist(session, run)
-  return { stale, blockedReason, run: cloneRun(run) }
+  return { stale, run: cloneRun(run) }
 }
 
 export function finalizeProcedureRun(caseId: string, input: {

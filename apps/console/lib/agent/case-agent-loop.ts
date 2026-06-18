@@ -15,6 +15,10 @@ import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streamin
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
 import { getActiveProcedureRun, recordProcedureToolResult } from './session-store'
+import {
+  HUMAN_TASK_CREATE_FAILED_MESSAGE,
+  HUMAN_TASK_CREATE_FAILED_PROGRESS,
+} from './human-task-errors'
 
 export interface CaseLoopServices {
   caseId: string
@@ -287,7 +291,7 @@ export class CaseAgentLoop {
       humanTaskResult.output = {
         ok: false,
         output: null,
-        error: 'Unable to create the human task. Please retry or contact support.',
+        error: HUMAN_TASK_CREATE_FAILED_MESSAGE,
         latencyMs: humanTaskResult.latencyMs,
       }
       if (humanTaskResult.toolUse) {
@@ -297,7 +301,7 @@ export class CaseAgentLoop {
       recordProcedureToolResult(this.services.caseId, {
         toolName: humanTaskResult.name,
         toolUseId: humanTaskResult.toolUse?.id,
-        toolError: 'Unable to create the human task. Please retry or contact support.',
+        toolError: HUMAN_TASK_CREATE_FAILED_MESSAGE,
       })
       sendEvent({
         type: 'tool_result',
@@ -313,7 +317,7 @@ export class CaseAgentLoop {
         `Tool: ${humanTaskResult.name}`,
         {
           toolName: humanTaskResult.name,
-          error: 'Unable to create the human task. Please retry or contact support.',
+          error: HUMAN_TASK_CREATE_FAILED_MESSAGE,
           iteration: iterationCount,
         },
       )
@@ -322,7 +326,7 @@ export class CaseAgentLoop {
         data: {
           stage: this._currentStage,
           iteration: iterationCount,
-          task: 'Human task creation failed - please try again or contact support',
+          task: HUMAN_TASK_CREATE_FAILED_PROGRESS,
         },
         timestamp: new Date().toISOString(),
       })

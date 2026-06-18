@@ -19,6 +19,26 @@ import {
   finalizeProcedureRun,
 } from '../../session-store'
 
+function humanRequestDetectors() {
+  return [{
+    signal: 'explicit_human_request' as const,
+    patterns: [
+      String.raw`(?:connect|transfer)\s+(?:me\s+)?(?:to\s+)?(?:a\s+)?human`,
+    ],
+    reason: 'Procedure detector matched explicit human request.',
+  }]
+}
+
+function knowledgeGapDetectors() {
+  return [{
+    signal: 'knowledge_gap' as const,
+    patterns: [
+      String.raw`where\s+(?:do|can)\s+i\s+find`,
+    ],
+    reason: 'Procedure detector matched knowledge-gap request.',
+  }]
+}
+
 function simpleToolProcedure(toolName: string) {
   return {
     version: 'v2' as const,
@@ -273,8 +293,8 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('withholds a human-handoff promise until create_human_task produces persisted evidence', () => {
-    const caseId = 'r3-human-promise-gate'
+  it('records human-handoff-like text without hidden policy judgement', () => {
+    const caseId = 'r3-human-promise-record-only'
     recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
     startProcedureRun(caseId, {
       procedureId: 'human_support_requested',
@@ -307,66 +327,12 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(reply.stale).toBe(false)
-    expect(reply.blockedReason).toContain('human-handoff promise')
-    expect(reply.run?.blockers).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('human-handoff promise'),
-      ]),
-    )
+    expect(reply.run?.blockers).toEqual([])
     expect(reply.run?.evidence.at(-1)).toMatchObject({
       kind: 'text_reply',
-      label: 'Unsafe human-handoff promise withheld',
-      state: 'stale',
-      metadata: expect.objectContaining({
-        blockedReason: expect.stringContaining('human-handoff promise'),
-      }),
+      label: 'Customer-facing reply drafted',
+      state: 'canonical',
     })
-    closeSession(caseId)
-  })
-
-  it('withholds softer Chinese manual-processing promises without persisted handoff evidence', () => {
-    const caseId = 'r3-human-promise-soft-zh'
-    recordInitialInputEvent(caseId, { content: '我忘了提款密码，请人工帮我重置。' })
-    startProcedureRun(caseId, {
-      procedureId: 'withdrawal_password_reset',
-      displayName: 'Forgot withdrawal password',
-      procedure: {
-        version: 'v2',
-        whenToUse: 'Use when withdrawal-password recovery needs help.',
-        steps: [
-          {
-            id: 'handoff',
-            title: 'Request manual reset help',
-            guidance: 'Create a persisted human handoff before promising manual handling.',
-            actions: [
-              {
-                id: 'handoff_now',
-                kind: 'request_human_handoff',
-                label: 'Request human help',
-                queue: 'account_security',
-              },
-            ],
-            branches: [],
-          },
-        ],
-      },
-    })
-
-    for (const text of [
-      '您已提供会员ID和登录账号，正在为您人工处理提款密码重置，请稍候。',
-      '若需要进一步身份验证，客服会联系您。',
-      '专员会尽快联系您继续处理。',
-    ]) {
-      const reply = recordProcedureTextReply(caseId, { text, basedOnInputEpoch: 1 })
-      expect(reply.stale).toBe(false)
-      expect(reply.blockedReason).toContain('human-handoff promise')
-      expect(reply.run?.evidence.at(-1)).toMatchObject({
-        kind: 'text_reply',
-        label: 'Unsafe human-handoff promise withheld',
-        state: 'stale',
-      })
-    }
-
     closeSession(caseId)
   })
 
@@ -419,15 +385,11 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(reply.stale).toBe(false)
-    expect(reply.blockedReason).toBeUndefined()
     expect(reply.run?.blockers).toEqual([])
     expect(reply.run?.evidence.at(-1)).toMatchObject({
       kind: 'text_reply',
       label: 'Customer-facing reply drafted',
       state: 'canonical',
-      metadata: expect.objectContaining({
-        blockedReason: undefined,
-      }),
     })
     closeSession(caseId)
   })
@@ -441,6 +403,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
+        runtimeSignalDetectors: humanRequestDetectors(),
         steps: [
           {
             id: 'triage',
@@ -496,6 +459,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
+        runtimeSignalDetectors: humanRequestDetectors(),
         steps: [
           {
             id: 'triage',
@@ -541,6 +505,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
+        runtimeSignalDetectors: humanRequestDetectors(),
         steps: [
           {
             id: 'triage',
@@ -611,6 +576,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
+        runtimeSignalDetectors: humanRequestDetectors(),
         steps: [
           {
             id: 'triage',
@@ -680,6 +646,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
+        runtimeSignalDetectors: knowledgeGapDetectors(),
         steps: [
           {
             id: 'orient_customer',
@@ -978,7 +945,6 @@ describe('R3 runtime event protocol', () => {
     })
 
     expect(reply.stale).toBe(false)
-    expect(reply.blockedReason).toBeUndefined()
     expect(reply.run?.steps.find((step) => step.id === 'review_recent_transactions')?.status).not.toBe('completed')
     expect(finalizeProcedureRun(caseId, {
       runId: started.run.runId,

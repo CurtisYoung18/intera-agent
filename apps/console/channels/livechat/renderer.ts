@@ -7,8 +7,10 @@ import type { ChannelRenderer, RenderContext } from '@intera/shared/channels/ren
 import { CHANNEL_CAPS } from '@intera/shared/channels/channel'
 import type { Channel } from '@intera/shared/channels/channel'
 import type { SSEEvent } from '@intera/shared/types'
-import type { BridgeAction, FormField } from '@/lib/livechat/types'
+import type { BridgeAction, FormField, LiveChatFailureMessages } from '@/lib/livechat/types'
 import { detectWidgetLocale, getWidgetCopy } from '@/lib/livechat/form-widget'
+import { resolveLiveChatWidgetUrl } from '@/lib/livechat/widget-url'
+import { liveChatFailureMessage } from '@/lib/livechat/failure-messages'
 
 function summarizeHandoffFocus(question: string | undefined, locale: 'zh' | 'en'): string | undefined {
   const trimmed = question?.trim()
@@ -55,7 +57,13 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
   readonly channel: Channel = 'livechat'
   readonly capabilities = CHANNEL_CAPS.livechat
 
-  constructor(private readonly showSkillStatus: boolean) {}
+  constructor(
+    private readonly showSkillStatus: boolean,
+    private readonly options: {
+      failureMessages?: LiveChatFailureMessages
+      transferMessage?: string
+    } = {},
+  ) {}
 
   /** Translate a single SSE event into BridgeAction(s). */
   render(event: SSEEvent, ctx: RenderContext): BridgeAction[] {
@@ -101,7 +109,7 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           })),
         })
         const copy = getWidgetCopy(locale)
-        const baseUrl = process.env.LIVECHAT_WIDGET_URL ?? 'https://demo.anytrans.ai/livechat-widget'
+        const baseUrl = resolveLiveChatWidgetUrl()
         const params = new URLSearchParams({
           view: 'form',
           caseId: formCaseId,
@@ -172,11 +180,12 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           description: d?.queue,
         })
         const copy = getHandoffCopy(locale, summarizeHandoffFocus(d?.question, locale))
+        const configuredSubtitle = this.options.transferMessage?.trim()
         return {
           type: 'send_card',
           card: {
             title: copy.title,
-            subtitle: copy.subtitle,
+            subtitle: configuredSubtitle || copy.subtitle,
             buttons: [{
               id: 'handoff_followup',
               label: copy.followupLabel,
@@ -189,8 +198,10 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       // ── error: { message?, reason? } ──
       // BUG-B: LLM errors during streaming must produce a user-visible message.
       case 'error': {
-        const d = event.data as { message?: string; reason?: string } | undefined
-        return { type: 'send_text', text: 'Service is temporarily unavailable. Please try again. If the issue persists, resend your message.' }
+        return {
+          type: 'send_text',
+          text: liveChatFailureMessage({ failureMessages: this.options.failureMessages }, 'stream_truncated'),
+        }
       }
 
       default:

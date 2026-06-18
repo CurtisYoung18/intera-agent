@@ -36,6 +36,7 @@ import {
   PROCEDURE_RUNTIME_SIGNALS,
   PROCEDURE_V2_ACTION_KINDS,
   type CaseTypeItem,
+  type ProcedureRuntimeSignalDetectorContract,
   type ProcedureRuntimeSignalContract,
   type ProcedureV2ActionContract,
   type ProcedureV2ActionKindContract,
@@ -117,7 +118,16 @@ type ProcedureEditorDraft = {
   overview: string
   knowledgeGuidance: string
   handoffGuidance: string
+  runtimeSignalDetectors: Record<ProcedureRuntimeSignalContract, string>
   steps: StepDraft[]
+}
+
+function emptyRuntimeSignalDetectors(): Record<ProcedureRuntimeSignalContract, string> {
+  return {
+    explicit_human_request: '',
+    no_progress_loop: '',
+    knowledge_gap: '',
+  }
 }
 
 const TOOL_EVENTS = ['called', 'succeeded', 'failed', 'stale', 'empty_result'] as const
@@ -403,6 +413,16 @@ function branchDraftFromContract(branch: ProcedureV2BranchContract): BranchDraft
   }
 }
 
+function runtimeSignalDetectorsFromContract(
+  detectors: ProcedureRuntimeSignalDetectorContract[] | undefined,
+): Record<ProcedureRuntimeSignalContract, string> {
+  const draft = emptyRuntimeSignalDetectors()
+  for (const detector of detectors ?? []) {
+    draft[detector.signal] = detector.patterns.join('\n')
+  }
+  return draft
+}
+
 function stepDraftFromContract(step: ProcedureV2StepContract): StepDraft {
   return {
     id: step.id,
@@ -431,6 +451,7 @@ function createEmptyDraft(t: TranslateFn): ProcedureEditorDraft {
     overview: '',
     knowledgeGuidance: '',
     handoffGuidance: '',
+    runtimeSignalDetectors: emptyRuntimeSignalDetectors(),
     steps: [
       {
         id: 'step_1',
@@ -477,8 +498,27 @@ function toDraft(t: TranslateFn, item: CaseTypeItem): ProcedureEditorDraft {
     overview: parsedProcedure?.overview || item.description || '',
     knowledgeGuidance: parsedProcedure?.knowledgeGuidance || '',
     handoffGuidance: parsedProcedure?.handoffGuidance || '',
+    runtimeSignalDetectors: runtimeSignalDetectorsFromContract(parsedProcedure?.runtimeSignalDetectors),
     steps: steps.length > 0 ? steps : [buildStepDraft(t, 0)],
   }
+}
+
+function toRuntimeSignalDetectors(
+  t: TranslateFn,
+  draft: ProcedureEditorDraft,
+): ProcedureRuntimeSignalDetectorContract[] {
+  return PROCEDURE_RUNTIME_SIGNALS.flatMap((signal) => {
+    const patterns = draft.runtimeSignalDetectors[signal]
+      .split('\n')
+      .map((pattern) => pattern.trim())
+      .filter(Boolean)
+    if (patterns.length === 0) return []
+    return [{
+      signal,
+      patterns,
+      reason: `${runtimeSignalLabel(t, signal)} matched a configured Procedure detector.`,
+    }]
+  })
 }
 
 function toCondition(t: TranslateFn, branch: BranchDraft) {
@@ -573,6 +613,7 @@ function toProcedure(t: TranslateFn, draft: ProcedureEditorDraft): ProcedureV2Co
     overview: emptyToUndefined(draft.overview),
     knowledgeGuidance: emptyToUndefined(draft.knowledgeGuidance),
     handoffGuidance: emptyToUndefined(draft.handoffGuidance),
+    runtimeSignalDetectors: toRuntimeSignalDetectors(t, draft),
     steps: draft.steps.map((step, index) => ({
       id: step.id.trim() || `step_${index + 1}`,
       title: step.title.trim() || t('procedureEditor.defaults.stepTitle', { n: index + 1 }),
@@ -1680,6 +1721,33 @@ export default function BuildProcedureDetailPage() {
                             className="glass-input-console resize-y text-[13px]"
                             placeholder={t('procedureEditor.placeholder.overview')}
                           />
+                        </MetaField>
+                        <MetaField label={t('procedureEditor.form.runtimeSignalDetectors')}>
+                          <>
+                            <div className="grid gap-3 md:grid-cols-3">
+                              {PROCEDURE_RUNTIME_SIGNALS.map((signal) => (
+                                <label key={signal} className="space-y-1.5">
+                                  <span className="text-[11px] font-medium text-[var(--fog)]">{runtimeSignalLabel(t, signal)}</span>
+                                  <textarea
+                                    value={draft.runtimeSignalDetectors[signal]}
+                                    onChange={(event) => setDraft((current) => ({
+                                      ...current,
+                                      runtimeSignalDetectors: {
+                                        ...current.runtimeSignalDetectors,
+                                        [signal]: event.target.value,
+                                      },
+                                    }))}
+                                    rows={3}
+                                    className="glass-input-console resize-y font-mono text-[12px]"
+                                    placeholder={t('procedureEditor.placeholder.runtimeSignalPatterns')}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                            <p className="mt-2 text-[11px] leading-5 text-[var(--fog)]">
+                              {t('procedureEditor.hints.runtimeSignalDetectors')}
+                            </p>
+                          </>
                         </MetaField>
                         <MetaField label={t('caseTypes.defaultGoal')}>
                           <textarea

@@ -271,6 +271,20 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
               required: { type: 'boolean', description: 'Whether this field is required' },
               placeholder: { type: 'string', description: 'Placeholder text' },
               options: { type: 'array', items: { type: 'string' }, description: 'Options for select type' },
+              validation: {
+                type: 'object',
+                description: 'Optional field validation metadata. For date ranges, set dateRange.pairId to the same value on both fields and dateRange.role to start or end.',
+                properties: {
+                  dateRange: {
+                    type: 'object',
+                    properties: {
+                      pairId: { type: 'string' },
+                      role: { type: 'string', enum: ['start', 'end'] },
+                    },
+                    required: ['role'],
+                  },
+                },
+              },
             },
             required: ['key', 'label', 'type'],
           },
@@ -293,6 +307,12 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
         required: z.boolean().optional(),
         placeholder: z.string().optional(),
         options: z.array(z.string()).optional(),
+        validation: z.object({
+          dateRange: z.object({
+            pairId: z.string().optional(),
+            role: z.enum(['start', 'end']),
+          }).optional(),
+        }).optional(),
       })).min(1),
     }),
   },

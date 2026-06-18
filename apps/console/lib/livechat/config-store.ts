@@ -26,6 +26,17 @@ export function invalidateLiveChatConfig(agentConfigId: string): void {
   cache.delete(cacheKey(agentConfigId))
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function optionalStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isPlainRecord(value)) return undefined
+  const entries = Object.entries(value)
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
 type AgentConfigLineageRow = {
   id: string
   parentId: string | null
@@ -55,6 +66,7 @@ function hydrateFromChannelBinding(row: {
     enabled: row.enabled,
     transferGroupId: creds.transferGroupId as number | undefined,
     transferMessage: creds.transferMessage as string | undefined,
+    failureMessages: optionalStringRecord(creds.failureMessages) as LiveChatConfig['failureMessages'],
   }
 
   if (config.enabled && !hasRequiredLiveChatCredentials(config)) {
@@ -192,6 +204,7 @@ export async function upsertLiveChatConfig(
     showSkillStatus: data.showSkillStatus,
     transferGroupId: data.transferGroupId,
     transferMessage: data.transferMessage,
+    failureMessages: data.failureMessages,
   })
 
   // Upsert channel_bindings row by agentConfigId + channel

@@ -21,6 +21,7 @@ import {
   procedureV2StepSchema,
   simulateProcedure,
   type ProcedureConditionContract,
+  type ProcedureRuntimeSignalDetectorContract,
   type ProcedureRuntimeSignalContract,
   type ProcedureSimulationInputContract,
   type ProcedureSimulationReceiptContract,
@@ -111,6 +112,7 @@ export {
 
 export type {
   ProcedureConditionContract,
+  ProcedureRuntimeSignalDetectorContract,
   ProcedureRuntimeSignalContract,
   ProcedureSimulationInputContract,
   ProcedureSimulationReceiptContract,

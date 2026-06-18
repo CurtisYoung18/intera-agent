@@ -8,6 +8,7 @@ import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import type { ToolExecutionResult } from './streaming-tool-executor'
 import { buildHumanHandoffQuestion } from './human-handoff'
+import { HUMAN_TASK_CREATE_FAILED_MESSAGE } from './human-task-errors'
 import { latestUserText } from './customer-messages'
 import { profileKey } from './identity'
 import {
@@ -166,7 +167,7 @@ export class RuntimeManagedToolResolver {
     } catch (error) {
       console.error('[AgentLoop] Failed to persist create_human_task in general mode:', error)
       this.replaceToolOutput(result, {
-        error: 'Unable to create the human task. Please retry or contact support.',
+        error: HUMAN_TASK_CREATE_FAILED_MESSAGE,
       }, true)
       return null
     }

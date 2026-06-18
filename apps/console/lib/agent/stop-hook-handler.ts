@@ -71,9 +71,7 @@ export class StopHookHandler {
     }
 
     const messages = this.deps.getMessages()
-    const safeMessage = stopEval.summary === 'escalate'
-      ? escalationMessageFor(latestUserText(messages))
-      : 'I need to route this to a human specialist to make sure we give you an accurate answer. A teammate will review the case and follow up.'
+    const safeMessage = escalationMessageFor(latestUserText(messages))
 
     const queue = this.deps.caseSchema?.escalateOn?.[0] || 'general'
 

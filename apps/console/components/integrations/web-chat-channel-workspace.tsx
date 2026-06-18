@@ -9,13 +9,18 @@ export default function WebChatChannelWorkspace({ onBack }: { onBack: () => void
   const { locale } = useConsoleLocale()
   const { orgId } = useSession()
   const [copied, setCopied] = useState(false)
+  const widgetBaseUrl = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : '')
+  ).replace(/\/$/, '')
+  const widgetScriptUrl = widgetBaseUrl ? `${widgetBaseUrl}/widget.js` : '/widget.js'
 
   const embedScript = `<script>
   (function(w,d,s,o,f,js,fjs){
     w['InteraWidget']=o;w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};
     js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];
     js.id=o;js.src=f;js.async=1;fjs.parentNode.insertBefore(js,fjs);
-  }(window,document,'script','iw','https://demo.anytrans.ai/widget.js'));
+  }(window,document,'script','iw','${widgetScriptUrl}'));
   iw('init', { orgId: '${orgId}' });
 </script>`
 
