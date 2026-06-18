@@ -756,7 +756,7 @@ const HOOKS: HookSeed[] = [
       check: {
         kind: 'rule',
         match: {
-          ifPattern: '\\b(successful\\s+cha|credited|credit\\s+bhayeko|wallet\\s+ma\\s+credit|approved\\s+cha|status\\s+pani\\s+approved)\\b',
+          ifPattern: '\\b(wallet\\s+ma\\s+credit|status\\s+pani\\s+approved)\\b|\\b(timro|tapai(?:ko)?|your|yo\\s+(?:deposit\\s+)?receipt|receipt)\\b[\\s\\S]{0,180}\\b(successful\\s+cha|credited|credit\\s+bhayeko|approved\\s+cha)\\b|\\b(successful\\s+cha|credited|credit\\s+bhayeko|approved\\s+cha)\\b[\\s\\S]{0,180}\\b(timro|tapai(?:ko)?|your|yo\\s+(?:deposit\\s+)?receipt|receipt)\\b',
         },
         requireToolsAny: ['check_latest_deposit_status', 'get_transaction_history'],
         reason: 'Reply appears to claim a live deposit/transaction status without live tool evidence.',
