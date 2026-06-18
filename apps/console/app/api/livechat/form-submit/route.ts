@@ -7,6 +7,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { getSession } from '@/lib/livechat/session-store'
 import { getLiveChatConfigForFamily, getLiveChatConfigForOrg } from '@/lib/livechat/config-store'
 import { handleIncomingEvent } from '@/lib/livechat/bridge'
+import { validateFormAnswers } from '@/lib/livechat/form-validation'
 
 const fieldSchema = z.object({
   id: z.string().min(1).max(120),
@@ -36,6 +37,11 @@ export const POST = defineRoute<z.infer<typeof formSchema>>({
     for (const [k, v] of Object.entries(input.answers)) {
       if (v == null) continue
       normalized[k] = String(v)
+    }
+
+    const validation = validateFormAnswers(input.fields, normalized)
+    if (!validation.ok) {
+      return NextResponse.json({ error: validation.error }, { status: 400 })
     }
 
     const session = await getSession(input.chatId)

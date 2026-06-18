@@ -132,6 +132,72 @@ describe('POST /api/livechat/form-submit', () => {
     )
   })
 
+  it('rejects reversed date ranges before handing the form to the bridge', async () => {
+    const res = await POST(makeRequest({
+      chatId: 'chat-1',
+      title: 'Last Bet Details',
+      fields: [
+        { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+        { id: 'from_date', type: 'date', label: 'From Date', required: true },
+        { id: 'to_date', type: 'date', label: 'To Date', required: true },
+      ],
+      answers: {
+        member_id: 'JAYA1108F7C',
+        from_date: '2026-06-18',
+        to_date: '2026-06-01',
+      },
+    }) as any)
+
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({
+      error: 'From Date must be earlier than To Date.',
+    })
+    expect(mockGetSession).not.toHaveBeenCalled()
+    expect(mockHandleIncomingEvent).not.toHaveBeenCalled()
+  })
+
+  it('accepts same-day date-only ranges by treating the end date as end-of-day', async () => {
+    const config = { enabled: true, botAccessToken: 'bot', licenseId: 'lic' }
+    mockGetSession.mockResolvedValue({
+      chatId: 'chat-1',
+      orgId: 'default',
+      userId: 'user-1',
+      caseId: 'case-1',
+      agentConfigId: 'agent-1',
+      state: 'idle',
+      textBuffer: '',
+    })
+    mockGetLiveChatConfigForFamily.mockResolvedValue(config)
+
+    const res = await POST(makeRequest({
+      chatId: 'chat-1',
+      title: 'Last Bet Details',
+      fields: [
+        { id: 'from_date', type: 'date', label: 'From Date', required: true },
+        { id: 'to_date', type: 'date', label: 'To Date', required: true },
+      ],
+      answers: {
+        from_date: '2026-06-18',
+        to_date: '2026-06-18',
+      },
+    }) as any)
+
+    expect(res.status).toBe(200)
+    expect(mockHandleIncomingEvent).toHaveBeenCalledWith(
+      'chat-1',
+      'default',
+      'user-1',
+      expect.objectContaining({
+        type: 'form_submit',
+        form: expect.objectContaining({
+          answers: { from_date: '2026-06-18', to_date: '2026-06-18' },
+        }),
+      }),
+      config,
+      'agent-1',
+    )
+  })
+
   it('returns 404 when neither the session binding nor the org fallback is configured', async () => {
     mockGetSession.mockResolvedValue({
       chatId: 'chat-missing',
