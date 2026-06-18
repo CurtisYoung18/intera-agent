@@ -22,6 +22,19 @@ import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import { startProcedureRun } from './session-store'
 
+type CaseTypeRowLike = {
+  type: string
+  displayName: string
+  icon: string | null
+  description: string | null
+  requiredFacts: unknown
+  defaultGoal: string
+  escalateOn: unknown
+  autoCloseConditions: unknown
+  procedure?: string | null
+  maxAutoTurns?: number | null
+}
+
 // ---------------------------------------------------------------------------
 // Context — dependencies the interceptor needs from AgentLoop
 // ---------------------------------------------------------------------------
@@ -116,20 +129,18 @@ async function handleStartProcedure(
 ): Promise<InterceptAction> {
   const toolInput = result.toolUse?.input || {}
   const requestedProcedureId = String(toolInput.procedureId || toolInput.caseType || '')
-  let procedureId = requestedProcedureId
   let reason = String(toolInput.reason || 'The customer raised an issue that matches this procedure.')
   const confidence = typeof toolInput.confidence === 'number' ? toolInput.confidence : undefined
   const requestedCurrentAction = normalizeCurrentProcedureAction(toolInput.currentProcedureAction)
 
-  if (!procedureId || !isInvestigableCaseType(procedureId)) {
+  if (!requestedProcedureId || !isInvestigableCaseType(requestedProcedureId)) {
     return { kind: 'pass' }
   }
 
   try {
-    const ctRow = await prisma.caseType.findUnique({
-      where: { agentConfigId_type: { agentConfigId: ctx.agentConfigId, type: procedureId } },
-    })
-    if (!ctRow) return { kind: 'pass' }
+    const resolved = await resolveCaseTypeForProcedure(ctx.agentConfigId, requestedProcedureId)
+    if (!resolved?.row) return { kind: 'pass' }
+    const ctRow = resolved.row
 
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
     const procedureJson = (ctRow as { procedure?: string | null }).procedure
@@ -138,7 +149,7 @@ async function handleStartProcedure(
     const schema: CaseSchemaConfig = {
       type: ctRow.type,
       displayName: ctRow.displayName,
-      icon: ctRow.icon,
+      icon: ctRow.icon ?? 'case',
       description: ctRow.description || undefined,
       requiredFacts: Array.isArray(requiredFacts) ? requiredFacts : [],
       defaultGoal: ctRow.defaultGoal,
@@ -188,7 +199,7 @@ async function handleStartProcedure(
       caseId: ctx.caseId,
       durableCaseCreated: false,
       requestedProcedureId,
-      routingCorrection: null,
+      routingCorrection: resolved.routingCorrection,
       procedureId: ctRow.type,
       caseType: ctRow.type,
       displayName: ctRow.displayName,
@@ -231,6 +242,8 @@ async function handleStartProcedure(
       runId: start.run.runId,
       currentStepId: start.run.currentStepId,
       currentProcedureAction: requestedCurrentAction ?? null,
+      requestedProcedureId,
+      routingCorrection: resolved.routingCorrection,
       pausedRunId: start.pausedRun?.runId ?? null,
       idempotent: start.idempotent,
     })
@@ -273,35 +286,45 @@ async function handleRequestUserInput(
   result: ToolExecutionResult,
   sendEvent: (event: SSEEvent) => void,
 ): Promise<InterceptAction> {
-  if (result.toolUse?.status !== 'completed') {
-    await ctx.traceWriter.write('loop_decision', 'Skip form_request: ask_user_questions did not complete', {
+  const toolInput = result.toolUse?.input || {}
+  const payload = normalizeAskUserQuestionsPayload(ctx, toolInput)
+
+  if (!payload) {
+    await ctx.traceWriter.write('loop_decision', 'Skip form_request: ask_user_questions missing renderable payload', {
       toolStatus: result.toolUse?.status ?? 'unknown',
-      toolInput: result.toolUse?.input ?? null,
+      toolInput,
       toolOutput: result.output ?? null,
     })
     return { kind: 'pass' }
   }
 
-  const toolInput = result.toolUse?.input || {}
-  const title = typeof toolInput.title === 'string' ? toolInput.title.trim() : ''
-  const description = typeof toolInput.description === 'string' ? toolInput.description : ''
-  const fields = Array.isArray(toolInput.fields)
-    ? toolInput.fields.filter((field): field is Record<string, unknown> => Boolean(field) && typeof field === 'object')
-    : []
-
-  if (!title || fields.length === 0) {
-    await ctx.traceWriter.write('loop_decision', 'Skip form_request: ask_user_questions missing renderable payload', {
-      toolStatus: result.toolUse.status,
-      title,
-      fieldCount: fields.length,
-      toolInput,
-    })
-    return { kind: 'pass' }
+  if (payload.repaired && result.toolUse) {
+    const repairedToolInput = {
+      ...toolInput,
+      title: payload.title,
+      description: payload.description,
+      fields: payload.fields,
+    }
+    result.toolUse.input = repairedToolInput
+    result.toolUse.status = 'completed'
+    result.output = {
+      ok: true,
+      output: {
+        status: 'form_request_repaired',
+        title: payload.title,
+        fieldCount: payload.fields.length,
+      },
+      latencyMs: result.latencyMs,
+    }
+    result.toolUse.result = result.output as never
+    replaceToolResultMessage(ctx.messages, result.toolUse.id, result.output)
   }
 
   await ctx.traceWriter.write('loop_decision', 'Exit: form requested', {
     toolCount: 1,
     iteration: 0,
+    repaired: payload.repaired,
+    toolStatus: result.toolUse?.status ?? 'unknown',
   })
 
   sendEvent({
@@ -309,9 +332,9 @@ async function handleRequestUserInput(
     data: {
       caseId: ctx.caseId,
       toolCallId: result.toolUse?.id || crypto.randomUUID(),
-      title,
-      description,
-      fields,
+      title: payload.title,
+      description: payload.description,
+      fields: payload.fields,
     },
     timestamp: new Date().toISOString(),
   })
@@ -444,6 +467,236 @@ export async function processPendingHookToolCalls(
 
 function safeJson<T>(value: unknown, fallback: T): T {
   try { return JSON.parse(value as string) as T } catch { return fallback }
+}
+
+async function resolveCaseTypeForProcedure(
+  agentConfigId: string,
+  requestedProcedureId: string,
+): Promise<{
+  row: CaseTypeRowLike
+  routingCorrection: null | {
+    requestedProcedureId: string
+    resolvedProcedureId: string
+    reason: string
+  }
+} | null> {
+  const direct = await prisma.caseType.findUnique({
+    where: { agentConfigId_type: { agentConfigId, type: requestedProcedureId } },
+  }) as CaseTypeRowLike | null
+  if (direct) {
+    return { row: direct, routingCorrection: null }
+  }
+
+  const candidates = await prisma.caseType.findMany({
+    where: { agentConfigId, enabled: true },
+  }).catch(() => []) as CaseTypeRowLike[]
+  const resolved = rankCaseTypeCandidates(candidates, requestedProcedureId)[0]
+  if (!resolved) return null
+
+  return {
+    row: resolved.row,
+    routingCorrection: {
+      requestedProcedureId,
+      resolvedProcedureId: resolved.row.type,
+      reason: resolved.reason,
+    },
+  }
+}
+
+function rankCaseTypeCandidates(
+  rows: CaseTypeRowLike[],
+  requestedProcedureId: string,
+): Array<{ row: CaseTypeRowLike; score: number; reason: string }> {
+  const requested = normalizeMatcherText(requestedProcedureId)
+  if (!requested) return []
+  const scored: Array<{ row: CaseTypeRowLike; score: number; reason: string }> = []
+
+  for (const row of rows) {
+    const type = normalizeMatcherText(row.type)
+    const displayName = normalizeMatcherText(row.displayName)
+    const description = normalizeMatcherText(row.description ?? '')
+    const procedureText = normalizeMatcherText(row.procedure ?? '')
+    const toolNames = collectProcedureToolNames(row.procedure)
+    const toolNameMatch = toolNames.find((toolName) => normalizeMatcherText(toolName) === requested)
+    const toolNameContains = toolNames.find((toolName) => {
+      const normalizedToolName = normalizeMatcherText(toolName)
+      return normalizedToolName.includes(requested) || requested.includes(normalizedToolName)
+    })
+
+    if (type === requested) {
+      scored.push({ row, score: 100, reason: 'exact_case_type' })
+    } else if (displayName === requested) {
+      scored.push({ row, score: 96, reason: 'exact_display_name' })
+    } else if (toolNameMatch) {
+      scored.push({ row, score: 94, reason: `procedure_tool:${toolNameMatch}` })
+    } else if (type.includes(requested) || requested.includes(type)) {
+      scored.push({ row, score: 88, reason: 'case_type_similarity' })
+    } else if (displayName.includes(requested) || requested.includes(displayName)) {
+      scored.push({ row, score: 84, reason: 'display_name_similarity' })
+    } else if (toolNameContains) {
+      scored.push({ row, score: 78, reason: `procedure_tool_similarity:${toolNameContains}` })
+    } else if (procedureText.includes(requested)) {
+      scored.push({ row, score: 64, reason: 'procedure_definition_similarity' })
+    } else if (description.includes(requested)) {
+      scored.push({ row, score: 42, reason: 'description_similarity' })
+    }
+  }
+
+  return scored
+    .filter((entry) => entry.score >= 64)
+    .sort((a, b) => b.score - a.score || a.row.type.localeCompare(b.row.type))
+}
+
+function normalizeMatcherText(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/['"`]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function collectProcedureToolNames(procedureJson: unknown): string[] {
+  const toolNames = new Set<string>()
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item)
+      return
+    }
+    const record = value as Record<string, unknown>
+    if (typeof record.toolName === 'string' && record.toolName.trim()) {
+      toolNames.add(record.toolName.trim())
+    }
+    for (const child of Object.values(record)) visit(child)
+  }
+
+  try {
+    const parsed = typeof procedureJson === 'string' ? JSON.parse(procedureJson) : procedureJson
+    visit(parsed)
+  } catch {
+    // Ignore malformed Procedure JSON here; parseProcedure will handle exact rows later.
+  }
+  return Array.from(toolNames)
+}
+
+function normalizeAskUserQuestionsPayload(
+  ctx: ToolInterceptorContext,
+  toolInput: Record<string, unknown>,
+): {
+  title: string
+  description: string
+  fields: Record<string, unknown>[]
+  repaired: boolean
+} | null {
+  const rawTitle = typeof toolInput.title === 'string' ? toolInput.title.trim() : ''
+  const rawDescription = typeof toolInput.description === 'string' ? toolInput.description : ''
+  const rawFields = Array.isArray(toolInput.fields)
+    ? toolInput.fields.filter((field): field is Record<string, unknown> => Boolean(field) && typeof field === 'object')
+    : []
+  const validFields = rawFields
+    .map(normalizeFormField)
+    .filter((field): field is Record<string, unknown> => Boolean(field))
+
+  if (rawTitle && validFields.length > 0) {
+    return {
+      title: rawTitle,
+      description: rawDescription,
+      fields: validFields,
+      repaired: false,
+    }
+  }
+
+  const requiredFacts = Array.isArray(ctx.caseSchema?.requiredFacts)
+    ? ctx.caseSchema.requiredFacts.filter((fact): fact is string => typeof fact === 'string' && fact.trim().length > 0)
+    : []
+  const fallbackFields = (requiredFacts.length > 0 ? requiredFacts : ['member_id'])
+    .map(formFieldFromFact)
+    .filter((field): field is Record<string, unknown> => Boolean(field))
+
+  if (fallbackFields.length === 0) return null
+  return {
+    title: rawTitle || fallbackFormTitle(requiredFacts),
+    description: rawDescription || fallbackFormDescription(requiredFacts),
+    fields: fallbackFields,
+    repaired: true,
+  }
+}
+
+function normalizeFormField(field: Record<string, unknown>): Record<string, unknown> | null {
+  const key = typeof field.key === 'string' ? field.key.trim() : ''
+  const label = typeof field.label === 'string' ? field.label.trim() : humanizeFieldKey(key)
+  const type = typeof field.type === 'string' ? field.type : 'text'
+  if (!key || !label) return null
+  return {
+    ...field,
+    key,
+    label,
+    type: ['text', 'number', 'select', 'textarea', 'file', 'date'].includes(type) ? type : 'text',
+    required: field.required !== false,
+  }
+}
+
+function formFieldFromFact(fact: string): Record<string, unknown> {
+  const key = normalizeFactKey(fact)
+  if (key === 'issue_type') {
+    return {
+      key,
+      label: 'Issue type',
+      type: 'select',
+      required: true,
+      options: ['Deposit not credited', 'Withdrawal not received', 'Bonus/cashback not received', 'Game/bet money issue', 'Other'],
+    }
+  }
+  if (key === 'method') {
+    return {
+      key,
+      label: 'Transaction type',
+      type: 'select',
+      required: true,
+      options: ['deposit', 'withdrawal'],
+    }
+  }
+  return {
+    key,
+    label: humanizeFieldKey(key),
+    type: 'text',
+    required: true,
+    placeholder: key === 'member_id' ? 'JAYA...' : undefined,
+  }
+}
+
+function normalizeFactKey(fact: string): string {
+  const normalized = normalizeMatcherText(fact)
+  if (['memberid', 'member_id', 'playerid', 'player_id', 'user_id', 'userid'].includes(normalized)) return 'member_id'
+  if (['issuetype', 'issue_type', 'intent_type'].includes(normalized)) return 'issue_type'
+  return normalized || fact
+}
+
+function humanizeFieldKey(key: string): string {
+  if (key === 'member_id') return 'Member ID'
+  if (key === 'issue_type') return 'Issue type'
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
+function fallbackFormTitle(requiredFacts: string[]): string {
+  const normalized = requiredFacts.map(normalizeFactKey)
+  if (normalized.length === 1 && normalized[0] === 'member_id') return 'Member ID Required'
+  if (normalized.includes('issue_type')) return 'Please choose the issue type'
+  return 'Information Required'
+}
+
+function fallbackFormDescription(requiredFacts: string[]): string {
+  const normalized = requiredFacts.map(normalizeFactKey)
+  if (normalized.length === 1 && normalized[0] === 'member_id') {
+    return 'Please provide your Jayabaji Member ID so I can continue.'
+  }
+  if (normalized.includes('issue_type')) {
+    return 'Please select the closest issue type so I can route this correctly.'
+  }
+  return 'Please provide the missing details so I can continue.'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

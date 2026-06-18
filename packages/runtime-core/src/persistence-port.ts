@@ -238,6 +238,14 @@ export function createPrismaPersistence(): PersistencePort {
 
     async createHumanTask(record) {
       const ownership = await resolveOwnership(record.caseId)
+      const existing = await prisma.humanTask.findFirst({
+        where: { caseId: record.caseId, status: 'pending' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      }).catch(() => null)
+      if (existing?.id) {
+        return { id: existing.id }
+      }
       const task = await prisma.humanTask.create({
         data: {
           id: record.id,
@@ -308,6 +316,8 @@ export function createMemoryPersistence(): {
     },
 
     async createHumanTask(record) {
+      const existing = humanTasks.find((task) => task.caseId === record.caseId && (task.status ?? 'pending') === 'pending')
+      if (existing) return { id: existing.id }
       const id = record.id ?? crypto.randomUUID()
       humanTasks.push({ ...record, id }) // accumulate in memory, no real DB write
       return { id }

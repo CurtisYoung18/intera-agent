@@ -245,7 +245,10 @@ export class RuntimeManagedToolResolver {
     const key = typeof input.key === 'string' ? input.key : undefined
     const value = input.value
     const candidateFacts = key ? { ...rawFacts, [key]: value } : rawFacts
-    const filteredFacts = filterRuntimeAuthorityKeys(candidateFacts)
+    const authorityFilteredFacts = filterRuntimeAuthorityKeys(candidateFacts)
+    const filteredFacts = scope === 'user'
+      ? filterUserProfileFacts(authorityFilteredFacts)
+      : authorityFilteredFacts
     const rejectedKeys = Object.keys(candidateFacts).filter((candidateKey) => !(candidateKey in filteredFacts))
     const reason = String(input.reason || 'No reason supplied.')
 
@@ -277,8 +280,26 @@ export class RuntimeManagedToolResolver {
     }
 
     const bullets = Object.entries(filteredFacts).map(([factKey, factValue]) => `- ${factKey}: ${JSON.stringify(factValue)}`)
-    if (bullets.length === 0 && typeof value === 'string' && !key) {
-      bullets.push(`- ${value}`)
+    if (bullets.length === 0) {
+      appendRuntimeEvent(this.deps.caseId, {
+        origin: 'system',
+        source: 'remember',
+        summary: `remember(scope="user") rejected: ${reason}`,
+        metadata: {
+          attemptedKeys: Object.keys(candidateFacts),
+          rejectedKeys,
+          memoryScope: 'user',
+          status: 'rejected',
+        },
+      })
+      return {
+        ok: false,
+        scope: 'user',
+        writtenKeys: [],
+        rejectedKeys,
+        error: 'remember(scope="user") requires structured, stable profile facts such as member_id or preferences.',
+        authority: 'memory_context_only',
+      }
     }
     const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
     if (this.shouldPersistRuntimeMemory()) {
@@ -370,6 +391,54 @@ export function shouldRecordProcedureEvidence(toolName: string): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function filterUserProfileFacts(facts: Record<string, unknown>): Record<string, unknown> {
+  const filtered: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(facts)) {
+    if (!isStableProfileKey(key)) continue
+    if (!isSafeProfileValue(key, value)) continue
+    filtered[key] = value
+  }
+  return filtered
+}
+
+function isStableProfileKey(key: string): boolean {
+  const normalized = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return (
+    normalized === 'member_id' ||
+    normalized === 'memberid' ||
+    normalized === 'player_id' ||
+    normalized === 'playerid' ||
+    normalized === 'preferred_language' ||
+    normalized === 'language' ||
+    normalized === 'reply_language' ||
+    normalized === 'preference' ||
+    normalized === 'preferences' ||
+    normalized === 'support_preference' ||
+    normalized === 'preferred_style' ||
+    normalized === 'contact_preference' ||
+    normalized === 'preferred_contact' ||
+    normalized === 'vip_level' ||
+    normalized === 'vip_status'
+  )
+}
+
+function isSafeProfileValue(key: string, value: unknown): boolean {
+  if (value == null) return false
+  if (typeof value === 'object') return false
+  const text = String(value).trim()
+  if (!text || text.length > 240) return false
+  if (/[{}[\]]/.test(text)) return false
+  if (/(tool_use|tool_result|providerContent|caseId|runId|inputEpoch|currentStepId|procedureRun|screenshot|receipt|transaction id)/i.test(text)) {
+    return false
+  }
+  const normalizedKey = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  if (['member_id', 'memberid', 'player_id', 'playerid'].includes(normalizedKey)) {
+    if (!/^JAYA[A-Z0-9]{6,12}$/i.test(text)) return false
+    if (/^JAYA0+$/i.test(text) || /^JAYA1234567890$/i.test(text) || /^JAYATEST/i.test(text)) return false
+  }
+  return true
 }
 
 function safeJson(value: unknown, fallback: unknown): unknown {

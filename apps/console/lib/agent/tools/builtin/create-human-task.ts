@@ -44,6 +44,19 @@ export const createHumanTaskTool: Tool<Input, Output> = {
       }).catch(() => null),
     ])
 
+    const existing = await prisma.humanTask.findFirst({
+      where: { caseId: ctx.caseId, status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    }).catch(() => null)
+    if (existing?.id) {
+      await prisma.case.update({
+        where: { id: ctx.caseId },
+        data: { status: 'waiting_human' },
+      }).catch(() => null)
+      return { taskId: existing.id, status: 'pending' }
+    }
+
     const task = await prisma.humanTask.create({
       data: {
         caseId: ctx.caseId,

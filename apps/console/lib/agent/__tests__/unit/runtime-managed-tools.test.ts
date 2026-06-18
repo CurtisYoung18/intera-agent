@@ -77,4 +77,68 @@ describe('runtime-managed-tools', () => {
       latencyMs: 1,
     })
   })
+
+  it('rejects unstructured or tool-like user profile writes from remember', async () => {
+    const chatMemory = new ChatMemoryManager('case-memory-filter', DEFAULT_MEMORY_STRATEGY)
+    const { port } = createMemoryPersistence()
+    const result: ToolExecutionResult = {
+      name: 'remember',
+      output: { ok: true, output: 'placeholder', latencyMs: 1 },
+      latencyMs: 1,
+      toolUse: {
+        id: 'toolu_remember_raw',
+        name: 'remember',
+        input: {
+          scope: 'user',
+          value: 'Tool result: {"caseId":"case-1","runId":"run-1","status":"approved"}',
+          reason: 'unsafe raw tool text',
+        },
+      },
+    }
+
+    await new RuntimeManagedToolResolver({
+      caseId: 'case-memory-filter',
+      orgId: 'org-1',
+      userId: 'user-1',
+      chatId: 'chat-1',
+      configId: 'agent-1',
+      config: makeDefaultConfig(),
+      caseSchema: null,
+      messages: [],
+      chatMemory,
+      persistence: port,
+      traceWriter: new TraceWriter('case-memory-filter', port),
+      dryRun: true,
+      canCreateHumanTaskInGeneralMode: false,
+    }).resolve([result], new Map([['toolu_remember_raw', 1]]), 1)
+
+    expect(result.toolUse?.status).toBe('completed')
+    expect(result.output).toMatchObject({
+      ok: true,
+      output: {
+        ok: false,
+        scope: 'user',
+        writtenKeys: [],
+      },
+    })
+  })
+
+  it('deduplicates pending human tasks at the persistence boundary', async () => {
+    const { port, humanTasks } = createMemoryPersistence()
+    const first = await port.createHumanTask({
+      caseId: 'case-handoff',
+      queue: 'general',
+      question: 'Customer requested a human.',
+      status: 'pending',
+    })
+    const second = await port.createHumanTask({
+      caseId: 'case-handoff',
+      queue: 'general',
+      question: 'Customer repeated the human request.',
+      status: 'pending',
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(humanTasks).toHaveLength(1)
+  })
 })

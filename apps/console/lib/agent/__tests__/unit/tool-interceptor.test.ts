@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   prisma: {
-    caseType: { findUnique: vi.fn() },
+    caseType: { findUnique: vi.fn(), findMany: vi.fn() },
     case: { upsert: vi.fn() },
   },
   startProcedureRun: vi.fn(),
@@ -44,6 +44,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         }],
       }),
     })
+    h.prisma.caseType.findMany.mockResolvedValue([])
     h.prisma.case.upsert.mockResolvedValue({})
     h.startProcedureRun.mockReturnValue({
       run: {
@@ -340,5 +341,173 @@ describe('tool-interceptor start_procedure truth alignment', () => {
       caseType: 'deposit_not_credited',
       runId: 'run-deposit',
     })
+  })
+
+  it('resolves legacy or tool-like procedure ids through configured CaseTypes', async () => {
+    h.prisma.caseType.findUnique.mockResolvedValue(null)
+    h.prisma.caseType.findMany.mockResolvedValue([
+      {
+        type: 'j1n_bet_history',
+        displayName: 'J1N Bet History',
+        description: 'Customer asks about bet history.',
+        icon: 'B',
+        requiredFacts: '["member_id"]',
+        defaultGoal: 'Check bet history.',
+        escalateOn: '[]',
+        autoCloseConditions: null,
+        maxAutoTurns: 3,
+        procedure: JSON.stringify({
+          version: 'v2',
+          whenToUse: 'Use for bet history',
+          steps: [{
+            id: 'lookup',
+            title: 'Lookup',
+            guidance: 'Call bet history.',
+            actions: [{ id: 'tool', kind: 'call_tool', label: 'Check bet history', toolName: 'get_bet_history' }],
+            branches: [],
+          }],
+        }),
+      },
+      {
+        type: 'j1n_deposit_status',
+        displayName: 'J1N Deposit Status',
+        description: 'Customer asks about latest deposit.',
+        icon: 'D',
+        requiredFacts: '["member_id"]',
+        defaultGoal: 'Check deposit.',
+        escalateOn: '[]',
+        autoCloseConditions: null,
+        maxAutoTurns: 3,
+        procedure: JSON.stringify({ version: 'v2', whenToUse: 'Use for deposits', steps: [] }),
+      },
+    ])
+    h.startProcedureRun.mockReturnValue({
+      run: {
+        runId: 'run-bet',
+        procedureId: 'j1n_bet_history',
+        currentStepId: 'lookup',
+        inputEpoch: 1,
+      },
+      pausedRun: null,
+      idempotent: false,
+    })
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-bet',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'start_procedure',
+        output: { ok: true },
+        toolUse: {
+          id: 'toolu_start_tool_name',
+          input: {
+            procedureId: 'get_bet_history',
+            reason: 'Customer asks for bet history.',
+          },
+        },
+      } as any],
+      vi.fn(),
+    )
+
+    expect(h.startProcedureRun).toHaveBeenCalledWith('case-bet', expect.objectContaining({
+      procedureId: 'j1n_bet_history',
+    }))
+    expect(result.toolResults[0]?.output).toMatchObject({
+      requestedProcedureId: 'get_bet_history',
+      procedureId: 'j1n_bet_history',
+      routingCorrection: {
+        requestedProcedureId: 'get_bet_history',
+        resolvedProcedureId: 'j1n_bet_history',
+        reason: 'procedure_tool:get_bet_history',
+      },
+    })
+  })
+
+  it('repairs an empty ask_user_questions tool call into a renderable required-facts form', async () => {
+    const sendEvent = vi.fn()
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-form',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: {
+          type: 'j1n_deposit_status',
+          displayName: 'J1N Deposit Status',
+          icon: 'deposit',
+          requiredFacts: ['member_id'],
+          defaultGoal: 'Check deposit.',
+          escalateOn: [],
+        },
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'investigating',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'ask_user_questions',
+        output: { ok: false, error: 'Input validation failed' },
+        latencyMs: 1,
+        toolUse: {
+          id: 'toolu_empty_form',
+          name: 'ask_user_questions',
+          status: 'error',
+          input: {},
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(result.action).toMatchObject({
+      kind: 'return',
+      result: { transition: 'waiting_form' },
+    })
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'form_request',
+      data: expect.objectContaining({
+        title: 'Member ID Required',
+        fields: [expect.objectContaining({
+          key: 'member_id',
+          label: 'Member ID',
+          type: 'text',
+        })],
+      }),
+    }))
+    expect(result.toolResults[0]?.toolUse?.status).toBe('completed')
   })
 })
