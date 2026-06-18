@@ -253,6 +253,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'Use this when you need the customer to provide specific details (amount, payment method, ' +
       'screenshots, etc.). Do not ask for those details in plain text when this tool can collect them. ' +
       'If the customer already provided a value in text or an uploaded image/screenshot, prefill the matching field with defaultValue or initialValues so they can confirm or edit it. ' +
+      'For receipt/screenshot workflows, if another required field is still missing, keep already-provided receipt facts such as payment method/channel, amount, transaction id, date/time, or status as additional fields with defaultValue; do not drop them just because they were already supplied. ' +
       'The form will appear as a floating card in the chat UI. ' +
       'Once the customer submits, you will receive their answers and can continue.',
     inputSchema: {
