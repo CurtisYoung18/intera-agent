@@ -10,6 +10,7 @@ export interface HookContextBuildOptions {
   toolError?: string
   replyDraft?: string
   procedureStepIds?: string[]
+  currentToolCalls?: Array<{ name: string; input?: unknown; output?: unknown }>
 }
 
 export interface HookContextBuilderDeps {
@@ -60,6 +61,7 @@ export class HookContextBuilder {
         name,
         output: this.deps.chatMemory.getToolResult(name),
       })),
+      currentToolCalls: options.currentToolCalls ?? [],
       traceSummary: this.deps.chatMemory.getKeyEvents().slice(-10).map((event) => ({
         at: event.at,
         text: event.text,

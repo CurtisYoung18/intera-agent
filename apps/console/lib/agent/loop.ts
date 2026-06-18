@@ -491,6 +491,11 @@ export class AgentLoop {
         const stopEval = await this.hookEngine.evaluate('Stop', {
           ...this.hookContextBuilder.build('Stop', {
             replyDraft: fullText,
+            currentToolCalls: toolResults.map((result) => ({
+              name: result.name,
+              input: result.toolUse?.input,
+              output: result.output,
+            })),
           }),
         }, buildHitCounts())
 

@@ -155,6 +155,11 @@ export const hookContextSchema = z.object({
     input: z.unknown().optional(),
     output: z.unknown().optional(),
   }).passthrough()).default([]),
+  currentToolCalls: z.array(z.object({
+    name: runtimeToolNameSchema,
+    input: z.unknown().optional(),
+    output: z.unknown().optional(),
+  }).passthrough()).default([]),
   traceSummary: z.array(z.record(z.unknown())).default([]),
   replyDraft: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),

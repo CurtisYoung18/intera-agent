@@ -76,6 +76,10 @@ interface RuntimeHookBinding {
   enabled: boolean
 }
 
+type HookContextInput = Omit<HookContext, 'currentToolCalls'> & {
+  currentToolCalls?: HookContext['currentToolCalls']
+}
+
 interface DbHookRow {
   id: string
   name: string
@@ -205,7 +209,7 @@ export class HookEngine {
 
   async evaluate(
     checkpoint: HookCheckpoint,
-    rawContext: Omit<HookContext, 'checkpoint'> | HookContext,
+    rawContext: Omit<HookContextInput, 'checkpoint'> | HookContextInput,
     hitCounts?: Map<string, number>,
   ): Promise<HookEvaluationResult> {
     const context = hookContextSchema.parse({
@@ -500,6 +504,24 @@ export class HookEngine {
       const ok = requireToolsAny.some((name) => called.has(name))
       if (!ok) {
         return { violated: true, reason: configuredReason ?? `Must call at least one of: ${requireToolsAny.join(', ')}` }
+      }
+    }
+
+    const requireCurrentTools = getStringArray(check, 'requireCurrentTools')
+    if (requireCurrentTools.length > 0) {
+      const called = new Set((context.currentToolCalls ?? []).map((call) => call.name))
+      const missing = requireCurrentTools.filter((name) => !called.has(name))
+      if (missing.length > 0) {
+        return { violated: true, reason: configuredReason ?? `Required current-turn tools not called: ${missing.join(', ')}` }
+      }
+    }
+
+    const requireCurrentToolsAny = getStringArray(check, 'requireCurrentToolsAny')
+    if (requireCurrentToolsAny.length > 0) {
+      const called = new Set((context.currentToolCalls ?? []).map((call) => call.name))
+      const ok = requireCurrentToolsAny.some((name) => called.has(name))
+      if (!ok) {
+        return { violated: true, reason: configuredReason ?? `Must call at least one current-turn tool: ${requireCurrentToolsAny.join(', ')}` }
       }
     }
 

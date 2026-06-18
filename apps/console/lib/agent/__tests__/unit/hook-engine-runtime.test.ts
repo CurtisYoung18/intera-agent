@@ -315,6 +315,57 @@ describe('HookEngine bindings and handlers', () => {
     })
   })
 
+  it('can require current-turn tool evidence for future action promises', async () => {
+    const engine = new HookEngine('agent_1')
+    engine.setHook({
+      name: 'future_action_promise_requires_runtime_evidence',
+      checkpoint: 'Stop',
+      handler: {
+        kind: 'declarative',
+        check: {
+          kind: 'rule',
+          match: { ifPattern: 'feri\\s+(?:confirm|check|herera)|update\\s+garnechu' },
+          requireCurrentToolsAny: ['check_latest_deposit_status', 'create_human_task'],
+          reason: 'Reply promises a future check/update without current-turn runtime evidence.',
+        },
+        effect: {
+          decision: 'block',
+          guidance: 'Call the lookup or handoff tool in this turn, or rewrite without a future-action promise.',
+        },
+      },
+    })
+
+    const staleHistoryOnly = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [{ name: 'check_latest_deposit_status' }],
+      currentToolCalls: [],
+      traceSummary: [],
+      replyDraft: 'Thik cha, ma tapai ko deposit feri confirm garera update garnechu.',
+    })
+    expect(staleHistoryOnly.summary).toBe('block')
+    expect(staleHistoryOnly.results[0]).toMatchObject({
+      hookName: 'future_action_promise_requires_runtime_evidence',
+      reason: 'Reply promises a future check/update without current-turn runtime evidence.',
+    })
+
+    const currentEvidence = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [{ name: 'check_latest_deposit_status' }],
+      currentToolCalls: [{ name: 'check_latest_deposit_status' }],
+      traceSummary: [],
+      replyDraft: 'Thik cha, ma tapai ko deposit feri confirm garera update garnechu.',
+    })
+    expect(currentEvidence.summary).toBe('allow')
+  })
+
   it('ships human handoff promise blocking as a visible default Stop Hook', async () => {
     const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
     expect(defaultHook).toBeDefined()
