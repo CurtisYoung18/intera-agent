@@ -68,6 +68,8 @@ export function promisesHumanHandoff(text: string): boolean {
   return [
     /(?:i|we)\s+(?:have|\'ve)\s+(?:created|opened|submitted|arranged|escalated)\s+(?:a\s+)?(?:ticket|case|handoff|human support request)/i,
     /(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)/i,
+    /(?:i|we)\s+will\s+(?:forward|send|submit|route|escalate)\s+(?:this|it|your\s+(?:case|issue|concern|request))?\s*(?:to|with)?\s*(?:the\s+)?(?:local|relevant|human)?\s*(?:support|team|department|specialist|agent)/i,
+    /\bma\s+[^.?!\n]{0,80}?\b(?:sthaniya|local|relevant)?\s*(?:sahayog|support|team|department)\s+ma\s+(?:patha(?:u)?nchu|pathaunchu|pathaunechhu|forward|escalate)\b/i,
     /已为您创建工单/,
     /已经为您创建工单/,
     /已安排人工/,

@@ -370,6 +370,30 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
+  it('withholds Romanized Nepali local-support promises without persisted handoff evidence', () => {
+    const caseId = 'r3-human-promise-nepali-local-support'
+    recordInitialInputEvent(caseId, { content: 'show my transaction history for eSewa' })
+    startProcedureRun(caseId, {
+      procedureId: 'get_transaction_history',
+      displayName: 'Get transaction history',
+      procedure: simpleToolProcedure('get_transaction_history'),
+    })
+
+    const reply = recordProcedureTextReply(caseId, {
+      text: 'Tapaiko eSewa transaction history herda technical samasya aayo. Kripaya kehi samaya pachi feri try garnuhos, yo sama ko laagi ma sthaniya sahayog ma pathaunchu.',
+      basedOnInputEpoch: 1,
+    })
+
+    expect(reply.stale).toBe(false)
+    expect(reply.blockedReason).toContain('human-handoff promise')
+    expect(reply.run?.evidence.at(-1)).toMatchObject({
+      kind: 'text_reply',
+      label: 'Unsafe human-handoff promise withheld',
+      state: 'stale',
+    })
+    closeSession(caseId)
+  })
+
   it('allows a human-handoff promise after persisted create_human_task evidence exists', () => {
     const caseId = 'r3-human-promise-allowed'
     recordInitialInputEvent(caseId, { content: 'Please transfer me to a human.' })
