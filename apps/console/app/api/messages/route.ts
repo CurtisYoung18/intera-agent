@@ -116,6 +116,26 @@ type FormTraceField = {
   placeholder?: string
 }
 
+const IMAGE_FORM_PREFILL_NUDGE = [
+  '[Image Form Prefill]',
+  'The latest customer input includes an uploaded image or screenshot. If you need ask_user_questions to confirm or collect details, inspect the image first.',
+  'For any visible receipt, transaction, account, amount, date, status, or ID value, put the exact visible value in the matching field.defaultValue or tool initialValues. Do not put extracted values only in placeholder.',
+  'Use placeholders only for examples or instructions. Leave defaultValue empty only for fields that are truly not visible in the image.',
+].join('\n')
+
+function hasImageContentBlock(contentBlocks: unknown): boolean {
+  if (!Array.isArray(contentBlocks)) return false
+  const visit = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(visit)
+    if (!value || typeof value !== 'object') return false
+    const record = value as Record<string, unknown>
+    if (record.type === 'image') return true
+    if (record.type === 'image_url') return true
+    return false
+  }
+  return contentBlocks.some(visit)
+}
+
 function normalizeFormTraceFields(raw: unknown): FormTraceField[] {
   if (!Array.isArray(raw)) return []
   const normalized: FormTraceField[] = []
@@ -1688,6 +1708,10 @@ export async function POST(request: NextRequest) {
 
         systemPrompt = assembled.prompt
         coreSystemPrompt = agentConfig.coreSystemPrompt?.trim() || assembled.basePrompt
+
+        if (runtimeInputSource === 'customer_message' && hasImageContentBlock(resolvedContentBlocks)) {
+          systemPrompt += `\n\n${IMAGE_FORM_PREFILL_NUDGE}`
+        }
 
         if (formAnswers && caseSchema) {
           systemPrompt += `\n\n[Structured Form Answers Received]\nThe current customer input is the submitted ask_user_questions form for CaseType "${caseSchema.type}". Treat these fields as already provided: ${Object.keys(formAnswers).join(', ') || 'none'}. Do not ask for those same fields again. If required facts are now available, continue the active Procedure and call the next required live tool or KB tool.`

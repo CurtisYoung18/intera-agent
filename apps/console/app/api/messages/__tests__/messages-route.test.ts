@@ -122,6 +122,7 @@ beforeEach(() => {
   closeSession('case-drain')
   closeSession('case-v2-form')
   closeSession('case-provider-reload')
+  closeSession('case-image-prefill')
 
   h.resolveOrgFromApiKey.mockResolvedValue({ orgId: 'org-a', agentConfigId: 'agent-a' })
   h.isTrustedInternalCall.mockReturnValue(false)
@@ -171,6 +172,7 @@ afterEach(() => {
   closeSession('case-drain')
   closeSession('case-v2-form')
   closeSession('case-provider-reload')
+  closeSession('case-image-prefill')
 })
 
 describe('POST /api/messages runtime session guards', () => {
@@ -300,6 +302,40 @@ describe('POST /api/messages runtime session guards', () => {
       chatId: 'chat-1',
       userId: 'user-1',
     }))
+  })
+
+  it('nudges the agent to prefill ask_user_questions defaults on image turns', async () => {
+    h.prisma.case.findUnique.mockResolvedValue({
+      id: 'case-image-prefill',
+      orgId: 'org-a',
+      chatId: 'chat-1',
+      status: 'created',
+      memory: null,
+    })
+    const loop = mockLoop()
+    h.agentLoopCreate.mockResolvedValue(loop)
+    const contentBlocks = [
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'abc123' } },
+    ]
+
+    const res = await POST(makeRequest({
+      message: 'Customer uploaded image: deposit receipt.png',
+      contentBlocks,
+      caseId: 'case-image-prefill',
+      orgId: 'org-a',
+      userId: 'user-1',
+      chatId: 'chat-1',
+      disableCaseRouting: true,
+    }))
+    await readSse(res)
+
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining('[Image Form Prefill]'),
+    }))
+    expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining('field.defaultValue'),
+    }))
+    expect(loop.run).toHaveBeenCalledWith('Customer uploaded image: deposit receipt.png', expect.any(Function), contentBlocks)
   })
 
   it('creates a fresh case when the router says a single active case does not match the new topic', async () => {
