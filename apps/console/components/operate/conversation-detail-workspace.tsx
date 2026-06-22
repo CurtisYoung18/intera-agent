@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   MessageSquare,
@@ -81,6 +81,39 @@ function fmtMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+function HighlightedPlainText({ text, query }: { text: string; query: string }) {
+  const normalized = query.trim()
+  if (!normalized) return <MessageContent content={text} />
+
+  const lowerText = text.toLowerCase()
+  const lowerQuery = normalized.toLowerCase()
+  const parts: Array<{ text: string; matched: boolean }> = []
+  let cursor = 0
+
+  while (cursor < text.length) {
+    const index = lowerText.indexOf(lowerQuery, cursor)
+    if (index < 0) {
+      parts.push({ text: text.slice(cursor), matched: false })
+      break
+    }
+    if (index > cursor) parts.push({ text: text.slice(cursor, index), matched: false })
+    parts.push({ text: text.slice(index, index + normalized.length), matched: true })
+    cursor = index + normalized.length
+  }
+
+  return (
+    <span className="whitespace-pre-wrap break-words">
+      {parts.map((part, index) => part.matched ? (
+        <mark key={index} className="rounded-[5px] bg-amber/[0.26] px-0.5 text-[var(--mist)]">
+          {part.text}
+        </mark>
+      ) : (
+        <Fragment key={index}>{part.text}</Fragment>
+      ))}
+    </span>
+  )
+}
+
 function CasePill({ caseItem }: { caseItem: CaseSummary }) {
   const color = STATUS_COLOR[caseItem.status] ?? '#a09888'
   return (
@@ -93,7 +126,19 @@ function CasePill({ caseItem }: { caseItem: CaseSummary }) {
   )
 }
 
-function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
+function MessageRow({
+  msg,
+  locale,
+  isMatched,
+  query,
+  rowRef,
+}: {
+  msg: MsgItem
+  locale: 'en' | 'zh'
+  isMatched: boolean
+  query: string
+  rowRef?: (node: HTMLDivElement | null) => void
+}) {
   const isUser = msg.role === 'user'
   const isToolResult = msg.content.startsWith('Tool ') && msg.role === 'assistant'
   const roleLabel = msg.role === 'user'
@@ -102,7 +147,11 @@ function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
       ? (locale === 'zh' ? '系统' : 'System')
       : (locale === 'zh' ? '助手' : 'Assistant')
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+    <div
+      ref={rowRef}
+      data-message-id={msg.id}
+      className={`scroll-mt-32 rounded-[22px] transition-colors ${isMatched ? 'bg-amber/[0.08] p-2 ring-1 ring-amber/30' : ''} flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
+    >
       <div className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white ${
         isUser ? 'bg-indigo/80' : 'bg-[var(--surface)] border border-black/[0.06]'}`}>
         {isUser ? <User className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5 text-indigo/60" />}
@@ -113,7 +162,9 @@ function MessageRow({ msg, locale }: { msg: MsgItem; locale: 'en' | 'zh' }) {
           isUser ? 'bg-indigo/[0.12] text-[var(--mist)] rounded-tr-sm'
           : isToolResult ? 'bg-black/[0.04] font-mono text-[11px] text-[var(--fog)] rounded-tl-sm border border-black/[0.05]'
           : 'bg-white/80 text-[var(--mist)] shadow-[var(--shadow-card)] rounded-tl-sm border border-black/[0.06]'}`}>
-          <MessageContent content={msg.content} contentBlocks={msg.contentBlocks} imagePreviewMode="auto" />
+          {isMatched && !msg.contentBlocks?.length
+            ? <HighlightedPlainText text={msg.content} query={query} />
+            : <MessageContent content={msg.content} contentBlocks={msg.contentBlocks} imagePreviewMode="auto" />}
         </div>
         <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt, locale)}</span>
       </div>
@@ -126,6 +177,9 @@ type DetailTab = 'timeline' | 'memory'
 export default function ConversationDetailWorkspace({ chatId }: { chatId: string }) {
   const decodedChatId = decodeURIComponent(chatId)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const matchedMessageId = searchParams.get('match')
+  const matchedQuery = searchParams.get('q')?.trim().replace(/\s+/g, ' ') ?? ''
   const { t, locale } = useConsoleLocale()
   const { selectedAgentId, loading: agentLoading } = useAgentContext()
   const isZh = locale === 'zh'
@@ -143,6 +197,8 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
   const [profileResult, setProfileResult] = useState<any>(null)
   const [updatingProfile, setUpdatingProfile] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [matchMissing, setMatchMissing] = useState(false)
+  const messageRefs = useRef(new Map<string, HTMLDivElement | null>())
 
   const activeChatId = resolvedChatId || decodedChatId
   const withAgent = useCallback((path: string) => {
@@ -262,6 +318,24 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     }
     load()
   }, [agentLoading, decodedChatId, selectedAgentId, withAgent])
+
+  useEffect(() => {
+    if (!matchedMessageId || loading) {
+      setMatchMissing(false)
+      return
+    }
+
+    const node = messageRefs.current.get(matchedMessageId)
+    if (node) {
+      setMatchMissing(false)
+      window.requestAnimationFrame(() => {
+        node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      })
+      return
+    }
+
+    if (messages.length > 0) setMatchMissing(true)
+  }, [loading, matchedMessageId, messages])
 
   type Row = { type: 'msg'; msg: MsgItem } | { type: 'case_banner'; c: CaseSummary }
   const rows: Row[] = []
@@ -448,6 +522,14 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
         ))}
       </div>
 
+      {matchMissing ? (
+        <div className="rounded-2xl border border-amber/18 bg-amber/[0.07] px-4 py-3 text-[12px] leading-5 text-[var(--mist)] shadow-[var(--shadow-card)]">
+          {isZh
+            ? '搜索命中的消息不在当前已加载的 500 条可见消息范围内。可以稍后补充消息分页来继续定位更早内容。'
+            : 'The matched message is outside the 500 visible messages currently loaded. Message pagination can be extended later to locate older content.'}
+        </div>
+      ) : null}
+
       {/* Main page stays lightweight; full chat-level evidence lives in the analysis sub-page. */}
       {activeTab === 'timeline' && (
         unassignedTraces.length > 0 ? (
@@ -578,7 +660,19 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                   </div>
                 )
               }
-              return <MessageRow key={row.msg.id} msg={row.msg} locale={locale} />
+              return (
+                <MessageRow
+                  key={row.msg.id}
+                  msg={row.msg}
+                  locale={locale}
+                  isMatched={matchedMessageId === row.msg.id}
+                  query={matchedQuery}
+                  rowRef={(node) => {
+                    if (node) messageRefs.current.set(row.msg.id, node)
+                    else messageRefs.current.delete(row.msg.id)
+                  }}
+                />
+              )
             })}
           </div>
         )}

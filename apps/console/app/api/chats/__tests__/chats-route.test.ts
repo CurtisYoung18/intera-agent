@@ -17,6 +17,7 @@ const h = vi.hoisted(() => {
   const agentConfigs: Record<string, { id: string; orgId: string }> = {
     'agent-a': { id: 'agent-a', orgId: 'default' },
     'agent-b': { id: 'agent-b', orgId: 'default' },
+    'agent-empty': { id: 'agent-empty', orgId: 'default' },
     'foreign-agent': { id: 'foreign-agent', orgId: 'org-b' },
   }
   const cases = [
@@ -91,18 +92,99 @@ const h = vi.hoisted(() => {
       metadata: { agentConfigId: 'agent-a' },
     },
   ]
-  return { mockGetSession, agentConfigs, cases, runs, externalConversations }
+  const messages = [
+    {
+      id: 'msg-deposit-user',
+      caseId: 'case-new',
+      orgId: 'default',
+      chatId: 'chat-new',
+      runId: 'run-new',
+      role: 'user',
+      content: 'My deposit is still missing after UTR JAYA117FFEB.',
+      contentBlocks: null,
+      providerContent: null,
+      providerMeta: null,
+      createdAt: new Date('2026-06-16T00:03:20.000Z'),
+    },
+    {
+      id: 'msg-deposit-assistant',
+      caseId: 'case-new',
+      orgId: 'default',
+      chatId: 'chat-new',
+      runId: 'run-new',
+      role: 'assistant',
+      content: 'I will check the deposit status now.',
+      contentBlocks: null,
+      providerContent: [{ type: 'text', text: 'I will check the deposit status now.' }],
+      providerMeta: { protocolVersion: 1, visibility: 'customer', transcriptKind: 'assistant_response' },
+      createdAt: new Date('2026-06-16T00:03:30.000Z'),
+    },
+    {
+      id: 'msg-withdrawal-user',
+      caseId: 'case-middle',
+      orgId: 'default',
+      chatId: 'chat-middle',
+      runId: 'run-middle',
+      role: 'user',
+      content: 'Please reset my withdrawal password.',
+      contentBlocks: null,
+      providerContent: null,
+      providerMeta: null,
+      createdAt: new Date('2026-06-16T00:02:20.000Z'),
+    },
+    {
+      id: 'msg-livechat-general',
+      caseId: 'case-livechat-general',
+      orgId: 'default',
+      chatId: 'TG2RX99U7R',
+      runId: null,
+      role: 'user',
+      content: 'I cannot log in to my account.',
+      contentBlocks: null,
+      providerContent: null,
+      providerMeta: null,
+      createdAt: new Date('2026-06-16T00:04:20.000Z'),
+    },
+    {
+      id: 'msg-internal-secret',
+      caseId: 'case-new',
+      orgId: 'default',
+      chatId: 'chat-new',
+      runId: 'run-new',
+      role: 'user',
+      content: 'hidden secret from tool result',
+      contentBlocks: null,
+      providerContent: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: '{"hidden":"secret"}' }],
+      providerMeta: { protocolVersion: 1, visibility: 'internal', transcriptKind: 'tool_result' },
+      createdAt: new Date('2026-06-16T00:03:40.000Z'),
+    },
+  ]
+  return { mockGetSession, agentConfigs, cases, runs, externalConversations, messages, currentQuery: '', currentAgentId: '', queryRawCalls: 0 }
 })
 
 function matchesWhere(row: any, where: Record<string, any> = {}) {
   if (where.orgId && row.orgId !== where.orgId) return false
   if (where.agentConfigId && row.agentConfigId !== where.agentConfigId) return false
   if (typeof where.chatId === 'object' && where.chatId?.startsWith && !row.chatId?.startsWith(where.chatId.startsWith)) return false
+  if (where.chatId?.in && !where.chatId.in.includes(row.chatId)) return false
   if (where.internalCaseId?.not === null && row.internalCaseId === null) return false
   if (where.metadata?.path?.[0] === 'agentConfigId' && row.metadata?.agentConfigId !== where.metadata.equals) return false
   if (where.id?.in && !where.id.in.includes(row.id)) return false
   if (where.caseId?.in && !where.caseId.in.includes(row.caseId)) return false
   return true
+}
+
+function scopedCaseIdsForAgent(agentConfigId: string): string[] {
+  const runCaseIds = h.runs
+    .filter((run) => run.agentConfigId === agentConfigId)
+    .map((run) => run.caseId)
+  const externalCaseIds = h.externalConversations
+    .filter((conversation) => conversation.metadata?.agentConfigId === agentConfigId && conversation.internalCaseId)
+    .map((conversation) => conversation.internalCaseId)
+  const playgroundCaseIds = h.cases
+    .filter((caseRow) => caseRow.chatId.startsWith(`pg_${agentConfigId}_`))
+    .map((caseRow) => caseRow.id)
+  return [...new Set([...runCaseIds, ...externalCaseIds, ...playgroundCaseIds])]
 }
 
 vi.mock('@/lib/db/repo-for-org', () => ({
@@ -127,6 +209,32 @@ vi.mock('@/lib/db/repo-for-org', () => ({
           .map((row) => ({ internalCaseId: row.internalCaseId }))),
       },
       raw: {
+        $queryRaw: vi.fn(async () => {
+          h.queryRawCalls += 1
+          const q = h.currentQuery.trim().toLowerCase()
+          const scopedCaseIds = scopedCaseIdsForAgent(h.currentAgentId)
+          if (!q) return []
+          const isIdLikeQuery = /^[A-Z0-9]+$/i.test(h.currentQuery) && /\d/.test(h.currentQuery)
+          return h.messages
+            .filter((row) => row.orgId === orgId)
+            .filter((row) => scopedCaseIds.includes(row.caseId))
+            .filter((row) => row.content.toLowerCase().includes(q))
+            .sort((a, b) => b.createdAt.toISOString().localeCompare(a.createdAt.toISOString()))
+            .map((row) => ({
+              id: row.id,
+              caseId: row.caseId,
+              chatId: row.chatId,
+              runId: row.runId,
+              role: row.role,
+              content: row.content,
+              contentBlocks: row.contentBlocks,
+              providerContent: row.providerContent,
+              providerMeta: row.providerMeta,
+              createdAt: row.createdAt,
+              rank: isIdLikeQuery ? 0 : 0.72,
+              matchMode: isIdLikeQuery ? 'contains_fallback' : 'fts',
+            }))
+        }),
         case: {
           findMany: vi.fn(async (args: any) => h.cases
             .filter((row) => matchesWhere(row, args?.where ?? {}))
@@ -154,15 +262,21 @@ vi.mock('@/lib/logger', () => ({
 import { GET } from '@/app/api/chats/route'
 
 function makeRequest(query = '') {
+  const url = new URL(`http://localhost/api/chats${query}`)
+  h.currentQuery = url.searchParams.get('q') ?? ''
+  h.currentAgentId = url.searchParams.get('agentId') ?? url.searchParams.get('agentConfigId') ?? ''
   return {
     method: 'GET',
     json: async () => ({}),
-    nextUrl: new URL(`http://localhost/api/chats${query}`),
+    nextUrl: url,
   } as any
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  h.currentQuery = ''
+  h.currentAgentId = ''
+  h.queryRawCalls = 0
   h.mockGetSession.mockResolvedValue({ orgId: 'default', role: 'admin', userId: 'user-1' })
 })
 
@@ -182,6 +296,15 @@ describe('chats contract schemas', () => {
 
     it('rejects limit > 200', () => {
       expect(() => ChatsListInput.parse({ limit: '201' })).toThrow()
+    })
+
+    it('normalizes valid chat-content search queries', () => {
+      const result = ChatsListInput.parse({ q: '  deposit   missing  ', agentId: 'agent-a' })
+      expect(result.q).toBe('deposit missing')
+    })
+
+    it('rejects one-character search queries', () => {
+      expect(() => ChatsListInput.parse({ q: 'a' })).toThrow()
     })
   })
 
@@ -214,8 +337,25 @@ describe('chats contract schemas', () => {
   describe('ChatsListResponse', () => {
     it('validates a proper list response', () => {
       const data = {
-        sessions: [{ chatId: 'c1', userId: 'u1', cases: [], messageCount: 0, lastActivity: '2026-01-01', hasHumanTask: false }],
+        sessions: [{
+          chatId: 'c1',
+          userId: 'u1',
+          cases: [],
+          messageCount: 0,
+          lastActivity: '2026-01-01',
+          hasHumanTask: false,
+          matchedMessages: [{
+            messageId: 'msg-1',
+            caseId: 'case-1',
+            runId: null,
+            role: 'user',
+            createdAt: '2026-01-01',
+            snippet: 'deposit missing',
+            rank: 0.7,
+          }],
+        }],
         total: 1,
+        query: { normalizedQuery: 'deposit', searchMode: 'fts' },
       }
       expect(() => ChatsListResponse.parse(data)).not.toThrow()
     })
@@ -288,6 +428,65 @@ describe('/api/chats route', () => {
     expect(res.status).toBe(404)
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('not_found')
+  })
+
+  it('searches visible message content and returns match snippets', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a&q=deposit'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.query).toEqual({ normalizedQuery: 'deposit', searchMode: 'fts' })
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions[0].chatId).toBe('chat-new')
+    expect(body.data.sessions[0].matchedMessages[0]).toMatchObject({
+      messageId: 'msg-deposit-assistant',
+      caseId: 'case-new',
+      runId: 'run-new',
+      role: 'assistant',
+    })
+    expect(body.data.sessions[0].matchedMessages[0].snippet).toContain('deposit')
+  })
+
+  it('keeps message search scoped to the selected agent', async () => {
+    const agentA = await GET(makeRequest('?limit=200&agentId=agent-a&q=withdrawal'))
+    const agentABody = await agentA.json()
+    expect(agentABody.ok).toBe(true)
+    expect(agentABody.data.total).toBe(0)
+
+    const agentB = await GET(makeRequest('?limit=200&agentId=agent-b&q=withdrawal'))
+    const agentBBody = await agentB.json()
+    expect(agentBBody.ok).toBe(true)
+    expect(agentBBody.data.total).toBe(1)
+    expect(agentBBody.data.sessions[0].chatId).toBe('chat-middle')
+  })
+
+  it('filters internal provider tool_result rows out of search results', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a&q=secret'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(0)
+    expect(body.data.sessions).toEqual([])
+  })
+
+  it('uses contains fallback metadata for short ID-like searches', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a&q=JAYA117FFEB'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.query.searchMode).toBe('contains_fallback')
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions[0].matchedMessages[0].messageId).toBe('msg-deposit-user')
+  })
+
+  it('returns an empty search page without querying messages when the selected agent has no scoped cases', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-empty&q=deposit'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(0)
+    expect(body.data.sessions).toEqual([])
+    expect(h.queryRawCalls).toBe(0)
   })
 })
 

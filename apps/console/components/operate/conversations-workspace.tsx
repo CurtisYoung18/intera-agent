@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import {
   AlertCircle,
@@ -22,7 +22,7 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import { apiClient } from '@/lib/api/client'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { summarizeConversationSourceTruth } from '@/lib/operate/runtime-truth'
-import type { ChatsListResponse, ChatDeleteResponse } from '@intera/shared/contracts/chats'
+import type { ChatsListResponse, ChatDeleteResponse, ChatMatchedMessage } from '@intera/shared/contracts/chats'
 
 interface CaseSummary {
   id: string
@@ -42,6 +42,40 @@ interface ChatSession {
   messageCount: number
   lastActivity: string
   hasHumanTask: boolean
+  matchedMessages?: ChatMatchedMessage[]
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const normalized = query.trim()
+  if (!normalized) return <>{text}</>
+
+  const lowerText = text.toLowerCase()
+  const lowerQuery = normalized.toLowerCase()
+  const parts: Array<{ text: string; matched: boolean }> = []
+  let cursor = 0
+
+  while (cursor < text.length) {
+    const index = lowerText.indexOf(lowerQuery, cursor)
+    if (index < 0) {
+      parts.push({ text: text.slice(cursor), matched: false })
+      break
+    }
+    if (index > cursor) parts.push({ text: text.slice(cursor, index), matched: false })
+    parts.push({ text: text.slice(index, index + normalized.length), matched: true })
+    cursor = index + normalized.length
+  }
+
+  return (
+    <>
+      {parts.map((part, index) => part.matched ? (
+        <mark key={index} className="rounded-[5px] bg-amber/[0.2] px-0.5 text-[var(--mist)]">
+          {part.text}
+        </mark>
+      ) : (
+        <Fragment key={index}>{part.text}</Fragment>
+      ))}
+    </>
+  )
 }
 
 function fmtRelative(iso: string, locale: 'en' | 'zh'): string {
@@ -57,11 +91,13 @@ function fmtRelative(iso: string, locale: 'en' | 'zh'): string {
 function ConversationRow({
   session,
   agentId,
+  searchQuery,
   onDelete,
   deleting,
 }: {
   session: ChatSession
   agentId: string | null
+  searchQuery: string
   onDelete: (chatId: string) => void
   deleting: boolean
 }) {
@@ -73,9 +109,14 @@ function ConversationRow({
     session.cases.map((caseItem) => ({ source: caseItem.source, userId: session.userId })),
   )
   const displayUserLabel = sourceTruth.kind === 'synthetic_review' ? (isZh ? 'Playground 导出' : 'Playground export') : session.userId
-  const href = agentId
-    ? `/operate/conversations/${encodeURIComponent(session.chatId)}?agentId=${encodeURIComponent(agentId)}`
-    : `/operate/conversations/${encodeURIComponent(session.chatId)}`
+  const firstMatch = session.matchedMessages?.[0]
+  const matchedCount = session.matchedMessages?.length ?? 0
+  const hrefParams = new URLSearchParams()
+  if (agentId) hrefParams.set('agentId', agentId)
+  if (firstMatch?.messageId) hrefParams.set('match', firstMatch.messageId)
+  if (firstMatch?.messageId && searchQuery.trim()) hrefParams.set('q', searchQuery.trim())
+  const hrefSuffix = hrefParams.toString() ? `?${hrefParams.toString()}` : ''
+  const href = `/operate/conversations/${encodeURIComponent(session.chatId)}${hrefSuffix}`
 
   return (
     <div className="group relative min-w-0">
@@ -123,10 +164,23 @@ function ConversationRow({
                   ? (isZh
                     ? '这是从 Playground 导出的评审副本。打开会话后可以查看偏评审用途的运行证据。'
                     : 'Synthetic review copy from Playground export. Open the conversation to inspect review-oriented runtime evidence.')
-                  : (isZh
+                    : (isZh
                     ? '还没有记录明确目标。打开会话后可以查看当前 ProcedureRun 和 trace 上下文。'
                     : 'No explicit goal recorded yet. Open the conversation to inspect the active ProcedureRun and trace context.'))}
             </p>
+            {firstMatch ? (
+              <div className="mt-3 border-l-2 border-amber/35 pl-3 text-[12px] leading-5 text-[var(--mist)]">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-amber">
+                  {isZh ? `聊天内容命中 ${matchedCount} 条` : `${matchedCount} message match${matchedCount === 1 ? '' : 'es'}`}
+                </p>
+                <p className="mt-1 line-clamp-2">
+                  <span className="mr-1 text-[var(--fog)]/70">
+                    {firstMatch.role === 'user' ? (isZh ? '用户' : 'User') : firstMatch.role === 'assistant' ? (isZh ? '助手' : 'Assistant') : firstMatch.role}
+                  </span>
+                  <HighlightedText text={firstMatch.snippet} query={searchQuery} />
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex min-w-0 flex-col gap-3 xl:ml-auto xl:w-[30%]">
@@ -199,9 +253,20 @@ export default function ConversationsWorkspace() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [queryMeta, setQueryMeta] = useState<ChatsListResponse['query']>(undefined)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const hasLoadedRef = useRef(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim().replace(/\s+/g, ' '))
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [search])
 
   const load = useCallback(async (showLoading = false) => {
     if (agentLoading) return
@@ -212,23 +277,30 @@ export default function ConversationsWorkspace() {
       setLoading(false)
       return
     }
-    if (showLoading) setLoading(true)
+    if (showLoading) {
+      if (hasLoadedRef.current) setSearching(true)
+      else setLoading(true)
+    }
     try {
       const params = new URLSearchParams({ limit: '200', agentId: selectedAgentId })
+      if (debouncedSearch.length >= 2) params.set('q', debouncedSearch)
       const result = await apiClient<ChatsListResponse>(`/api/chats?${params.toString()}`)
       setSessions(result.data.sessions)
       setTotal(result.data.total)
+      setQueryMeta(result.data.query)
       setLoadError(null)
+      hasLoadedRef.current = true
     } catch {
-      if (showLoading) {
+      if (showLoading && !hasLoadedRef.current) {
         setSessions([])
         setTotal(0)
       }
       setLoadError(isZh ? '加载会话失败' : 'Failed to load conversations')
     } finally {
       if (showLoading) setLoading(false)
+      setSearching(false)
     }
-  }, [agentLoadError, agentLoading, isZh, selectedAgentId])
+  }, [agentLoadError, agentLoading, debouncedSearch, isZh, selectedAgentId])
 
   useEffect(() => {
     load(true)
@@ -252,8 +324,9 @@ export default function ConversationsWorkspace() {
     }
   }, [isZh, selectedAgentId])
 
-  const filtered = sessions.filter((session) => {
-    if (!search) return true
+  const isServerSearch = debouncedSearch.length >= 2
+  const filtered = isServerSearch ? sessions : sessions.filter((session) => {
+    if (!search.trim()) return true
     const query = search.toLowerCase()
     return (
       session.userId.toLowerCase().includes(query) ||
@@ -301,9 +374,12 @@ export default function ConversationsWorkspace() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={isZh ? '按用户、会话或 Procedure 类型搜索' : 'Search by user, chat, or Procedure type'}
+                placeholder={isZh ? '按用户、会话、Procedure 或聊天内容搜索' : 'Search user, chat, Procedure, or message content'}
                 className="glass-input-console h-11 rounded-[16px] bg-white/86 pl-11 text-[13px] placeholder:text-[var(--fog)]/55"
               />
+              {searching ? (
+                <Loader2 className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-indigo/60" />
+              ) : null}
             </div>
 
             {sessions.length > 0 ? (
@@ -314,6 +390,7 @@ export default function ConversationsWorkspace() {
                   _version: 'intera_console_conversations_export_v1',
                   exportedAt: new Date().toISOString(),
                   filter: search || null,
+                  query: queryMeta ?? null,
                   total,
                   agentId: selectedAgentId,
                   shown: filtered.length,
@@ -356,7 +433,7 @@ export default function ConversationsWorkspace() {
             title={search ? (isZh ? '没有匹配的会话' : 'No matching conversations') : (isZh ? '还没有会话' : 'No conversations yet')}
             description={
               search
-                ? (isZh ? '试试别的用户、会话 ID 或 Procedure 类型。' : 'Try a different user, chat ID, or Procedure type.')
+                ? (isZh ? '没有在当前 Agent 的可见聊天内容中找到关键词。也可以试试用户、会话 ID 或 Procedure 类型。' : 'No visible message content matched in the current Agent. You can also try a user, chat ID, or Procedure type.')
                 : (isZh ? '一旦 Console 开始收到实时 chat 活动，会话就会出现在这里。' : 'Conversations will appear here once the Console starts receiving live chat activity.')
             }
           />
@@ -368,6 +445,7 @@ export default function ConversationsWorkspace() {
               key={session.chatId}
               session={session}
               agentId={selectedAgentId}
+              searchQuery={debouncedSearch}
               onDelete={handleDelete}
               deleting={deletingId === session.chatId}
             />
@@ -378,7 +456,9 @@ export default function ConversationsWorkspace() {
       {!loading && total > filtered.length ? (
         <div className="inline-flex items-center gap-2 self-start rounded-full border border-black/[0.05] bg-white/[0.68] px-3 py-1.5 text-[12px] text-[var(--fog)] shadow-[var(--shadow-card)]">
           <AlertCircle className="h-3.5 w-3.5" />
-          {isZh ? `显示 ${filtered.length} / ${total} 个会话。` : `Showing ${filtered.length} of ${total} conversations.`}
+          {isServerSearch
+            ? (isZh ? `显示 ${filtered.length} / ${total} 个命中会话。` : `Showing ${filtered.length} of ${total} matching conversations.`)
+            : (isZh ? `显示 ${filtered.length} / ${total} 个会话。` : `Showing ${filtered.length} of ${total} conversations.`)}
         </div>
       ) : null}
     </div>
