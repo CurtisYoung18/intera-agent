@@ -32,7 +32,9 @@ type LiveChatConfig = {
   accountId?: string
   agentAccountId?: string
   transferGroupId?: number
+  transferTitle?: string
   transferMessage?: string
+  transferFollowupLabel?: string
   playerIdGuideImageUrl?: string
   failureMessages?: {
     engine_unreachable?: string
@@ -134,6 +136,9 @@ export default function LiveChatChannelWorkspace({
     authType: 'auto',
     accountId: '',
     agentAccountId: '',
+    transferTitle: '',
+    transferMessage: '',
+    transferFollowupLabel: '',
     playerIdGuideImageUrl: '',
     failureMessages: {},
   })
@@ -723,15 +728,35 @@ export default function LiveChatChannelWorkspace({
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--fog)]/50">{t('livechat.escalationStrategy')}</p>
             <p className="mt-2 text-[12px] leading-relaxed text-[var(--fog)]">{t('livechat.escalationDesc')}</p>
             <div className="mt-4">
+              <label className={labelCls}>{t('livechat.transferTitle')}</label>
+              <input
+                className={inputCls}
+                value={config.transferTitle ?? ''}
+                onChange={(event) => setConfig((current) => ({ ...current, transferTitle: event.target.value || undefined }))}
+                placeholder={isZh ? '已转交人工客服' : 'Human support is taking over'}
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.transferTitleHint')}</p>
+            </div>
+            <div className="mt-4">
               <label className={labelCls}>{t('livechat.transferMessage')}</label>
               <textarea
                 className={inputCls}
                 rows={3}
                 value={config.transferMessage ?? ''}
                 onChange={(event) => setConfig((current) => ({ ...current, transferMessage: event.target.value || undefined }))}
-                placeholder={isZh ? '正在为您转接人工客服，请稍候...' : 'Transferring you to a human agent, please wait...'}
+                placeholder={isZh ? '人工专员会继续跟进。若需补充订单号、金额、时间或截图，请直接继续发送到当前对话。' : 'A specialist will continue from here. If you want to add the amount, time, order ID, or screenshots, send them directly in this chat.'}
               />
               <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.transferMessageHint')}</p>
+            </div>
+            <div className="mt-4">
+              <label className={labelCls}>{t('livechat.transferFollowupLabel')}</label>
+              <input
+                className={inputCls}
+                value={config.transferFollowupLabel ?? ''}
+                onChange={(event) => setConfig((current) => ({ ...current, transferFollowupLabel: event.target.value || undefined }))}
+                placeholder={isZh ? '补充订单号或截图' : 'Add order ID or screenshots'}
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.transferFollowupLabelHint')}</p>
             </div>
           </section>
 

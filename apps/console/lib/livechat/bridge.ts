@@ -524,7 +524,9 @@ export async function handleIncomingEvent(
 
   const livechatRenderer = new LiveChatRenderer(config.showSkillStatus, {
     failureMessages: config.failureMessages,
+    transferTitle: config.transferTitle,
     transferMessage: config.transferMessage,
+    transferFollowupLabel: config.transferFollowupLabel,
   })
   const binding: ChannelBindingConfig = {
     channel: 'livechat',
@@ -541,7 +543,7 @@ export async function handleIncomingEvent(
   let pendingHumanHandoff: { taskId?: string; queue?: string } | null = null
   try {
     for await (const sseEvent of parseSSEStream(response.body)) {
-      if (sseEvent.type === 'form_request' || sseEvent.type === 'human_task_created') {
+      if (sseEvent.type === 'form_request') {
         const discardedText = await flushTextBuffer(chatId)
         if (discardedText.trim()) {
           console.log('[Bridge] Discarded buffered preamble before card action:', {
@@ -549,6 +551,10 @@ export async function handleIncomingEvent(
             eventType: sseEvent.type,
           })
         }
+      } else if (sseEvent.type === 'human_task_created') {
+        const pendingText = await flushTextBuffer(chatId)
+        await flushBufferedTextAsMessages(chatId, pendingText, config, p)
+          .catch((err) => console.error('[Bridge] sendText before human handoff card failed:', err))
       }
       if (sseEvent.type === 'form_request' && typeof sseEvent.data === 'object' && sseEvent.data) {
         const note = formatAgentVisibleFormRequest(sseEvent.data as FormSnapshot)

@@ -15,7 +15,9 @@ export const livechatConfigSchema = z.object({
   accountId: z.string().optional(),
   agentAccountId: z.string().optional(),
   transferGroupId: z.number().optional(),
+  transferTitle: z.string().optional(),
   transferMessage: z.string().optional(),
+  transferFollowupLabel: z.string().optional(),
   playerIdGuideImageUrl: z.string().optional(),
 })
 
@@ -44,7 +46,9 @@ export const livechatConfigUpdateRequestSchema = z.object({
   showSkillStatus: z.boolean(),
   enabled: z.boolean(),
   transferGroupId: z.number().optional(),
+  transferTitle: z.string().optional(),
   transferMessage: z.string().optional(),
+  transferFollowupLabel: z.string().optional(),
   playerIdGuideImageUrl: z.string().optional(),
 })
 export type LiveChatConfigUpdateRequest = z.infer<typeof livechatConfigUpdateRequestSchema>

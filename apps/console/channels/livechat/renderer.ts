@@ -61,7 +61,9 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
     private readonly showSkillStatus: boolean,
     private readonly options: {
       failureMessages?: LiveChatFailureMessages
+      transferTitle?: string
       transferMessage?: string
+      transferFollowupLabel?: string
     } = {},
   ) {}
 
@@ -180,15 +182,17 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
           description: d?.queue,
         })
         const copy = getHandoffCopy(locale, summarizeHandoffFocus(d?.question, locale))
+        const configuredTitle = this.options.transferTitle?.trim()
         const configuredSubtitle = this.options.transferMessage?.trim()
+        const configuredFollowupLabel = this.options.transferFollowupLabel?.trim()
         return {
           type: 'send_card',
           card: {
-            title: copy.title,
+            title: configuredTitle || copy.title,
             subtitle: configuredSubtitle || copy.subtitle,
             buttons: [{
               id: 'handoff_followup',
-              label: copy.followupLabel,
+              label: configuredFollowupLabel || copy.followupLabel,
               type: 'message',
             }],
           },

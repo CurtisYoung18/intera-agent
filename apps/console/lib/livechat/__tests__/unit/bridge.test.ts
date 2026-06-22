@@ -161,6 +161,36 @@ describe('livechat bridge', () => {
     expect(mockSetTypingIndicator).not.toHaveBeenCalledWith('chat-1', false, 'bot-token', 'lic-1', undefined, undefined, undefined)
   })
 
+  it('flushes model handoff text before sending the handoff card and transferring', async () => {
+    mockFlushTextBuffer.mockResolvedValueOnce('Maile human support task create gareko chu.')
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'human_task_created', data: { taskId: 'task-1', queue: 'general' }, timestamp: '2026-06-11T09:34:43.500Z' },
+      { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'human agent please' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'Maile human support task create gareko chu.',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockSendCard).toHaveBeenCalled()
+    expect(mockTransferChat).toHaveBeenCalled()
+    expect(mockSendTextMessage.mock.invocationCallOrder[0]).toBeLessThan(mockSendCard.mock.invocationCallOrder[0])
+    expect(mockSendCard.mock.invocationCallOrder[0]).toBeLessThan(mockTransferChat.mock.invocationCallOrder[0])
+  })
+
   it('posts an agent-only note when a form is requested', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       {

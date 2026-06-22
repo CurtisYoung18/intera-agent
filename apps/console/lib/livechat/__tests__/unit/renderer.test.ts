@@ -199,15 +199,21 @@ describe('LiveChatRenderer', () => {
       ])
     })
 
-    it('uses configured transfer copy for the handoff card subtitle', () => {
-      const r = new LiveChatRenderer(true, { transferMessage: 'A human specialist is joining this chat now.' })
+    it('uses configured transfer copy for the handoff card', () => {
+      const r = new LiveChatRenderer(true, {
+        transferTitle: 'Support team notified',
+        transferMessage: 'A human specialist is joining this chat now.',
+        transferFollowupLabel: 'Send more details',
+      })
       const actions = r.render(makeEvent('human_task_created', {
         question: 'Need help with payment.',
       }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_card')
-      const card = (a as { type: 'send_card'; card: { subtitle?: string } }).card
+      const card = (a as { type: 'send_card'; card: { title: string; subtitle?: string; buttons: Array<{ label: string }> } }).card
+      expect(card.title).toBe('Support team notified')
       expect(card.subtitle).toBe('A human specialist is joining this chat now.')
+      expect(card.buttons[0]!.label).toBe('Send more details')
     })
   })
 

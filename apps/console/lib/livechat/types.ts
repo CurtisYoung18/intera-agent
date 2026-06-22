@@ -28,7 +28,9 @@ export interface LiveChatConfig {
   showSkillStatus: boolean
   enabled: boolean
   transferGroupId?: number
+  transferTitle?: string
   transferMessage?: string
+  transferFollowupLabel?: string
   playerIdGuideImageUrl?: string
   failureMessages?: LiveChatFailureMessages
 }
