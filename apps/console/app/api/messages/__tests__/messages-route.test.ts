@@ -246,7 +246,7 @@ describe('POST /api/messages runtime session guards', () => {
     expect(hasSession('case-queued')).toBe(true)
   })
 
-  it('keeps a bridge-pinned caseId instead of rerouting to another active case in the same chat', async () => {
+  it('keeps the provided caseId instead of hub-rerouting to another active case', async () => {
     h.prisma.case.findUnique.mockResolvedValue({
       id: 'case-bridge',
       orgId: 'org-a',
@@ -263,7 +263,6 @@ describe('POST /api/messages runtime session guards', () => {
       orgId: 'org-a',
       userId: 'user-1',
       chatId: 'chat-1',
-      sessionCasePinned: true,
     }))
     await readSse(res)
 
@@ -275,7 +274,7 @@ describe('POST /api/messages runtime session guards', () => {
     }))
   })
 
-  it('keeps a livechat bridge caseId when case routing is explicitly disabled', async () => {
+  it('keeps a livechat bridge caseId without needing a routing-disable guard', async () => {
     h.prisma.case.findUnique.mockResolvedValue({
       id: 'case-livechat',
       orgId: 'org-a',
@@ -292,7 +291,6 @@ describe('POST /api/messages runtime session guards', () => {
       orgId: 'org-a',
       userId: 'user-1',
       chatId: 'chat-1',
-      disableCaseRouting: true,
     }))
     await readSse(res)
 
@@ -325,7 +323,6 @@ describe('POST /api/messages runtime session guards', () => {
       orgId: 'org-a',
       userId: 'user-1',
       chatId: 'chat-1',
-      disableCaseRouting: true,
     }))
     await readSse(res)
 
@@ -338,7 +335,7 @@ describe('POST /api/messages runtime session guards', () => {
     expect(loop.run).toHaveBeenCalledWith('Customer uploaded image: deposit receipt.png', expect.any(Function), contentBlocks)
   })
 
-  it('creates a fresh case when the router says a single active case does not match the new topic', async () => {
+  it('does not create a fresh case through a pre-agent intent router', async () => {
     h.prisma.case.findUnique.mockResolvedValue({
       id: 'case-stale',
       orgId: 'org-a',
@@ -349,13 +346,6 @@ describe('POST /api/messages runtime session guards', () => {
     h.prisma.case.findMany.mockResolvedValue([
       { id: 'case-stale', type: 'deposit_not_credited', status: 'investigating' },
     ])
-    h.createAgentClient.mockReturnValue({
-      messages: {
-        create: vi.fn(async () => ({
-          content: [{ text: 'new' }],
-        })),
-      },
-    })
 
     const loop = mockLoop()
     h.agentLoopCreate.mockResolvedValue(loop)
@@ -369,23 +359,17 @@ describe('POST /api/messages runtime session guards', () => {
     }))
     await readSse(res)
 
-    expect(h.prisma.case.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        orgId: 'org-a',
-        userId: 'user-1',
-        chatId: 'chat-1',
-        type: 'general',
-        status: 'created',
-      }),
-    })
+    expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.prisma.case.create).not.toHaveBeenCalled()
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
-      caseId: 'case-created',
+      caseId: 'case-stale',
       chatId: 'chat-1',
       userId: 'user-1',
     }))
+    expect(loop.run).toHaveBeenCalledWith('你还能干啥', expect.any(Function), undefined)
   })
 
-  it('does not let a pending human task hijack a new topic when multiple active cases share the chat', async () => {
+  it('does not inspect pending human tasks to route a fresh customer topic', async () => {
     h.prisma.case.findUnique.mockResolvedValue({
       id: 'case-stale',
       orgId: 'org-a',
@@ -423,23 +407,16 @@ describe('POST /api/messages runtime session guards', () => {
     await readSse(res)
 
     expect(h.prisma.humanTask.findFirst).not.toHaveBeenCalled()
-    expect(h.prisma.case.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        orgId: 'org-a',
-        userId: 'user-1',
-        chatId: 'chat-1',
-        type: 'general',
-        status: 'created',
-      }),
-    })
+    expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.prisma.case.create).not.toHaveBeenCalled()
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
-      caseId: 'case-created',
+      caseId: 'case-stale',
       chatId: 'chat-1',
       userId: 'user-1',
     }))
   })
 
-  it('routes explicit withdrawal follow-up text to the withdrawal case before LLM routing', async () => {
+  it('does not reroute explicit withdrawal follow-up text before the main LLM', async () => {
     mockExistingCase({ id: 'case-deposit', status: 'investigating' })
     h.prisma.case.findMany.mockResolvedValue([
       { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
@@ -459,14 +436,15 @@ describe('POST /api/messages runtime session guards', () => {
     await readSse(res)
 
     expect(h.createAgentClient).not.toHaveBeenCalled()
+    expect(h.prisma.case.create).not.toHaveBeenCalled()
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
-      caseId: 'case-withdrawal',
+      caseId: 'case-deposit',
       chatId: 'chat-1',
       userId: 'user-1',
     }))
   })
 
-  it('starts a fresh case when explicit withdrawal text is not covered by active cases', async () => {
+  it('does not start a fresh case for explicit withdrawal text before the main LLM', async () => {
     mockExistingCase({ id: 'case-deposit', status: 'investigating' })
     h.prisma.case.findMany.mockResolvedValue([
       { id: 'case-deposit', type: 'deposit_not_credited', status: 'investigating' },
@@ -485,17 +463,9 @@ describe('POST /api/messages runtime session guards', () => {
     await readSse(res)
 
     expect(h.createAgentClient).not.toHaveBeenCalled()
-    expect(h.prisma.case.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        orgId: 'org-a',
-        userId: 'user-1',
-        chatId: 'chat-1',
-        type: 'general',
-        status: 'created',
-      }),
-    })
+    expect(h.prisma.case.create).not.toHaveBeenCalled()
     expect(h.agentLoopCreate).toHaveBeenCalledWith(expect.objectContaining({
-      caseId: 'case-created',
+      caseId: 'case-deposit',
       chatId: 'chat-1',
       userId: 'user-1',
     }))

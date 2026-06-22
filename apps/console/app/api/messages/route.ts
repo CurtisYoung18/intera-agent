@@ -21,9 +21,7 @@ import {
   getOrCreateSession,
   hasSession,
   hydrateProcedureRuntime,
-  parkSessionUntilNextRequest,
   recordInitialInputEvent,
-  startProcedureRun,
   type CaseSession,
   type RuntimeEventSource,
 } from '@/lib/agent/session-store'
@@ -31,16 +29,13 @@ import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
-import { profileKey } from '@/lib/agent/identity'
 import { createSafeSseWriter } from '@/lib/api/safe-sse'
 import { defineRoute } from '@/lib/api/define-route'
-import { readUserProfile } from '@/lib/db/user-profiles'
 import { checkRateLimit, clientIp } from '@/lib/rate-limit'
 import { maybeProxyMessagesToRuntime } from '@/lib/runtime/runtime-service'
 import { generateCaseId } from '@/lib/utils'
 import type { SSEEvent, AgentConfigData, CaseSchemaConfig, Message } from '@intera/shared/types'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
-import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import { LOOP_HISTORY_REPLAY_LIMIT } from '@/lib/agent/history-window'
 
 // Verify env vars at module load (logged once per cold start)
@@ -367,299 +362,10 @@ async function writeFormSubmissionTrace(args: {
   }
 }
 
-/** Lightweight LLM-based intent routing: classify a user message to the best
- *  matching active case. Falls back to the most recent case on error. */
-type CaseRoutingDecision =
-  | { kind: 'existing'; caseId: string }
-  | { kind: 'new' }
-
-type CaseTypeRoutingRow = {
-  type: string
-  displayName: string
-  description: string | null
-  icon: string
-  requiredFacts: string
-  defaultGoal: string
-  escalateOn: string
-  autoCloseConditions: string | null
-  procedure?: string | null
-  maxAutoTurns?: number | null
-}
-
-type CaseTypeRoutingDecision =
-  | { kind: 'case_type'; caseType: CaseTypeRoutingRow; confidence: number; reason?: string }
-  | { kind: 'general'; reason?: string }
-
-const ACTIVE_CASE_TOPIC_SYNONYMS: Record<string, string[]> = {
-  deposit: ['deposit', 'deposited', 'top up', 'topup', 'recharge', 'bank transfer', 'transfer receipt', '存款', '充值', '入款'],
-  withdrawal: ['withdraw', 'withdrawal', 'withdrew', 'cash out', 'payout', '提现', '提款', '出款', '提了', '提取', '提現'],
-}
-
 const MEMBER_ID_PATTERN = /\bJAYA(?=[A-Z0-9]*\d)[A-Z0-9]{4,}\b/i
-
-function deterministicRouteActiveCaseByText(
-  userMessage: string,
-  activeCases: Array<{ id: string; type: string }>,
-): CaseRoutingDecision | null {
-  const normalized = userMessage.toLowerCase()
-  const topicHits = Object.entries(ACTIVE_CASE_TOPIC_SYNONYMS)
-    .filter(([, terms]) => terms.some((term) => normalized.includes(term.toLowerCase())))
-    .map(([topic]) => topic)
-
-  if (topicHits.length !== 1) return null
-  const [topic] = topicHits
-  const matches = activeCases.filter((c) => c.type.toLowerCase().includes(topic))
-  if (matches.length === 1) return { kind: 'existing', caseId: matches[0].id }
-
-  const conflictingTopicExists = activeCases.some((c) =>
-    Object.keys(ACTIVE_CASE_TOPIC_SYNONYMS)
-      .filter((candidate) => candidate !== topic)
-      .some((candidate) => c.type.toLowerCase().includes(candidate)),
-  )
-  if (conflictingTopicExists) return { kind: 'new' }
-  return null
-}
 
 function normalizeRoutingText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim()
-}
-
-function caseTypeRoutingSearchText(row: CaseTypeRoutingRow): string {
-  const procedure = parseProcedure(row.procedure)
-  return normalizeRoutingText([
-    row.type,
-    row.displayName,
-    row.description,
-    procedure?.whenToUse,
-    procedure?.overview,
-    procedure?.knowledgeGuidance,
-  ].filter(Boolean).join(' '))
-}
-
-function findCaseTypeByNeedles(
-  candidates: CaseTypeRoutingRow[],
-  needles: string[],
-): CaseTypeRoutingRow | null {
-  const normalizedNeedles = needles.map(normalizeRoutingText)
-  const typeMatches = candidates.filter((row) => {
-    const type = normalizeRoutingText(row.type)
-    return normalizedNeedles.some((needle) => type.includes(needle))
-  })
-  if (typeMatches.length > 0) {
-    return typeMatches
-      .slice()
-      .sort((a, b) => a.type.length - b.type.length)[0]
-  }
-
-  const matches = candidates.filter((row) => {
-    const text = caseTypeRoutingSearchText(row)
-    return normalizedNeedles.some((needle) => text.includes(needle))
-  })
-  if (matches.length === 0) return null
-  return matches
-    .slice()
-    .sort((a, b) => a.type.length - b.type.length)[0]
-}
-
-function hasAnyRoutingTerm(text: string, terms: string[]): boolean {
-  return terms.some((term) => text.includes(term))
-}
-
-function hasPersonalLookupCue(text: string): boolean {
-  return (
-    MEMBER_ID_PATTERN.test(text) ||
-    /\b(my|me|mine|i|i'm|im|mero|malai|maile|malaai)\b/.test(text) ||
-    /\b(member|player)\s*id\b/.test(text) ||
-    /\b(account|status|latest|current|check|verify|verification|kyc|history|record|records|eligib|eligible)\b/.test(text) ||
-    /\b(not|no|missing|failed|rejected|blocked|stuck|pending|arrived|received|credited|deducted|wrong|issue|problem|unable)\b/.test(text) ||
-    /\b(kina|hudaina|bhayena|aayena|audaina|milena)\b/.test(text)
-  )
-}
-
-function looksLikeSelfServiceFaq(text: string): boolean {
-  if (/\b(can you|please)\s+check\b/.test(text)) return false
-  if (/\b(status|latest|current|rejected|blocked|failed|pending|wrong|not\s+(?:received|arrived|credited))\b/.test(text)) {
-    return false
-  }
-  if (/\b(is|am)\s+my\s+account\s+verified\b/.test(text)) return true
-  return (
-    /\b(how\s+(?:to|do|can)|where\s+(?:to|can)|what\s+(?:are|is)|do\s+you\s+support|can\s+i\s+(?:deposit|withdraw|claim|view|check))\b/.test(text) ||
-    /\b(rule|rules|limit|limits|method|methods|process|processing\s+time|crypto|minimum|maximum|min|max|welcome\s+bonus\s+terms)\b/.test(text)
-  )
-}
-
-function deterministicRouteCaseTypeByText(
-  userMessage: string,
-  caseTypes: CaseTypeRoutingRow[],
-): CaseTypeRoutingDecision | null {
-  const candidates = caseTypes.filter((row) => isInvestigableCaseType(row.type))
-  if (candidates.length === 0) return { kind: 'general', reason: 'No configured case types.' }
-
-  const text = normalizeRoutingText(userMessage)
-  const personal = hasPersonalLookupCue(text)
-  const selfServiceFaq = looksLikeSelfServiceFaq(text)
-  const route = (needles: string[], reason: string): CaseTypeRoutingDecision | null => {
-    const row = findCaseTypeByNeedles(candidates, needles)
-    return row ? { kind: 'case_type', caseType: row, confidence: 0.9, reason } : null
-  }
-
-  // Reset PIN is always a member-specific workflow, even before the member_id is known.
-  if (
-    hasAnyRoutingTerm(text, ['withdrawal pin', 'withdraw pin', 'withdraw pin', 'pin reset', 'reset pin']) ||
-    (text.includes('pin') && hasAnyRoutingTerm(text, ['forgot', 'forget', 'lost', 'reset']))
-  ) {
-    return route(['reset_withdrawal_pin', 'reset withdrawal pin', 'reset pin'], 'Customer asks to reset or recover withdrawal PIN.')
-  }
-
-  // Avoid turning ordinary FAQ/how-to questions into live lookups.
-  const memberSpecific = personal && !selfServiceFaq
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['deposit', 'deposited', 'top up', 'topup', 'recharge', 'bank transfer', 'balance not updated', 'not credited', 'not arrived', 'has not arrived'])) {
-    return route(['deposit'], 'Customer asks for a member-specific deposit check.')
-  }
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['withdraw', 'withdrawal', 'withdrew', 'cash out', 'payout', 'turnover', 'hudaina', 'cashout'])) {
-    return route(['withdrawal', 'withdraw'], 'Customer asks for a member-specific withdrawal check.')
-  }
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['promo', 'promotion', 'bonus', 'cashback', 'vip bonus']) && hasAnyRoutingTerm(text, ['active', 'have', 'eligib', 'account', 'now', 'my'])) {
-    return route(['promotion'], 'Customer asks for personal promotion or cashback status.')
-  }
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['kyc', 'verification', 'verify my account', 'check my account', 'account status', 'account rejected', 'account blocked', 'restricted'])) {
-    return route(['account'], 'Customer asks for member-specific account or KYC status.')
-  }
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['recommend game', 'recommend games', 'games for me', 'game for me', 'based on my account', 'based on account'])) {
-    return route(['game_recommendation', 'game recommendation', 'recommendation'], 'Customer asks for personalized game recommendation.')
-  }
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['bet result', 'last bet', 'bet history', 'wager', 'round', 'game result', 'result wrong'])) {
-    return route(['bet'], 'Customer asks for member-specific bet history or dispute check.')
-  }
-
-  if (memberSpecific && hasAnyRoutingTerm(text, ['transaction history', 'transaction records', 'statement records', 'deposit history', 'withdrawal history'])) {
-    return route(['transaction'], 'Customer asks for member-specific transaction history.')
-  }
-
-  if (hasAnyRoutingTerm(text, ['not received my money', 'money not received', 'funds missing', 'transfer issue']) && !hasAnyRoutingTerm(text, ['deposit', 'withdraw', 'withdrawal', 'bonus', 'cashback', 'bet', 'game'])) {
-    return { kind: 'general', reason: 'Ambiguous money issue; agent should ask issue_type before choosing a procedure.' }
-  }
-
-  return null
-}
-
-function normalizeFactKeyForRoute(fact: string): string {
-  const normalized = fact.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  if (['memberid', 'member_id', 'playerid', 'player_id', 'user_id', 'userid'].includes(normalized)) return 'member_id'
-  if (['issuetype', 'issue_type', 'intent_type'].includes(normalized)) return 'issue_type'
-  return normalized || fact
-}
-
-function formFieldFromRequiredFact(fact: string): Record<string, unknown> {
-  const key = normalizeFactKeyForRoute(fact)
-  if (key === 'issue_type') {
-    return {
-      key,
-      label: 'Issue type',
-      type: 'select',
-      required: true,
-      options: ['Deposit not credited', 'Withdrawal not received', 'Bonus/cashback not received', 'Game/bet money issue', 'Other'],
-    }
-  }
-  if (key === 'method') {
-    return {
-      key,
-      label: 'Transaction type',
-      type: 'select',
-      required: true,
-      options: ['deposit', 'withdrawal'],
-    }
-  }
-  return {
-    key,
-    label: key === 'member_id'
-      ? 'Member ID'
-      : key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-    type: 'text',
-    required: true,
-    placeholder: key === 'member_id' ? 'JAYA...' : undefined,
-  }
-}
-
-function fallbackRequiredFactsFormTitle(missingFacts: string[]): string {
-  const normalized = missingFacts.map(normalizeFactKeyForRoute)
-  if (normalized.length === 1 && normalized[0] === 'member_id') return 'Member ID Required'
-  if (normalized.includes('issue_type')) return 'Please choose the issue type'
-  return 'Information Required'
-}
-
-function fallbackRequiredFactsFormDescription(missingFacts: string[]): string {
-  const normalized = missingFacts.map(normalizeFactKeyForRoute)
-  if (normalized.length === 1 && normalized[0] === 'member_id') {
-    return 'Please provide your Jayabaji Member ID so I can continue.'
-  }
-  if (normalized.includes('issue_type')) {
-    return 'Please select the closest issue type so I can route this correctly.'
-  }
-  return 'Please provide the missing details so I can continue.'
-}
-
-function extractFactsFromTextForRoute(text: string | undefined): Record<string, string> {
-  const facts: Record<string, string> = {}
-  if (!text) return facts
-  const memberId = text.match(MEMBER_ID_PATTERN)?.[0]
-  if (memberId) facts.member_id = memberId.toUpperCase()
-  const normalized = normalizeRoutingText(text)
-  if (hasAnyRoutingTerm(normalized, ['deposit history', 'deposit transaction'])) facts.method = 'deposit'
-  if (hasAnyRoutingTerm(normalized, ['withdrawal history', 'withdraw history', 'withdrawal transaction', 'withdraw transaction'])) facts.method = 'withdrawal'
-  return facts
-}
-
-function extractMemberIdFromProfile(profile: string | undefined, sections: unknown): string | null {
-  const haystack = [profile ?? '', JSON.stringify(sections ?? {})].join('\n')
-  return haystack.match(MEMBER_ID_PATTERN)?.[0]?.toUpperCase() ?? null
-}
-
-async function readProfileFactsForRoute(args: {
-  orgId: string
-  userId: string
-  chatId?: string | null
-  agentConfigId?: string | null
-}): Promise<Record<string, string>> {
-  const key = profileKey(args.userId, args.chatId)
-  if (!key) return {}
-  try {
-    const profile = await readUserProfile(prisma as any, {
-      orgId: args.orgId,
-      userId: key,
-      agentConfigId: args.agentConfigId,
-    })
-    const memberId = extractMemberIdFromProfile(profile?.profile, parseMemoryJson(profile?.sections))
-    return memberId ? { member_id: memberId } : {}
-  } catch {
-    return {}
-  }
-}
-
-function missingRequiredFactsForRoute(args: {
-  requiredFacts: string[]
-  messageText?: string
-  formAnswers?: Record<string, string>
-  profileFacts?: Record<string, string>
-}): string[] {
-  const fromMessage = extractFactsFromTextForRoute(args.messageText)
-  const known = new Map<string, string>()
-  for (const source of [args.profileFacts ?? {}, fromMessage, args.formAnswers ?? {}]) {
-    for (const [key, value] of Object.entries(source)) {
-      const normalizedKey = normalizeFactKeyForRoute(key)
-      if (typeof value === 'string' && value.trim()) known.set(normalizedKey, value.trim())
-    }
-  }
-  return args.requiredFacts
-    .map(normalizeFactKeyForRoute)
-    .filter((fact, index, all) => all.indexOf(fact) === index)
-    .filter((fact) => !known.has(fact))
 }
 
 function isExplicitHumanHandoffRequest(text: string): boolean {
@@ -682,149 +388,6 @@ function isOperationalEvidenceTool(title: string | null): boolean {
     'get_current_time',
     'create_human_task',
   ].includes(toolName)
-}
-
-async function resolveCaseByIntent(
-  userMessage: string,
-  activeCases: Array<{ id: string; type: string }>,
-  fallbackCaseId: string,
-): Promise<CaseRoutingDecision> {
-  const model = process.env.HUB_ROUTING_MODEL || DEFAULT_MEMORY_MODEL
-
-  const caseList = activeCases
-    .map((c) => `- id: "${c.id}", type: ${c.type}`)
-    .join('\n')
-
-  const prompt = [
-    'You are a message router. Given a customer message and a list of active cases,',
-    'return the case ID that best matches what the customer is talking about.',
-    'If the message is about a NEW topic not covered by any case, return "new".',
-    '',
-    'Active cases:',
-    caseList,
-    '',
-    'Reply with ONLY the case ID or "new". No other text.',
-  ].join('\n')
-
-  try {
-    const { createAgentClient } = await import('@/lib/agent/api/provider-config')
-    const client = createAgentClient(model)
-    const resp = await client.messages.create({
-      model,
-      max_tokens: 32,
-      temperature: 0,
-      system: prompt,
-      messages: [{ role: 'user', content: userMessage }],
-    })
-    const text = (resp.content[0] as any)?.text?.trim() || ''
-    // Extract caseId from response (handle quotes, whitespace)
-    const clean = text.replace(/^["']|["']$/g, '').trim()
-    if (clean === 'new') return { kind: 'new' }
-    if (!clean) return { kind: 'existing', caseId: fallbackCaseId }
-    // Verify the returned ID is in the active cases list
-    if (activeCases.some((c) => c.id === clean)) return { kind: 'existing', caseId: clean }
-    return { kind: 'existing', caseId: fallbackCaseId }
-  } catch {
-    return { kind: 'existing', caseId: fallbackCaseId }
-  }
-}
-
-function caseTypeRoutingDescriptor(row: CaseTypeRoutingRow): string {
-  const procedure = parseProcedure(row.procedure)
-  const requiredFacts = parseMemoryJson(row.requiredFacts)
-  const facts = Array.isArray(requiredFacts) ? requiredFacts.join(', ') : ''
-  return [
-    `- type: "${row.type}"`,
-    `  displayName: ${row.displayName}`,
-    row.description ? `  description: ${row.description}` : null,
-    procedure?.whenToUse ? `  whenToUse: ${procedure.whenToUse}` : null,
-    procedure?.overview ? `  overview: ${procedure.overview}` : null,
-    procedure?.knowledgeGuidance ? `  knowledgeGuidance: ${procedure.knowledgeGuidance}` : null,
-    facts ? `  requiredFacts: ${facts}` : `  requiredFacts: none`,
-  ].filter(Boolean).join('\n')
-}
-
-function parseCaseTypeRoutingText(text: string): { type: string; confidence: number; reason?: string } | null {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim()
-  const jsonText = fenced || trimmed.match(/\{[\s\S]*\}/)?.[0] || trimmed
-  try {
-    const parsed = JSON.parse(jsonText) as Record<string, unknown>
-    const rawType = typeof parsed.type === 'string'
-      ? parsed.type
-      : typeof parsed.caseType === 'string'
-        ? parsed.caseType
-        : typeof parsed.case_type === 'string'
-          ? parsed.case_type
-          : ''
-    if (!rawType.trim()) return null
-    const confidence = typeof parsed.confidence === 'number'
-      ? parsed.confidence
-      : Number(parsed.confidence ?? 0.75)
-    return {
-      type: rawType.trim().replace(/^["']|["']$/g, ''),
-      confidence: Number.isFinite(confidence) ? confidence : 0.75,
-      reason: typeof parsed.reason === 'string' ? parsed.reason : undefined,
-    }
-  } catch {
-    const clean = trimmed.replace(/^["']|["']$/g, '').trim()
-    if (!clean) return null
-    return { type: clean, confidence: 0.7 }
-  }
-}
-
-async function resolveCaseTypeByIntent(
-  userMessage: string,
-  caseTypes: CaseTypeRoutingRow[],
-): Promise<CaseTypeRoutingDecision> {
-  const candidates = caseTypes.filter((row) => isInvestigableCaseType(row.type))
-  if (candidates.length === 0) return { kind: 'general', reason: 'No configured case types.' }
-
-  const model = process.env.HUB_ROUTING_MODEL || DEFAULT_MEMORY_MODEL
-  const caseList = candidates.map(caseTypeRoutingDescriptor).join('\n\n')
-  const prompt = [
-    'You are an Intera harness case-type router.',
-    'Given a customer message and configured CaseTypes, choose the exact CaseType type only when the message clearly matches that CaseType.',
-    'Return "general" when the customer asks an ordinary FAQ, self-service how-to, rules/limits/policy question, or when the money/funds intent is ambiguous.',
-    'Do not choose a member-specific lookup CaseType unless the customer asks for their own current status/history/eligibility/reset/dispute or a transaction-specific check.',
-    '',
-    'Configured CaseTypes:',
-    caseList,
-    '',
-    'Reply as compact JSON only: {"type":"<exact type or general>","confidence":0.0-1.0,"reason":"short reason"}.',
-  ].join('\n')
-
-  try {
-    const { createAgentClient } = await import('@/lib/agent/api/provider-config')
-    const client = createAgentClient(model)
-    const resp = await client.messages.create({
-      model,
-      max_tokens: 160,
-      temperature: 0,
-      system: prompt,
-      messages: [{ role: 'user', content: userMessage }],
-    })
-    const text = (resp.content[0] as any)?.text?.trim() || ''
-    const parsed = parseCaseTypeRoutingText(text)
-    if (!parsed) return { kind: 'general', reason: 'Router returned no parseable type.' }
-    const requested = parsed.type.trim()
-    if (requested.toLowerCase() === 'general') {
-      return { kind: 'general', reason: parsed.reason }
-    }
-    const row = candidates.find((candidate) => candidate.type === requested)
-    if (!row) return { kind: 'general', reason: `Unknown routed type: ${requested}` }
-    return {
-      kind: 'case_type',
-      caseType: row,
-      confidence: Math.max(0, Math.min(1, parsed.confidence)),
-      reason: parsed.reason,
-    }
-  } catch (err) {
-    console.error('[Intera] CaseType routing failed:', err)
-    return { kind: 'general', reason: 'Router error.' }
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -885,8 +448,6 @@ export async function POST(request: NextRequest) {
           chatId,
           caseType: bodyCaseType,
           bootstrapNewCase: rawBootstrapNewCase,
-          sessionCasePinned: rawSessionCasePinned,
-          disableCaseRouting: rawDisableCaseRouting,
         } = body
 
         // Session-based requests (web/playground) pass agentConfigId via body;
@@ -894,8 +455,6 @@ export async function POST(request: NextRequest) {
         const resolvedAgentConfigId = authAgentConfigId || (typeof bodyConfigId === 'string' ? bodyConfigId : null)
 
         const bootstrapNewCase = Boolean(rawBootstrapNewCase)
-        const sessionCasePinned = rawSessionCasePinned === true
-        const disableCaseRouting = rawDisableCaseRouting === true
 
         // orgId mismatch check: if body sends a different orgId than the credential
         if (authOrgId && orgId && orgId !== authOrgId) {
@@ -955,19 +514,14 @@ export async function POST(request: NextRequest) {
           typeof chatId === 'string' && chatId.trim().length > 0
             ? chatId.trim()
             : resolvedCaseId
-        let createdCaseForIntent = false
-        let inferredCaseTypeRow: CaseTypeRoutingRow | null = null
-        let inferredCaseTypeConfidence: number | null = null
-        let inferredCaseTypeReason: string | undefined
+        let createdCaseForManualSelection = false
         const emittedCaseCreated = new Set<string>()
         let runtimeInputSource: RuntimeEventSource = 'customer_message'
         let naturalMemberIdForProfile: string | null = null
 
         // If the client sent an explicit caseId that doesn't exist yet in DB,
-        // it's a fresh conversation — skip hub routing so it doesn't hijack
-        // old active cases for the same userId.
+        // verify that it belongs to this organization before proceeding.
         const clientProvidedCaseId = !!caseId
-        let clientCaseIsNew = false
         if (clientProvidedCaseId) {
           try {
             const existing = await prisma.case.findUnique({
@@ -980,7 +534,6 @@ export async function POST(request: NextRequest) {
               return
             }
             if (existing?.chatId) resolvedChatId = existing.chatId
-            clientCaseIsNew = !existing
           } catch { /* noop */ }
         }
 
@@ -1132,153 +685,6 @@ export async function POST(request: NextRequest) {
         // Stream progress immediately so the user sees movement (CC pattern)
         sendEvent({ type: 'stream_request_start', data: null, timestamp: new Date().toISOString() })
 
-        // ── Hub: route message to the correct active case ──
-        // When multiple cases are active in a single chat window (no tabs),
-        // the Hub decides which case receives this message.
-        if (
-          userMessage &&
-          !resumeTrigger &&
-          !formResult &&
-          !bootstrapNewCase &&
-          !interactionResult &&
-          !clientCaseIsNew &&
-          !sessionCasePinned &&
-          !disableCaseRouting
-        ) {
-          try {
-            const activeCases = await prisma.case.findMany({
-              where: {
-                orgId: resolvedOrgId,
-                userId: resolvedUserId,
-                chatId: resolvedChatId,
-                status: { notIn: ['resolved'] },
-              },
-              orderBy: { updatedAt: 'desc' },
-            })
-
-            if (activeCases.length === 1) {
-              const routed = deterministicRouteActiveCaseByText(userMessage, activeCases) ??
-                await resolveCaseByIntent(
-                  userMessage,
-                  activeCases,
-                  activeCases[0].id,
-                )
-              if (routed.kind === 'new') {
-                const newCase = await prisma.case.create({
-                  data: {
-                    orgId: resolvedOrgId,
-                    userId: resolvedUserId,
-                    type: 'general',
-                    status: 'created',
-                    chatId: resolvedChatId,
-                  },
-                })
-                resolvedCaseId = newCase.id
-              } else {
-                resolvedCaseId = routed.caseId
-              }
-            } else if (activeCases.length > 1) {
-              // LLM-based intent routing: classify the message to the right case.
-              // Do not auto-hijack arbitrary customer text into the newest pending
-              // human task; that keeps stale handoff cases alive forever.
-              const routed = deterministicRouteActiveCaseByText(userMessage, activeCases) ??
-                await resolveCaseByIntent(
-                  userMessage,
-                  activeCases,
-                  resolvedCaseId,
-                )
-              if (routed.kind === 'new') {
-                const newCase = await prisma.case.create({
-                  data: {
-                    orgId: resolvedOrgId,
-                    userId: resolvedUserId,
-                    type: 'general',
-                    status: 'created',
-                    chatId: resolvedChatId,
-                  },
-                })
-                resolvedCaseId = newCase.id
-              } else {
-                resolvedCaseId = routed.caseId
-              }
-            }
-          } catch (err) { console.error('[Intera] Hub routing failed:', err) }
-        }
-
-        // ── Fresh lane case-type routing ──
-        // If this is a new/general lane, classify against configured CaseTypes
-        // before the first AgentLoop call so Procedure context can be injected
-        // from turn one. This stays harness-level: the router sees only rows
-        // operators configured in Console, not hardcoded J1N keyword branches.
-        if (
-          resolvedAgentConfigId &&
-          userMessage &&
-          !resumeTrigger &&
-          !formResult &&
-          !bootstrapNewCase &&
-          !interactionResult &&
-          !bodyCaseType &&
-          !sessionCasePinned &&
-          !disableCaseRouting
-        ) {
-          try {
-            const targetCase = await prisma.case.findUnique({
-              where: { id: resolvedCaseId },
-              select: { id: true, type: true, status: true },
-            })
-            const activeOrPausedRun = targetCase
-              ? await prisma.procedureRun.findFirst({
-                  where: {
-                    caseId: resolvedCaseId,
-                    orgId: resolvedOrgId,
-                    chatId: resolvedChatId,
-                    status: { in: ['active', 'paused'] },
-                  },
-                  select: { id: true },
-                })
-              : null
-            const canInferCaseType =
-              !activeOrPausedRun &&
-              (!targetCase ||
-                ((targetCase.type == null || targetCase.type === 'general') &&
-                  targetCase.status !== 'waiting_human' &&
-                  targetCase.status !== 'resolved'))
-
-            if (canInferCaseType) {
-              const caseTypes = await prisma.caseType.findMany({
-                where: { agentConfigId: resolvedAgentConfigId, enabled: true },
-                select: {
-                  type: true,
-                  displayName: true,
-                  description: true,
-                  icon: true,
-                  requiredFacts: true,
-                  defaultGoal: true,
-                  escalateOn: true,
-                  autoCloseConditions: true,
-                  procedure: true,
-                  maxAutoTurns: true,
-                },
-              })
-              const routed =
-                deterministicRouteCaseTypeByText(userMessage, caseTypes) ??
-                await resolveCaseTypeByIntent(userMessage, caseTypes)
-              if (routed.kind === 'case_type') {
-                inferredCaseTypeRow = routed.caseType
-                inferredCaseTypeConfidence = routed.confidence
-                inferredCaseTypeReason = routed.reason
-                userMessage =
-                  `[Intent selected: ${routed.caseType.type}] ` +
-                  `The harness matched the customer's message to configured CaseType "${routed.caseType.type}". ` +
-                  `Handle this CaseType unless the customer corrects it. ` +
-                  `Original message: "${userMessage}"`
-              }
-            }
-          } catch (err) {
-            console.error('[Intera] Fresh lane CaseType inference failed:', err)
-          }
-        }
-
         // ── Bootstrap new case from Chat UI (multi-case parallel lanes) ──
         if (
           bootstrapNewCase &&
@@ -1302,14 +708,14 @@ export async function POST(request: NextRequest) {
               },
             })
             resolvedCaseId = newCase.id
-            createdCaseForIntent = true
+            createdCaseForManualSelection = true
 
             // Rewrite userMessage to scope the agent to the single selected case type.
             // The agent sees the selected case type and the original details.
             userMessage =
-              `[Intent selected: ${bodyCaseType}] ` +
-              `The customer already chose "${bodyCaseType}" from the intent card. ` +
-              `Handle ONLY this case type. ` +
+              `[Manual Procedure selected: ${bodyCaseType}] ` +
+              `The customer explicitly chose "${bodyCaseType}" from the UI. ` +
+              `Use this as operator-provided context, but let the main model decide the next action. ` +
               `Original message: "${userMessage}"`
 
             sendEvent({
@@ -1337,30 +743,23 @@ export async function POST(request: NextRequest) {
         }
 
         if (bodyCaseType) {
-          systemPrompt += `\n\n[Manual Case Type]: The user has already selected case type "${bodyCaseType}" from the intent clarification card. The user already made their choice. Proceed directly with this case type. If the original message mentions other issues, ignore them unless the customer brings them up again.`
-        }
-
-        if (inferredCaseTypeRow) {
-          systemPrompt += `\n\n[Inferred Case Type]: The harness classified this fresh lane as "${inferredCaseTypeRow.type}" from configured CaseTypes. Confidence: ${inferredCaseTypeConfidence ?? 0}. ${inferredCaseTypeReason ? `Reason: ${inferredCaseTypeReason}` : ''}`
+          systemPrompt += `\n\n[Manual Procedure Context]: The user explicitly selected case type "${bodyCaseType}" from the UI. This is context only; the main model remains responsible for deciding whether to ask a question, start or continue a Procedure, call a tool, answer normally, or clarify.`
         }
 
         // Chat UI binds SSE events to lane.caseId via case_created.
-        if (!resumeTrigger && !formResult && !createdCaseForIntent && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
+        if (!resumeTrigger && !formResult && !createdCaseForManualSelection && resolvedCaseId && !emittedCaseCreated.has(resolvedCaseId)) {
           const inferredType =
-            (bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined) ??
-            (inferredCaseTypeRow?.type && isInvestigableCaseType(inferredCaseTypeRow.type) ? inferredCaseTypeRow.type : undefined)
+            bodyCaseType && isInvestigableCaseType(bodyCaseType) ? bodyCaseType : undefined
           if (inferredType) {
             try {
-              const ctRow = inferredCaseTypeRow?.type === inferredType
-                ? inferredCaseTypeRow
-                : await prisma.caseType.findUnique({
-                    where: {
-                      agentConfigId_type: {
-                        agentConfigId: resolvedAgentConfigId ?? '',
-                        type: inferredType,
-                      },
-                    },
-                  })
+              const ctRow = await prisma.caseType.findUnique({
+                where: {
+                  agentConfigId_type: {
+                    agentConfigId: resolvedAgentConfigId ?? '',
+                    type: inferredType,
+                  },
+                },
+              })
               sendEvent({
                 type: 'case_created',
                 data: {
@@ -1466,13 +865,12 @@ export async function POST(request: NextRequest) {
 
         // FK: traces/messages reference Case.caseId — rows must exist before AgentLoop writes ActionTrace/Message.
         const isHumanTaskResumeInput = runtimeInputSource === 'human_task_result'
-        const inferredCaseTypeForRecord =
+        const caseTypeForRecord =
           caseSchema?.type ??
           runtimeProcedure?.procedureId ??
-          inferredCaseTypeRow?.type ??
           bodyCaseType ??
           'general'
-        const inferredCaseStatusForRecord =
+        const caseStatusForRecord =
           deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus, {
             resumeFromHumanTaskResult: isHumanTaskResumeInput,
           }) ??
@@ -1482,18 +880,18 @@ export async function POST(request: NextRequest) {
           await prisma.case.upsert({
             where: { id: resolvedCaseId },
             update: {
-              ...(inferredCaseTypeForRecord !== 'general' ? { type: inferredCaseTypeForRecord } : {}),
-              status: inferredCaseStatusForRecord,
-              ...(inferredCaseStatusForRecord === 'investigating' ? { blocker: null } : {}),
+              ...(caseTypeForRecord !== 'general' ? { type: caseTypeForRecord } : {}),
+              status: caseStatusForRecord,
+              ...(caseStatusForRecord === 'investigating' ? { blocker: null } : {}),
             },
             create: {
               id: resolvedCaseId,
               orgId: resolvedOrgId,
               userId: resolvedUserId,
-              type: inferredCaseTypeForRecord,
-              status: inferredCaseStatusForRecord,
+              type: caseTypeForRecord,
+              status: caseStatusForRecord,
               chatId: resolvedChatId,
-              ...(inferredCaseStatusForRecord === 'investigating' ? { blocker: null } : {}),
+              ...(caseStatusForRecord === 'investigating' ? { blocker: null } : {}),
             },
           })
         } catch (err) {
@@ -1501,13 +899,13 @@ export async function POST(request: NextRequest) {
         }
 
         // First-touch lanes: Case row now exists but schema was only attached when existingCase was found earlier.
-        if (!caseSchema && inferredCaseTypeForRecord !== 'general') {
+        if (!caseSchema && caseTypeForRecord !== 'general') {
           try {
             const ctRow = await prisma.caseType.findUnique({
               where: {
                 agentConfigId_type: {
                   agentConfigId: resolvedAgentConfigId ?? '',
-                  type: inferredCaseTypeForRecord,
+                  type: caseTypeForRecord,
                 },
               },
             })
@@ -1762,122 +1160,6 @@ export async function POST(request: NextRequest) {
           return
         }
 
-        const shouldAutoStartProcedure =
-          !!caseSchema?.procedure &&
-          !runtimeProcedure &&
-          !resumeTrigger &&
-          !formResult &&
-          !interactionResult &&
-          (Boolean(bodyCaseType) || Boolean(inferredCaseTypeRow) || bootstrapNewCase)
-
-        const autoStartCaseSchema = shouldAutoStartProcedure ? caseSchema : null
-        if (autoStartCaseSchema?.procedure) {
-          try {
-            const started = startProcedureRun(resolvedCaseId, {
-              agentConfigId: resolvedAgentConfigId ?? undefined,
-              procedureId: autoStartCaseSchema.type,
-              displayName: autoStartCaseSchema.displayName,
-              procedure: autoStartCaseSchema.procedure,
-              reason: inferredCaseTypeRow
-                ? `Auto-started from configured CaseType routing. ${inferredCaseTypeReason ?? ''}`.trim()
-                : 'Auto-started from selected CaseType.',
-              confidence: inferredCaseTypeConfidence ?? undefined,
-              requestId: `route:${resolvedCaseId}:${autoStartCaseSchema.type}`,
-            })
-            runtimeProcedure = {
-              id: started.run.runId,
-              procedureId: started.run.procedureId,
-              status: started.run.status,
-            }
-          } catch (err) {
-            console.error('[Intera] Failed to auto-start ProcedureRun for selected CaseType:', err)
-          }
-        }
-
-        if (
-          caseSchema &&
-          Array.isArray(caseSchema.requiredFacts) &&
-          caseSchema.requiredFacts.length > 0 &&
-          !resumeTrigger &&
-          !formResult &&
-          !interactionResult &&
-          runtimeInputSource === 'customer_message' &&
-          (Boolean(bodyCaseType) || Boolean(inferredCaseTypeRow) || bootstrapNewCase)
-        ) {
-          const profileFacts = await readProfileFactsForRoute({
-            orgId: resolvedOrgId,
-            userId: resolvedUserId,
-            chatId: resolvedChatId,
-            agentConfigId: resolvedAgentConfigId,
-          })
-          const missingFacts = missingRequiredFactsForRoute({
-            requiredFacts: caseSchema.requiredFacts,
-            messageText: typeof userMessage === 'string' ? userMessage : undefined,
-            profileFacts,
-          })
-
-          if (missingFacts.length > 0) {
-            const fields = missingFacts.map(formFieldFromRequiredFact)
-            const title = fallbackRequiredFactsFormTitle(missingFacts)
-            const description = fallbackRequiredFactsFormDescription(missingFacts)
-            const toolCallId = `harness_required_facts_${resolvedCaseId}_${Date.now()}`
-
-            await flushProcedureRunPersistence(resolvedCaseId)
-            parkSessionUntilNextRequest(resolvedCaseId)
-            await prisma.case.update({
-              where: { id: resolvedCaseId },
-              data: { status: 'collecting' },
-            }).catch((err: unknown) => { console.error('[Intera] Failed to mark case collecting for required facts:', err) })
-            await prisma.message.create({
-              data: {
-                caseId: resolvedCaseId,
-                orgId: resolvedOrgId,
-                chatId: resolvedChatId,
-                role: 'user',
-                content: typeof userMessage === 'string' ? userMessage : '',
-                contentBlocks: resolvedContentBlocks as any,
-                isStreaming: false,
-              },
-            }).catch((err: unknown) => { console.error('[Intera] Failed to persist preflight form user message:', err) })
-            await prisma.actionTrace.create({
-              data: {
-                caseId: resolvedCaseId,
-                orgId: resolvedOrgId,
-                chatId: resolvedChatId,
-                actionType: 'tool_result',
-                title: 'Tool: ask_user_questions',
-                detail: `Harness required-facts form requested for missing fields: ${missingFacts.join(', ')}`,
-                payload: JSON.stringify({
-                  status: 'form_request_harness',
-                  title,
-                  description,
-                  fields,
-                  caseType: caseSchema.type,
-                }),
-              },
-            }).catch((err: unknown) => { console.error('[Intera] Failed to trace harness required-facts form:', err) })
-
-            sendEvent({
-              type: 'form_request',
-              data: {
-                caseId: resolvedCaseId,
-                toolCallId,
-                title,
-                description,
-                fields,
-              },
-              timestamp: new Date().toISOString(),
-            })
-            sendEvent({
-              type: 'message_stop',
-              data: { reason: 'waiting_form' },
-              timestamp: new Date().toISOString(),
-            })
-            closeStream()
-            return
-          }
-        }
-
         // Register the session so subsequent requests for this caseId are queued.
         const activeSession = getOrCreateSession(resolvedCaseId)
         registeredSession = activeSession
@@ -1922,7 +1204,7 @@ export async function POST(request: NextRequest) {
             deriveCaseStatusFromRuntimeProcedure(runtimeProcedure, existingCaseStatus, {
               resumeFromHumanTaskResult: isHumanTaskResumeInput,
             }) ??
-            inferredCaseStatusForRecord
+            caseStatusForRecord
           if (runtimeBackedCaseStatus) {
             memData.caseStatus = runtimeBackedCaseStatus
           }
