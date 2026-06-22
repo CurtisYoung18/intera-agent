@@ -206,11 +206,13 @@ const KNOWLEDGE_SOURCE_PATCHES: Record<string, {
   },
 }
 
+const PLAYER_ID_GUIDE_URL = 'https://postimg.cc/9RS75mwK'
+
 const TOOL_DESCRIPTION_PATCHES: Record<string, string> = {
   read_user_profile: 'Read the long-term profile for the current customer. Use before asking for member_id when the latest message is member-specific but does not include one. If the profile contains a valid JAYA member_id or stable preference, use it as context unless the customer corrects it.',
   remember: 'Persist stable customer profile facts with scope="user". Use proactively when the customer naturally provides durable information such as member_id, preferred language/style, contact preference, or recurring support preference. Do not store one-off transaction details, screenshots, receipt ids, amounts, dates, tool results, active ProcedureRun state, or temporary case status.',
   start_procedure: 'Start a runtime ProcedureRun only when the intent matches an Available Procedure. procedureId must be one exact id from ## Available Procedures, such as a j1n_* id. Do not pass tool names, old GPTBots labels, or broad categories as procedureId.',
-  ask_user_questions: 'Show a structured form only when required facts are missing for a member-specific workflow, or when a money/funds issue is ambiguous and the customer must choose the issue type before any detailed form. Always provide title and a non-empty fields array. Do not use for ordinary FAQ, how-to, rules, limits, platform navigation, or policy questions that can be answered from KB. If the customer already provided details in text or an uploaded screenshot/image, prefill matching form fields with fields[].defaultValue or initialValues so the customer can confirm or edit them instead of retyping. For receipt/screenshot workflows, if another required field is still missing, keep already-provided receipt facts such as payment method/channel, amount, transaction id, date/time, or status as additional fields with defaultValue; do not drop them just because they were already supplied.',
+  ask_user_questions: `Show a structured form only when required facts are missing for a member-specific workflow, or when a money/funds issue is ambiguous and the customer must choose the issue type before any detailed form. Always provide title and a non-empty fields array. Do not use for ordinary FAQ, how-to, rules, limits, platform navigation, or policy questions that can be answered from KB. When collecting member_id or player_id, include this Player ID guide URL in the form description so the customer can see where to find it: ${PLAYER_ID_GUIDE_URL}. If the customer already provided details in text or an uploaded screenshot/image, prefill matching form fields with fields[].defaultValue or initialValues so the customer can confirm or edit them instead of retyping. For receipt/screenshot workflows, if another required field is still missing, keep already-provided receipt facts such as payment method/channel, amount, transaction id, date/time, or status as additional fields with defaultValue; do not drop them just because they were already supplied.`,
   create_human_task: 'Create a human handoff task only for explicit human requests after an automated path was tried, unresolved disputes, sensitive account-risk cases, or conflicting/failed live evidence. Do not use for ordinary FAQ. If a pending task already exists, acknowledge the existing handoff instead of creating another one.',
   check_latest_deposit_status: 'Member-specific live lookup for latest/missing/pending deposit status. Requires non-empty member_id. Do not use for deposit FAQ such as methods, limits, crypto, or how-to deposit; use Deposit KB first.',
   check_latest_withdrawal_status: 'Member-specific live lookup for latest/current withdrawal status. Requires non-empty member_id. Do not use for withdrawal FAQ such as how to withdraw, process time, methods, crypto, or PIN rules; use Withdrawal KB first.',
@@ -259,6 +261,7 @@ Member identity:
 - Treat ambiguous "Is my account verified?" as a self-service FAQ first: call kb_search_account, then explain in Romanized Nepali that the customer can go to Account -> Security Center and if it shows 100%, the account is verified. Ask member_id only if the customer explicitly asks you to check their current account.
 - If a member-specific workflow needs member_id and the latest user message does not provide it, call read_user_profile before asking the customer. If the profile contains a valid JAYA member_id, use it and do not ask again.
 - If read_user_profile does not contain a usable member_id, call ask_user_questions. The tool call itself is the collection step.
+- Whenever you ask for or collect member_id / player ID, include this Player ID guide link exactly once: ${PLAYER_ID_GUIDE_URL}. If using ask_user_questions, put the link in the form description so the LiveChat card shows where to find the Player ID.
 - In channel chats, do not ask for member_id, method, amount, payment channel, date, transaction id, or screenshot details in plain text when ask_user_questions can collect them.
 - Prefer one compact ask_user_questions form with all currently required missing fields instead of multiple back-and-forth follow-up questions.
 - After the form is shown, wait for the submission and continue from the form answers. Do not repeat the same request again in natural language.
@@ -812,7 +815,7 @@ const HOOKS: HookSeed[] = [
       },
       effect: {
         decision: 'block',
-        guidance: 'Use ask_user_questions to collect missing required facts instead of asking in plain text. For member-specific J1N procedures, include a member_id text field; when multiple required facts are missing, collect them in one form.',
+        guidance: `Use ask_user_questions to collect missing required facts instead of asking in plain text. For member-specific J1N procedures, include a member_id text field and put this Player ID guide URL in the form description: ${PLAYER_ID_GUIDE_URL}. When multiple required facts are missing, collect them in one form.`,
       },
     },
   },
