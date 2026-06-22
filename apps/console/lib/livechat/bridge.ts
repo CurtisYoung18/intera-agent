@@ -21,8 +21,6 @@ import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
 import type { SSEEvent } from '@intera/shared/types'
 
-const PLAYER_ID_GUIDE_URL = 'https://postimg.cc/9RS75mwK'
-
 type FormSnapshot = {
   title?: string
   description?: string
@@ -286,7 +284,7 @@ async function sendRenderableImagesFromText(
   }
 }
 
-function collectFormRequestImageText(data: unknown): string {
+function collectFormRequestImageText(data: unknown, config: LiveChatConfig): string {
   if (!data || typeof data !== 'object') return ''
 
   const form = data as FormSnapshot
@@ -306,8 +304,9 @@ function collectFormRequestImageText(data: unknown): string {
     for (const option of field.options ?? []) push(option)
   }
 
-  if (formRequestsPlayerIdGuide(parts)) {
-    push(PLAYER_ID_GUIDE_URL)
+  const configuredPlayerIdGuideUrl = config.playerIdGuideImageUrl?.trim()
+  if (configuredPlayerIdGuideUrl && formRequestsPlayerIdGuide(parts)) {
+    push(configuredPlayerIdGuideUrl)
   }
 
   return parts.join('\n')
@@ -559,7 +558,7 @@ export async function handleIncomingEvent(
         }
         await sendRenderableImagesFromText(
           chatId,
-          collectFormRequestImageText(sseEvent.data),
+          collectFormRequestImageText(sseEvent.data, config),
           config,
           p,
         )

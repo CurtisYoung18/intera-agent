@@ -66,6 +66,7 @@ function hydrateFromChannelBinding(row: {
     enabled: row.enabled,
     transferGroupId: creds.transferGroupId as number | undefined,
     transferMessage: creds.transferMessage as string | undefined,
+    playerIdGuideImageUrl: creds.playerIdGuideImageUrl as string | undefined,
     failureMessages: optionalStringRecord(creds.failureMessages) as LiveChatConfig['failureMessages'],
   }
 
@@ -204,6 +205,7 @@ export async function upsertLiveChatConfig(
     showSkillStatus: data.showSkillStatus,
     transferGroupId: data.transferGroupId,
     transferMessage: data.transferMessage,
+    playerIdGuideImageUrl: data.playerIdGuideImageUrl,
     failureMessages: data.failureMessages,
   })
 

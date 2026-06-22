@@ -33,6 +33,7 @@ type LiveChatConfig = {
   agentAccountId?: string
   transferGroupId?: number
   transferMessage?: string
+  playerIdGuideImageUrl?: string
   failureMessages?: {
     engine_unreachable?: string
     stream_truncated?: string
@@ -133,6 +134,7 @@ export default function LiveChatChannelWorkspace({
     authType: 'auto',
     accountId: '',
     agentAccountId: '',
+    playerIdGuideImageUrl: '',
     failureMessages: {},
   })
   const [origConfig, setOrigConfig] = useState<LiveChatConfig | null>(null)
@@ -651,6 +653,17 @@ export default function LiveChatChannelWorkspace({
                   <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${config.showSkillStatus ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
                 </button>
               </div>
+            </div>
+            <div className="mt-4">
+              <label className={labelCls}>{t('livechat.playerIdGuideImageUrl')}</label>
+              <input
+                type="url"
+                className={inputCls}
+                value={config.playerIdGuideImageUrl ?? ''}
+                onChange={(event) => setConfig((current) => ({ ...current, playerIdGuideImageUrl: event.target.value || undefined }))}
+                placeholder="https://postimg.cc/..."
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.playerIdGuideImageUrlHint')}</p>
             </div>
           </div>
 

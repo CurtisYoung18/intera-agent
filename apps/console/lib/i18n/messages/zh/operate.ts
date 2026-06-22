@@ -160,6 +160,8 @@ export const zhOperate: Record<string, string> = {
   'livechat.settings': '设置',
   'livechat.showSkillStatus': '显示工具状态',
   'livechat.showSkillStatusHint': '在对话中显示工具执行进度',
+  'livechat.playerIdGuideImageUrl': 'Player ID 指引图片 URL',
+  'livechat.playerIdGuideImageUrlHint': '可选。表单索要 Member ID / Player ID 时，LiveChat 会先单独发送这张指引图，再发送表单卡片。',
   'livechat.save': '保存配置',
   'livechat.reset': '重置',
   'livechat.saved': '已保存',

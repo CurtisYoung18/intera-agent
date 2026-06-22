@@ -262,7 +262,7 @@ describe('livechat bridge', () => {
       'org-1',
       'user-1',
       { type: 'message', text: 'can u check my account status' } satisfies IncomingEvent,
-      makeConfig(),
+      makeConfig({ playerIdGuideImageUrl: 'https://postimg.cc/9RS75mwK' }),
     )
 
     expect(mockResolveRenderableImageUrls).toHaveBeenCalledWith(expect.stringContaining('https://postimg.cc/9RS75mwK'))

@@ -25,6 +25,7 @@ const livechatConfigSchema = z.object({
   enabled: z.boolean(),
   transferGroupId: z.number().optional(),
   transferMessage: z.string().optional(),
+  playerIdGuideImageUrl: z.string().optional(),
   failureMessages: z.object({
     engine_unreachable: z.string().optional(),
     stream_truncated: z.string().optional(),

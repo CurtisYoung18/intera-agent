@@ -29,6 +29,7 @@ export interface LiveChatConfig {
   enabled: boolean
   transferGroupId?: number
   transferMessage?: string
+  playerIdGuideImageUrl?: string
   failureMessages?: LiveChatFailureMessages
 }
 
