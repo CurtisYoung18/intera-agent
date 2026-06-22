@@ -187,13 +187,7 @@ export async function POST(request: NextRequest) {
       textBuffer: '',
     })
 
-    if (customerMessages.length === 0) {
-      sendTextMessage(
-        chatId, 'Hello! I\'m an AI assistant. How can I help you today?',
-        config.botAccessToken, config.licenseId,
-        p.region, p.authType, p.accountId,
-      ).catch(err => console.error('[Webhook] incoming_chat welcome error:', err))
-    } else {
+    if (customerMessages.length > 0) {
       for (const e of customerMessages) {
         const evUserId = (e.author_id ?? userId) as string
         const eventId = `livechat:${e.id as string}`

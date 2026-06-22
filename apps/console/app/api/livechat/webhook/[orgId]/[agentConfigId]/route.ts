@@ -230,18 +230,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ orgId:
           textBuffer: '',
         })
 
-        if (customerMessages.length === 0) {
-          await sendTextMessage(
-            chatId,
-            "Hello! I'm an AI assistant. How can I help you today?",
-            config.botAccessToken,
-            config.licenseId,
-            p.region,
-            p.authType,
-            p.accountId,
-          ).catch(() => {})
-          return NextResponse.json({ ok: true })
-        }
+        if (customerMessages.length === 0) return NextResponse.json({ ok: true })
 
         for (const threadEvent of customerMessages) {
           const eventId = `livechat:${threadEvent.id as string}`
