@@ -162,6 +162,8 @@ export const enOperate: Record<string, string> = {
   'livechat.showSkillStatusHint': 'Display Tool execution progress in chat',
   'livechat.playerIdGuideImageUrl': 'Player ID guide image URL',
   'livechat.playerIdGuideImageUrlHint': 'Optional. When a form asks for Member ID or Player ID, LiveChat sends this guide image before the form card.',
+  'livechat.playerIdGuideKeywords': 'Player ID form keywords',
+  'livechat.playerIdGuideKeywordsHint': 'Optional. One keyword per line or comma-separated. If empty, Intera uses the defaults: member id, player id, jayabaji member, jaya member.',
   'livechat.save': 'Save Configuration',
   'livechat.reset': 'Reset',
   'livechat.saved': 'Saved',

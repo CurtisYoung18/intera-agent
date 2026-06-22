@@ -36,6 +36,7 @@ type LiveChatConfig = {
   transferMessage?: string
   transferFollowupLabel?: string
   playerIdGuideImageUrl?: string
+  playerIdGuideKeywords?: string[]
   failureMessages?: {
     engine_unreachable?: string
     stream_truncated?: string
@@ -47,6 +48,22 @@ type LiveChatGroup = {
   id: number
   name: string
   agents_count: number
+}
+
+function parseKeywordList(value: string): string[] | undefined {
+  const items = value
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return items.length > 0 ? items : undefined
+}
+
+function normalizeLiveChatConfig(config: LiveChatConfig): LiveChatConfig {
+  return {
+    ...config,
+    playerIdGuideKeywords: config.playerIdGuideKeywords ?? [],
+    failureMessages: config.failureMessages ?? {},
+  }
 }
 
 type MomentPreset = {
@@ -140,6 +157,7 @@ export default function LiveChatChannelWorkspace({
     transferMessage: '',
     transferFollowupLabel: '',
     playerIdGuideImageUrl: '',
+    playerIdGuideKeywords: [],
     failureMessages: {},
   })
   const [origConfig, setOrigConfig] = useState<LiveChatConfig | null>(null)
@@ -230,16 +248,17 @@ export default function LiveChatChannelWorkspace({
         apiClient<{ config: LiveChatConfig }>(`/api/admin/livechat/config?agentConfigId=${encodeURIComponent(agentConfigId)}`),
         apiClient<{ groups?: LiveChatGroup[] }>(`/api/admin/livechat/groups?agentConfigId=${encodeURIComponent(agentConfigId)}`),
       ])
+      const loadedConfig = normalizeLiveChatConfig(configResult.data.config)
       skipNextAutosaveRef.current = true
-      setConfig(configResult.data.config)
-      setOrigConfig(configResult.data.config)
+      setConfig(loadedConfig)
+      setOrigConfig(loadedConfig)
       setValidationMessage(null)
       setGroups(groupsResult.data.groups || [])
       setConnectionTested(
         Boolean(
-          configResult.data.config.enabled &&
-          configResult.data.config.licenseId &&
-          configResult.data.config.botAccessToken,
+          loadedConfig.enabled &&
+          loadedConfig.licenseId &&
+          loadedConfig.botAccessToken,
         ),
       )
       loadedRef.current = true
@@ -669,6 +688,17 @@ export default function LiveChatChannelWorkspace({
                 placeholder="https://postimg.cc/..."
               />
               <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.playerIdGuideImageUrlHint')}</p>
+            </div>
+            <div className="mt-4">
+              <label className={labelCls}>{t('livechat.playerIdGuideKeywords')}</label>
+              <textarea
+                className={inputCls}
+                rows={4}
+                value={(config.playerIdGuideKeywords ?? []).join('\n')}
+                onChange={(event) => setConfig((current) => ({ ...current, playerIdGuideKeywords: parseKeywordList(event.target.value) }))}
+                placeholder={'member id\nplayer id\njayabaji member\njaya member'}
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--fog)]/70">{t('livechat.playerIdGuideKeywordsHint')}</p>
             </div>
           </div>
 

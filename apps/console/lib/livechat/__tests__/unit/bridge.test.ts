@@ -301,6 +301,40 @@ describe('livechat bridge', () => {
     expect(mockSendImage.mock.invocationCallOrder[0]).toBeLessThan(mockSendCard.mock.invocationCallOrder[0])
   })
 
+  it('uses configured player id keywords to decide when to send the guide image', async () => {
+    mockResolveRenderableImageUrls.mockResolvedValueOnce(['https://i.postimg.cc/example/player-id-guide.jpg'])
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'form_request',
+        data: {
+          caseId: 'case-1',
+          title: 'Account Code Required',
+          description: 'Please provide your account code so I can check your account status.',
+          fields: [
+            { id: 'account_code', type: 'text', label: 'Account Code', required: true },
+          ],
+        },
+        timestamp: '2026-06-17T10:00:00.000Z',
+      },
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'can u check my account status' } satisfies IncomingEvent,
+      makeConfig({
+        playerIdGuideImageUrl: 'https://postimg.cc/account-guide',
+        playerIdGuideKeywords: ['account code'],
+      }),
+    )
+
+    expect(mockResolveRenderableImageUrls).toHaveBeenCalledWith(expect.stringContaining('https://postimg.cc/account-guide'))
+    expect(mockSendImage).toHaveBeenCalledTimes(1)
+    expect(mockSendCard).toHaveBeenCalled()
+  })
+
   it('posts an agent-only note when a form is submitted', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },

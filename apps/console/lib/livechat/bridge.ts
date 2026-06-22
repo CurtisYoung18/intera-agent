@@ -305,19 +305,33 @@ function collectFormRequestImageText(data: unknown, config: LiveChatConfig): str
   }
 
   const configuredPlayerIdGuideUrl = config.playerIdGuideImageUrl?.trim()
-  if (configuredPlayerIdGuideUrl && formRequestsPlayerIdGuide(parts)) {
+  if (configuredPlayerIdGuideUrl && formRequestsPlayerIdGuide(parts, config.playerIdGuideKeywords)) {
     push(configuredPlayerIdGuideUrl)
   }
 
   return parts.join('\n')
 }
 
-function formRequestsPlayerIdGuide(parts: string[]): boolean {
+const DEFAULT_PLAYER_ID_GUIDE_KEYWORDS = [
+  'member id',
+  'player id',
+  'jayabaji member',
+  'jaya member',
+]
+
+function normalizePlayerIdGuideKeyword(value: string): string {
+  return value.toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function formRequestsPlayerIdGuide(parts: string[], configuredKeywords?: string[]): boolean {
+  const keywords = (configuredKeywords?.length ? configuredKeywords : DEFAULT_PLAYER_ID_GUIDE_KEYWORDS)
+    .map(normalizePlayerIdGuideKeyword)
+    .filter(Boolean)
+  if (!keywords.length) return false
+
   return parts.some((part) => {
-    const normalized = part.toLowerCase().replace(/[_-]+/g, ' ')
-    return /\b(member|player)\s*id\b/.test(normalized) ||
-      normalized.includes('jayabaji member') ||
-      normalized.includes('jaya member')
+    const normalized = normalizePlayerIdGuideKeyword(part)
+    return keywords.some((keyword) => normalized.includes(keyword))
   })
 }
 

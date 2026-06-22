@@ -37,6 +37,15 @@ function optionalStringRecord(value: unknown): Record<string, string> | undefine
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return items.length > 0 ? items : undefined
+}
+
 type AgentConfigLineageRow = {
   id: string
   parentId: string | null
@@ -69,6 +78,7 @@ function hydrateFromChannelBinding(row: {
     transferMessage: creds.transferMessage as string | undefined,
     transferFollowupLabel: creds.transferFollowupLabel as string | undefined,
     playerIdGuideImageUrl: creds.playerIdGuideImageUrl as string | undefined,
+    playerIdGuideKeywords: optionalStringArray(creds.playerIdGuideKeywords),
     failureMessages: optionalStringRecord(creds.failureMessages) as LiveChatConfig['failureMessages'],
   }
 
@@ -210,6 +220,7 @@ export async function upsertLiveChatConfig(
     transferMessage: data.transferMessage,
     transferFollowupLabel: data.transferFollowupLabel,
     playerIdGuideImageUrl: data.playerIdGuideImageUrl,
+    playerIdGuideKeywords: data.playerIdGuideKeywords,
     failureMessages: data.failureMessages,
   })
 

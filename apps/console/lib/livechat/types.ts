@@ -32,6 +32,7 @@ export interface LiveChatConfig {
   transferMessage?: string
   transferFollowupLabel?: string
   playerIdGuideImageUrl?: string
+  playerIdGuideKeywords?: string[]
   failureMessages?: LiveChatFailureMessages
 }
 

@@ -19,6 +19,7 @@ export const livechatConfigSchema = z.object({
   transferMessage: z.string().optional(),
   transferFollowupLabel: z.string().optional(),
   playerIdGuideImageUrl: z.string().optional(),
+  playerIdGuideKeywords: z.array(z.string()).optional(),
 })
 
 export type LiveChatConfigItem = z.infer<typeof livechatConfigSchema>
@@ -50,6 +51,7 @@ export const livechatConfigUpdateRequestSchema = z.object({
   transferMessage: z.string().optional(),
   transferFollowupLabel: z.string().optional(),
   playerIdGuideImageUrl: z.string().optional(),
+  playerIdGuideKeywords: z.array(z.string()).optional(),
 })
 export type LiveChatConfigUpdateRequest = z.infer<typeof livechatConfigUpdateRequestSchema>
 

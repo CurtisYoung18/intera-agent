@@ -162,6 +162,8 @@ export const zhOperate: Record<string, string> = {
   'livechat.showSkillStatusHint': '在对话中显示工具执行进度',
   'livechat.playerIdGuideImageUrl': 'Player ID 指引图片 URL',
   'livechat.playerIdGuideImageUrlHint': '可选。表单索要 Member ID / Player ID 时，LiveChat 会先单独发送这张指引图，再发送表单卡片。',
+  'livechat.playerIdGuideKeywords': 'Player ID 表单关键字',
+  'livechat.playerIdGuideKeywordsHint': '可选。每行一个或用逗号分隔。留空时使用默认关键字：member id、player id、jayabaji member、jaya member。',
   'livechat.save': '保存配置',
   'livechat.reset': '重置',
   'livechat.saved': '已保存',
