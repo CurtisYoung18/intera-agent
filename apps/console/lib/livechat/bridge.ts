@@ -31,6 +31,7 @@ type FormSnapshot = {
     required?: boolean
     options?: string[]
     placeholder?: string
+    defaultValue?: string
   }>
   answers?: Record<string, string>
 }
@@ -244,7 +245,26 @@ async function flushBufferedTextAsMessages(
     params.accountId,
   )
 
-  const imageUrls = await resolveRenderableImageUrls(text)
+  await sendRenderableImagesFromText(chatId, text, config, params)
+}
+
+async function sendRenderableImagesFromText(
+  chatId: string,
+  rawText: string,
+  config: LiveChatConfig,
+  params: ReturnType<typeof lcParams>,
+): Promise<void> {
+  const text = rawText.trim()
+  if (!text) return
+
+  let imageUrls: string[] = []
+  try {
+    imageUrls = await resolveRenderableImageUrls(text)
+  } catch (err) {
+    console.error('[Bridge] resolveRenderableImageUrls failed:', err)
+    return
+  }
+
   for (const imageUrl of imageUrls) {
     try {
       await sendImage(
@@ -261,6 +281,27 @@ async function flushBufferedTextAsMessages(
       console.error('[Bridge] sendImage failed:', imageUrl, err)
     }
   }
+}
+
+function collectFormRequestImageText(data: unknown): string {
+  if (!data || typeof data !== 'object') return ''
+
+  const form = data as FormSnapshot
+  const parts: string[] = []
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) parts.push(value.trim())
+  }
+
+  push(form.title)
+  push(form.description)
+  for (const field of form.fields ?? []) {
+    push(field.label)
+    push(field.placeholder)
+    push(field.defaultValue)
+    for (const option of field.options ?? []) push(option)
+  }
+
+  return parts.join('\n')
 }
 
 async function sendFailureNotice(
@@ -498,6 +539,12 @@ export async function handleIncomingEvent(
           await sendAgentNote(chatId, note, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
             .catch((err) => console.error('[Bridge] sendAgentNote(form_request) failed:', err))
         }
+        await sendRenderableImagesFromText(
+          chatId,
+          collectFormRequestImageText(sseEvent.data),
+          config,
+          p,
+        )
       }
       if (sseEvent.type === 'human_task_created' && typeof sseEvent.data === 'object' && sseEvent.data) {
         const payload = sseEvent.data as { taskId?: string; queue?: string }

@@ -198,6 +198,47 @@ describe('livechat bridge', () => {
     expect(mockSendCard).toHaveBeenCalled()
   })
 
+  it('sends renderable guide images from form request text before the form card', async () => {
+    mockResolveRenderableImageUrls.mockResolvedValueOnce(['https://i.postimg.cc/example/player-id-guide.jpg'])
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'form_request',
+        data: {
+          caseId: 'case-1',
+          title: 'Member ID Required',
+          description: 'Please share your member id. Guide: https://postimg.cc/9RS75mwK',
+          fields: [
+            { id: 'member_id', type: 'text', label: 'Member ID', required: true },
+          ],
+        },
+        timestamp: '2026-06-17T10:00:00.000Z',
+      },
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'check account status' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockResolveRenderableImageUrls).toHaveBeenCalledWith(expect.stringContaining('https://postimg.cc/9RS75mwK'))
+    expect(mockSendImage).toHaveBeenCalledWith(
+      'chat-1',
+      'https://i.postimg.cc/example/player-id-guide.jpg',
+      undefined,
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockSendCard).toHaveBeenCalled()
+    expect(mockSendImage.mock.invocationCallOrder[0]).toBeLessThan(mockSendCard.mock.invocationCallOrder[0])
+  })
+
   it('posts an agent-only note when a form is submitted', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
