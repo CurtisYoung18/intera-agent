@@ -21,11 +21,14 @@ import { generateCaseId } from '@/lib/utils'
 import { INTERNAL_SECRET_HEADER } from '@/lib/api-auth'
 import type { SSEEvent } from '@intera/shared/types'
 
+const PLAYER_ID_GUIDE_URL = 'https://postimg.cc/9RS75mwK'
+
 type FormSnapshot = {
   title?: string
   description?: string
   fields?: Array<{
     id?: string
+    key?: string
     type?: string
     label?: string
     required?: boolean
@@ -295,13 +298,28 @@ function collectFormRequestImageText(data: unknown): string {
   push(form.title)
   push(form.description)
   for (const field of form.fields ?? []) {
+    push(field.id)
+    push(field.key)
     push(field.label)
     push(field.placeholder)
     push(field.defaultValue)
     for (const option of field.options ?? []) push(option)
   }
 
+  if (formRequestsPlayerIdGuide(parts)) {
+    push(PLAYER_ID_GUIDE_URL)
+  }
+
   return parts.join('\n')
+}
+
+function formRequestsPlayerIdGuide(parts: string[]): boolean {
+  return parts.some((part) => {
+    const normalized = part.toLowerCase().replace(/[_-]+/g, ' ')
+    return /\b(member|player)\s*id\b/.test(normalized) ||
+      normalized.includes('jayabaji member') ||
+      normalized.includes('jaya member')
+  })
 }
 
 async function sendFailureNotice(
