@@ -200,8 +200,10 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
       'even if the outer case or chat remains waiting_human for operator work. ' +
       'It creates the durable handoff record and triggers channel-specific handoff UI/transfer behavior. ' +
-      'For channel handoff notes, include only these compact operator-facing fields when useful: ' +
-      'known_facts, chat_summary, and handoff_reason. Write those fields in the same support language required by the active system prompt, such as Romanized Nepali for Nepali agents. ' +
+      'When useful, use the generic known_facts, chat_summary, and handoff_reason inputs to pass a concise note for the human operator. ' +
+      'Focus on customer identifiers, contact details, collected payment/account facts, what the customer needs, why a human is needed, and the suggested next step. ' +
+      'Do not include internal tool names, hook names, procedure IDs, case IDs, run IDs, model details, or runtime implementation details. ' +
+      'Write the note in the same support language required by the active system prompt, such as Romanized Nepali for Nepali agents. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
       'their answers come back as structured runtime input for follow-up operator handling or later customer work, not to resume the finalized handoff Procedure.',
     inputSchema: {

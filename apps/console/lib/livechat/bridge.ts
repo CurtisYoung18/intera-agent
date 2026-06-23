@@ -49,6 +49,37 @@ type HandoffSnapshot = {
   handoffReason?: string
 }
 
+const INTERNAL_HANDOFF_FACT_KEY_RE = /(?:^|_)(?:automated_)?(?:tool|tools|hook|hooks|procedure|procedure_id|case_type|case_id|run_id|task_id|queue|runtime|model)(?:_|$)/i
+const INTERNAL_HANDOFF_VALUE_RE = /\b(?:kb_search|start_procedure|create_human_task|ask_user_questions|read_chat_memory|read_user_profile|finalize_procedure|remember|check_latest_|turnover_|reset_withdrawal_pin|get_account_status|get_id_verification_details|get_transaction_history|get_bet_history|get_recommend_games)\b/i
+
+const HANDOFF_FACT_LABELS: Record<string, string> = {
+  member_id: 'Member ID',
+  memberId: 'Member ID',
+  phone: 'Phone',
+  phone_number: 'Phone',
+  phoneNumber: 'Phone',
+  mobile: 'Phone',
+  email: 'Email',
+  name: 'Name',
+  customer_name: 'Name',
+  customerName: 'Name',
+  amount: 'Amount',
+  date: 'Date',
+  time: 'Time',
+  date_time: 'Date/time',
+  dateTime: 'Date/time',
+  method: 'Method',
+  payment_method: 'Payment method',
+  paymentMethod: 'Payment method',
+  transaction_id: 'Transaction/reference no',
+  transactionId: 'Transaction/reference no',
+  reference_no: 'Transaction/reference no',
+  referenceNo: 'Transaction/reference no',
+  screenshot: 'Screenshot/receipt',
+  receipt: 'Screenshot/receipt',
+  status: 'Status',
+}
+
 /** Extract optional LiveChat API params from config for transparent pass-through. */
 function lcParams(config: LiveChatConfig): {
   region?: string; authType?: string; accountId?: string
@@ -220,8 +251,24 @@ function normalizeHandoffFacts(value: HandoffSnapshot['known_facts']): Array<[st
       const rendered = typeof raw === 'string' ? raw.trim() : String(raw)
       return [key.trim(), rendered.trim()] as [string, string]
     })
-    .filter(([key, rendered]) => key && rendered)
+    .filter(([key, rendered]) => (
+      key &&
+      rendered &&
+      !INTERNAL_HANDOFF_FACT_KEY_RE.test(key) &&
+      !INTERNAL_HANDOFF_VALUE_RE.test(rendered)
+    ))
     .slice(0, 12)
+}
+
+function humanizeHandoffFactKey(key: string): string {
+  const known = HANDOFF_FACT_LABELS[key]
+  if (known) return known
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  if (!spaced) return key
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
 function formatAgentVisibleHandoffNote(handoff: HandoffSnapshot | undefined): string | null {
@@ -231,27 +278,23 @@ function formatAgentVisibleHandoffNote(handoff: HandoffSnapshot | undefined): st
   const handoffReason = trimString(handoff.handoff_reason) || trimString(handoff.handoffReason)
   const question = trimString(handoff.question)
   const facts = normalizeHandoffFacts(handoff.known_facts ?? handoff.knownFacts)
-  const queue = trimString(handoff.queue)
-  const taskId = trimString(handoff.taskId)
 
   if (!chatSummary && !handoffReason && facts.length === 0 && !question) return null
 
   const lines = ['[Intera] Human handoff']
-  if (queue) lines.push(`Queue: ${queue}`)
-  if (taskId) lines.push(`Task ID: ${taskId}`)
   if (chatSummary) {
-    lines.push('Chat summary:')
+    lines.push('Issue summary:')
     lines.push(chatSummary)
   }
   if (facts.length > 0) {
-    lines.push('Known facts:')
-    for (const [key, value] of facts) lines.push(`- ${key}: ${value}`)
+    lines.push('Known facts collected:')
+    for (const [key, value] of facts) lines.push(`- ${humanizeHandoffFactKey(key)}: ${value}`)
   }
   if (handoffReason) {
-    lines.push('Handoff reason:')
+    lines.push('Reason for handoff:')
     lines.push(handoffReason)
   } else if (question) {
-    lines.push('Handoff question:')
+    lines.push('Reason for handoff:')
     lines.push(question)
   }
 

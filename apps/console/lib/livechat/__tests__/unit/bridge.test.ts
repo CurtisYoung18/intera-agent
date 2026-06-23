@@ -202,6 +202,7 @@ describe('livechat bridge', () => {
           known_facts: {
             member_id: 'JAYA1197202',
             amount: '500 NPR',
+            automated_tools: 'kb_search_deposit, check_latest_deposit_status, start_procedure',
           },
           handoff_reason: 'Tool evidence ra customer report milena, human payment team le verify garnu parcha.',
         },
@@ -228,9 +229,14 @@ describe('livechat bridge', () => {
       undefined,
     )
     const note = String(mockSendAgentNote.mock.calls[0]?.[1] ?? '')
-    expect(note).toContain('payment_ops')
+    expect(note).not.toContain('Queue:')
+    expect(note).not.toContain('Task ID:')
+    expect(note).not.toContain('payment_ops')
     expect(note).toContain('Customer le deposit gareko cha')
-    expect(note).toContain('member_id: JAYA1197202')
+    expect(note).toContain('Member ID: JAYA1197202')
+    expect(note).toContain('Amount: 500 NPR')
+    expect(note).not.toContain('kb_search_deposit')
+    expect(note).not.toContain('check_latest_deposit_status')
     expect(note).toContain('human payment team le verify garnu parcha')
     expect(mockTransferChat).toHaveBeenCalled()
   })
@@ -274,10 +280,14 @@ describe('livechat bridge', () => {
     expect(mockSendCard).not.toHaveBeenCalled()
     expect(mockSendAgentNote).toHaveBeenCalled()
     const note = String(mockSendAgentNote.mock.calls[0]?.[1] ?? '')
-    expect(note).toContain('Chat summary:')
-    expect(note).toContain('Known facts:')
-    expect(note).toContain('case_type: j1n_deposit_status')
-    expect(note).toContain('Handoff reason:')
+    expect(note).toContain('Issue summary:')
+    expect(note).toContain('Known facts collected:')
+    expect(note).toContain('Member ID: JAYA1197202')
+    expect(note).toContain('Reason for handoff:')
+    expect(note).not.toContain('Queue:')
+    expect(note).not.toContain('Task ID:')
+    expect(note).not.toContain('case_type')
+    expect(note).not.toContain('j1n_deposit_status')
     expect(mockSendTextMessage).toHaveBeenCalledWith(
       'chat-1',
       'Maile human support task create gareko chu.',

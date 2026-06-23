@@ -25,8 +25,10 @@ export const createHumanTaskTool: Tool<Input, Output> = {
       'Call this when a human must take over; do not only promise a transfer in plain text. ' +
       'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
       'even if the outer case or chat remains waiting_human for operator work. ' +
-      'When useful, include known_facts, chat_summary, and handoff_reason for the human operator note. ' +
-      'Write those fields in the same support language required by the active system prompt. ' +
+      'When useful, use known_facts, chat_summary, and handoff_reason to pass a concise note for the human operator. ' +
+      'Focus on customer identifiers, contact details, collected payment/account facts, what the customer needs, why a human is needed, and the suggested next step. ' +
+      'Do not include internal tool names, hook names, procedure IDs, case IDs, run IDs, model details, or runtime implementation details. ' +
+      'Write the note in the same support language required by the active system prompt. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
       'their answers return as structured runtime input when they resolve the task.'
   },
