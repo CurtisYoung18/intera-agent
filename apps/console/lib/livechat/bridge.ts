@@ -263,6 +263,14 @@ function isTransferGroupUnavailableError(error: unknown): boolean {
   return /Cannot assign any agent from requested groups/i.test(message)
 }
 
+function shouldFallbackGroupTransferToQueue(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code
+  if (code === 'TOKEN_EXPIRED' || code === 'NOT_IN_CHAT' || code === 'RATE_LIMITED') return false
+  if (isTransferGroupUnavailableError(error)) return true
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /LiveChat API transfer_chat failed \((400|422)\)/i.test(message)
+}
+
 async function transferChatWithFallback(
   chatId: string,
   target: { type: 'group'; ids: number[] } | { type: 'agent'; ids: string[] } | { type: 'queue' },
@@ -273,7 +281,7 @@ async function transferChatWithFallback(
     await transferChat(chatId, target, config.botAccessToken, config.licenseId, params.region, params.authType, params.accountId)
     return
   } catch (error) {
-    if (target.type === 'group' && isTransferGroupUnavailableError(error)) {
+    if (target.type === 'group' && shouldFallbackGroupTransferToQueue(error)) {
       await transferChat(
         chatId,
         { type: 'queue' },

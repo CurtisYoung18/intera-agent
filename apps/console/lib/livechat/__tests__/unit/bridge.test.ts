@@ -852,6 +852,45 @@ describe('livechat bridge', () => {
     )
   })
 
+  it('falls back to queue transfer for generic group validation failures', async () => {
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+    mockTransferChat
+      .mockRejectedValueOnce(new Error('LiveChat API transfer_chat failed (422): {"error":{"type":"validation","message":"Invalid transfer target"}}'))
+      .mockResolvedValueOnce(undefined)
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'need a human' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockTransferChat).toHaveBeenNthCalledWith(
+      1,
+      'chat-1',
+      { type: 'group', ids: [12] },
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockTransferChat).toHaveBeenNthCalledWith(
+      2,
+      'chat-1',
+      { type: 'queue' },
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockRotateSessionCase).not.toHaveBeenCalled()
+  })
+
   it('notifies the customer and rotates the session when transfer ultimately fails', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
