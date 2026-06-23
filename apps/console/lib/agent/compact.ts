@@ -17,6 +17,7 @@ import { getProviderConfig, createAgentClient } from './api/provider-config'
 import { CASE_COMPACT_PROMPT } from './case-compact-prompt'
 import { PROFILE_COMPACT_PROMPT } from './profile-compact-prompt'
 import { providerTranscriptCompactText, selectProviderMessageWindow } from './provider-transcript'
+import { sanitizeCaseMemorySummary } from './case-memory-sanitizer'
 
 /**
  * @deprecated Replaced by CASE_COMPACT_PROMPT (intra-case) and
@@ -103,7 +104,10 @@ export async function compactConversation(
       return { summary: null, model, provider, error: 'Empty response' }
     }
 
-    const summary = formatCompactSummary(rawText)
+    const formattedSummary = formatCompactSummary(rawText)
+    const summary = purpose === 'case'
+      ? sanitizeCaseMemorySummary(formattedSummary)
+      : formattedSummary
     if (!summary || summary.length < Math.min(strategy.compactMinSummaryLength, 10)) {
       return { summary: null, model, provider, error: 'Summary too short' }
     }

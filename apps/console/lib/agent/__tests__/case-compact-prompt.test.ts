@@ -18,6 +18,12 @@ describe('CASE_COMPACT_PROMPT', () => {
     expect(CASE_COMPACT_PROMPT.toLowerCase()).toMatch(/verbatim/)
   })
 
+  it('forbids raw provider tool transcript in case memory summaries', () => {
+    expect(CASE_COMPACT_PROMPT).toMatch(/Do not copy raw tool_use\/tool_result/i)
+    expect(CASE_COMPACT_PROMPT).toMatch(/Never include raw provider transcript markers/i)
+    expect(CASE_COMPACT_PROMPT).toMatch(/customer-visible user and assistant messages/i)
+  })
+
   it('does NOT contain portrait framing as an instruction', () => {
     // The prompt may mention "portrait" in negated context (e.g. "NOT a user portrait"),
     // but it must not instruct the model to produce a portrait.

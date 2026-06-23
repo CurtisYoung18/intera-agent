@@ -147,6 +147,33 @@ describe('compactConversation routing', () => {
     ])
   })
 
+  it('sanitizes raw provider transcript markers from case compact output', async () => {
+    const { compactConversation } = await import('../compact')
+    mockCreate.mockResolvedValueOnce({
+      content: [{
+        type: 'text' as const,
+        text: [
+          '1. Context Map:',
+          '- member_id: JAYA1197202',
+          '2. Tools Run:',
+          '- [assistant tool_use id=toolu_1 name=lookup_deposit input={"member_id":"JAYA1197202"}]',
+          '- lookup_deposit returned approved deposit status.',
+          '- [user tool_result tool_use_id=toolu_1 content={"status":"approved"}]',
+          '3. Open Items:',
+          '- Confirm whether balance updated.',
+        ].join('\n'),
+      }],
+      usage: { input_tokens: 100, output_tokens: 50 },
+    })
+
+    const result = await compactConversation(makeMessages(2), makeStrategy(), { purpose: 'case' })
+
+    expect(result.summary).toContain('member_id: JAYA1197202')
+    expect(result.summary).toContain('lookup_deposit returned approved deposit status.')
+    expect(result.summary).toContain('Confirm whether balance updated.')
+    expect(result.summary).not.toMatch(/tool_use|tool_result|tool_use_id|input=\{/i)
+  })
+
   it('still respects custom compactPrompt when provided', async () => {
     const { compactConversation } = await import('../compact')
     const messages = makeMessages(10)

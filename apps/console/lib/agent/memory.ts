@@ -10,6 +10,7 @@ import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import { withRetry } from './api/with-retry'
+import { sanitizeCaseMemorySummary } from './case-memory-sanitizer'
 
 export const INTERNAL_MEMORY_PREFIX = '__intera_'
 
@@ -349,7 +350,7 @@ export class ChatMemoryManager {
     }
 
     parts.push('</summary>')
-    return parts.join('\n')
+    return sanitizeCaseMemorySummary(parts.join('\n'))
   }
 
   /**
@@ -412,7 +413,7 @@ export class ChatMemoryManager {
   }
 
   setSummary(summary: string): void {
-    this.summary = summary
+    this.summary = sanitizeCaseMemorySummary(summary)
     this.lastCompactedAt = new Date()
   }
 
