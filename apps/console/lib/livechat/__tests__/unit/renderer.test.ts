@@ -215,6 +215,17 @@ describe('LiveChatRenderer', () => {
       expect(card.subtitle).toBe('A human specialist is joining this chat now.')
       expect(card.buttons[0]!.label).toBe('Send more details')
     })
+
+    it('can suppress the customer-facing handoff card for route-level transfers', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('human_task_created', {
+        taskId: 'task-1',
+        queue: 'payment_ops',
+        suppressCustomerCard: true,
+      }), makeCtx())
+
+      expect(actions[0]!.type).toBe('noop')
+    })
   })
 
   describe('unknown event', () => {

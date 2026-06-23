@@ -54,6 +54,10 @@ import {
 } from '@intera/shared/defaults'
 
 import { loadAgentConfig } from '@/lib/agent/config-loader'
+import {
+  defaultHumanQueueForCaseSchema,
+  normalizeHumanHandoffNotePayload,
+} from '@/lib/agent/human-handoff'
 
 function parseJson(raw: string): unknown {
   try { return JSON.parse(raw) } catch { return null }
@@ -965,24 +969,52 @@ export async function POST(request: NextRequest) {
             ])
             const hasAutomatedEvidence = evidenceTraces.some((trace) => isOperationalEvidenceTool(trace.title))
             if (hasAutomatedEvidence) {
-              const queue = caseSchema?.escalateOn?.[0] || 'general'
-              const handoffQuestion = [
-                'Customer explicitly requested a human after automated support was attempted.',
-                `Latest customer message: ${userMessage}`,
-                caseSchema?.type ? `CaseType: ${caseSchema.type}` : null,
-              ].filter(Boolean).join('\n')
-              const task = existingTask ?? await prisma.humanTask.create({
-                data: {
-                  caseId: resolvedCaseId,
-                  orgId: resolvedOrgId,
-                  chatId: resolvedChatId,
-                  runId: runtimeProcedure?.id ?? null,
-                  queue,
-                  question: handoffQuestion,
-                  status: 'pending',
+              const queue = defaultHumanQueueForCaseSchema(caseSchema)
+              const caseTypeLabel = caseSchema?.type || 'general'
+              const evidenceToolNames = evidenceTraces
+                .map((trace) => (trace.title || '').replace(/^Tool: /, '').trim())
+                .filter(Boolean)
+                .filter(isOperationalEvidenceTool)
+                .slice(0, 4)
+              const handoffNote = normalizeHumanHandoffNotePayload({
+                known_facts: {
+                  case_type: caseTypeLabel,
+                  ...(evidenceToolNames.length > 0 ? { automated_tools: evidenceToolNames.join(', ') } : {}),
+                  ...existingContextMap,
                 },
-                select: { id: true, queue: true, status: true },
+                chat_summary: caseSchema?.displayName
+                  ? `Customer le ${caseSchema.displayName} barema automated support pachhi pani issue solve bhayena bhanera report gareko cha.`
+                  : 'Customer le automated support pachhi pani issue solve bhayena bhanera report gareko cha.',
+                handoff_reason: 'Customer le human agent lai transfer garnuhos bhanera spashta request gareko cha, ra automated evidence already cha.',
               })
+              const handoffQuestion = [
+                'Human agent le yo case review garnu parcha.',
+                'Customer le AI/automated support pachhi pani issue solve bhayena bhanera human transfer request gareko cha.',
+                `Latest customer message: ${userMessage}`,
+                `Case type: ${caseTypeLabel}`,
+              ].filter(Boolean).join('\n')
+              const task = existingTask
+                ? await prisma.humanTask.update({
+                    where: { id: existingTask.id },
+                    data: {
+                      queue,
+                      question: handoffQuestion,
+                      status: 'pending',
+                    },
+                    select: { id: true, queue: true, status: true },
+                  })
+                : await prisma.humanTask.create({
+                    data: {
+                      caseId: resolvedCaseId,
+                      orgId: resolvedOrgId,
+                      chatId: resolvedChatId,
+                      runId: runtimeProcedure?.id ?? null,
+                      queue,
+                      question: handoffQuestion,
+                      status: 'pending',
+                    },
+                    select: { id: true, queue: true, status: true },
+                  })
               await prisma.case.update({
                 where: { id: resolvedCaseId },
                 data: { status: 'waiting_human' },
@@ -996,7 +1028,12 @@ export async function POST(request: NextRequest) {
                   actionType: 'human_task_created',
                   title: 'Human task created',
                   detail: `Explicit customer handoff request routed to ${task.queue}.`,
-                  payload: JSON.stringify({ taskId: task.id, queue: task.queue, source: 'route_explicit_handoff' }),
+                  payload: JSON.stringify({
+                    taskId: task.id,
+                    queue: task.queue,
+                    source: 'route_explicit_handoff',
+                    ...handoffNote,
+                  }),
                 },
               }).catch((err: unknown) => { console.error('[Intera] Failed to trace explicit handoff task:', err) })
               await prisma.message.create({
@@ -1023,12 +1060,24 @@ export async function POST(request: NextRequest) {
               }).catch((err: unknown) => { console.error('[Intera] Failed to persist explicit handoff assistant message:', err) })
               sendEvent({
                 type: 'human_task_created',
-                data: { taskId: task.id, queue: task.queue, question: handoffQuestion, status: task.status },
+                data: {
+                  taskId: task.id,
+                  queue: task.queue,
+                  question: handoffQuestion,
+                  status: task.status,
+                  suppressCustomerCard: true,
+                  ...handoffNote,
+                },
                 timestamp: new Date().toISOString(),
               })
               sendEvent({
                 type: 'text_delta',
                 data: handoffText,
+                timestamp: new Date().toISOString(),
+              })
+              sendEvent({
+                type: 'escalated',
+                data: { reason: 'human_task_created', taskId: task.id, queue: task.queue },
                 timestamp: new Date().toISOString(),
               })
               sendEvent({

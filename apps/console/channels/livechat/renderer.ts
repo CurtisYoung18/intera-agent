@@ -176,7 +176,8 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       // ── human_task_created: { taskId, caseId, question? } ──
       // Show a compact handoff confirmation card before the actual transfer.
       case 'human_task_created': {
-        const d = event.data as { question?: string; queue?: string } | undefined
+        const d = event.data as { question?: string; queue?: string; suppressCustomerCard?: boolean } | undefined
+        if (d?.suppressCustomerCard) return { type: 'noop' }
         const locale = detectWidgetLocale({
           title: d?.question,
           description: d?.queue,

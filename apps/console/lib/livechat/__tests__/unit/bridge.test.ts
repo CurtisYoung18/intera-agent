@@ -236,6 +236,70 @@ describe('livechat bridge', () => {
     expect(mockTransferChat).toHaveBeenCalled()
   })
 
+  it('supports route-level handoff without a customer card before transfer', async () => {
+    mockFlushTextBuffer
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('Maile human support task create gareko chu.')
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'human_task_created',
+        data: {
+          taskId: 'task-1',
+          queue: 'payment_ops',
+          suppressCustomerCard: true,
+          chat_summary: 'Customer le deposit support pachhi pani issue solve bhayena bhanera report gareko cha.',
+          known_facts: {
+            case_type: 'j1n_deposit_status',
+            member_id: 'JAYA1197202',
+          },
+          handoff_reason: 'Customer le human agent lai transfer garnuhos bhanera spashta request gareko cha.',
+        },
+        timestamp: '2026-06-11T09:34:43.500Z',
+      },
+      {
+        type: 'text_delta',
+        data: 'Maile human support task create gareko chu.',
+        timestamp: '2026-06-11T09:34:43.750Z',
+      },
+      { type: 'escalated', data: { reason: 'human_task_created', taskId: 'task-1', queue: 'payment_ops' }, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'human agent please' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockSendCard).not.toHaveBeenCalled()
+    expect(mockSendAgentNote).toHaveBeenCalled()
+    const note = String(mockSendAgentNote.mock.calls[0]?.[1] ?? '')
+    expect(note).toContain('Chat summary:')
+    expect(note).toContain('Known facts:')
+    expect(note).toContain('case_type: j1n_deposit_status')
+    expect(note).toContain('Handoff reason:')
+    expect(mockSendTextMessage).toHaveBeenCalledWith(
+      'chat-1',
+      'Maile human support task create gareko chu.',
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockTransferChat).toHaveBeenCalledWith(
+      'chat-1',
+      { type: 'group', ids: [12] },
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    expect(mockSendTextMessage.mock.invocationCallOrder[0]).toBeLessThan(mockTransferChat.mock.invocationCallOrder[0])
+  })
+
   it('posts an agent-only note when a form is requested', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       {
