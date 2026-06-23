@@ -211,7 +211,7 @@ const TOOL_DESCRIPTION_PATCHES: Record<string, string> = {
   remember: 'Persist stable customer profile facts with scope="user". Use proactively when the customer naturally provides durable information such as member_id, preferred language/style, contact preference, or recurring support preference. Do not store one-off transaction details, screenshots, receipt ids, amounts, dates, tool results, active ProcedureRun state, or temporary case status.',
   start_procedure: 'Start a runtime ProcedureRun only when the intent matches an Available Procedure. procedureId must be one exact id from ## Available Procedures, such as a j1n_* id. Do not pass tool names, old GPTBots labels, or broad categories as procedureId.',
   ask_user_questions: 'Show a structured form only when required facts are missing for a member-specific workflow, or when a money/funds issue is ambiguous and the customer must choose the issue type before any detailed form. Always provide title and a non-empty fields array. Do not use for ordinary FAQ, how-to, rules, limits, platform navigation, or policy questions that can be answered from KB. If the customer already provided details in text or an uploaded screenshot/image, prefill matching form fields with fields[].defaultValue or initialValues so the customer can confirm or edit them instead of retyping. For receipt/screenshot workflows, if another required field is still missing, keep already-provided receipt facts such as payment method/channel, amount, transaction id, date/time, or status as additional fields with defaultValue; do not drop them just because they were already supplied.',
-  create_human_task: 'Create a human handoff task only for explicit human requests after an automated path was tried, unresolved disputes, sensitive account-risk cases, or conflicting/failed live evidence. Do not use for ordinary FAQ. If a pending task already exists, acknowledge the existing handoff instead of creating another one. When calling this tool, use the generic known_facts, chat_summary, and handoff_reason inputs to give the human operator a concise, practical note. Include useful customer identifiers, contact details, collected payment/account facts, what the customer needs, why human support is needed, and suggested next steps when known. Do not mention internal tool names, hook names, procedure IDs, case IDs, run IDs, model/runtime details, or implementation details. Write those note fields in Romanized Nepali for J1N so Nepali support staff can read them without translating.',
+  create_human_task: 'Create a human handoff task only for explicit human requests after an automated path was tried, unresolved disputes with usable customer evidence, sensitive account-risk cases, or confirmed conflict between live evidence and the customer report. Do not use for ordinary FAQ, missing member_id, invalid/unclear member_id, one empty lookup, a Not Found result, normal pending time, or a first failed tool attempt; collect/correct information or explain the verified self-service next step instead. If a pending task already exists, acknowledge the existing handoff instead of creating another one. When calling this tool, use the generic known_facts, chat_summary, and handoff_reason inputs to give the human operator a concise, practical note. Include useful customer identifiers, contact details, collected payment/account facts, what the customer needs, why human support is needed, and suggested next steps when known. Do not mention internal tool names, hook names, procedure IDs, case IDs, run IDs, model/runtime details, or implementation details. Write those note fields in Romanized Nepali for J1N so Nepali support staff can read them without translating.',
   check_latest_deposit_status: 'Member-specific live lookup for latest/missing/pending deposit status. Requires non-empty member_id. Do not use for deposit FAQ such as methods, limits, crypto, or how-to deposit; use Deposit KB first.',
   check_latest_withdrawal_status: 'Member-specific live lookup for latest/current withdrawal status. Requires non-empty member_id. Do not use for withdrawal FAQ such as how to withdraw, process time, methods, crypto, or PIN rules; use Withdrawal KB first.',
   turnover_withdraw_condition: 'Member-specific live lookup for remaining withdrawal turnover/blocked withdrawal condition. Requires non-empty member_id. Do not use for generic turnover review or withdrawal how-to FAQ.',
@@ -330,7 +330,8 @@ Intent ambiguity:
 Human handoff:
 - Do not create human tasks for ordinary FAQ unless the customer explicitly requests a human after the AI has already tried the relevant automated/KB path.
 - If the user asks for human/live agent/operator after an automated path was tried, call create_human_task instead of only saying that you will transfer.
-- Use create_human_task for VIP/sensitive/account-risk/conflicting-evidence/no-progress cases.
+- Use create_human_task for VIP/sensitive account-risk, confirmed conflicting evidence, or no-progress cases only after the relevant automated path has been tried and the same unresolved issue has repeated.
+- Do not create a human task only because member_id is missing/invalid/unclear, a lookup returns Not Found/empty once, a tool attempt fails once, or a deposit/withdrawal is still within normal processing time. In those cases, collect/correct the required facts, explain the normal timing/status, or ask for screenshot/receipt evidence before handoff.
 - If you are about to say that a team, department, specialist, human operator, manual review, or future follow-up will handle the issue, call create_human_task in the same turn first and use the tool result as evidence.
 - In create_human_task, keep question concise. Use known_facts, chat_summary, and handoff_reason to write a practical operator note in Romanized Nepali.
 - The operator note is for a human support agent, not a developer. Include useful information already known in the chat when available: customer name, member_id, phone, email, payment/withdrawal method, amount, date/time, transaction/reference number, screenshot/receipt status, account or transaction status already checked, what the customer is asking for, why human support is needed now, and a suggested next step.
@@ -425,13 +426,13 @@ const CASE_TYPES: CaseTypeSeed[] = [
     icon: 'help',
     requiredFacts: [],
     defaultGoal: 'Answer from the relevant Jayabaji knowledge source and ask for member_id only when the answer becomes member-specific.',
-    escalateOn: ['explicit_human_request', 'knowledge_gap', 'no_progress_loop'],
+    escalateOn: ['explicit_human_request_after_automated_path', 'verified_dispute', 'no_progress_after_3_repeats'],
     maxAutoTurns: 8,
     procedure: procedure({
       whenToUse: 'Use for general Jayabaji FAQ, rules, abbreviations, product navigation, or how-to questions.',
       overview: 'Search the appropriate knowledge source dynamically, answer briefly, and do not collect member_id unless the customer turns the question into a personal lookup.',
       knowledgeGuidance: 'For standalone FAQ, always search the relevant KB before answering. Promotion rules, welcome bonus, cashback, and VIP bonus terms use Promotion. Withdrawal process, method, timing, crypto withdrawal, and PIN FAQ use Withdrawal. Account verification steps, ambiguous "Is my account verified?", bank account count, transaction history navigation, username/real-name change, and VIP status page use Account. Deposit method/limits/timing/crypto use Deposit. Game types/demo/rules/issues use Game and General. General platform, registration, safety, app, referral, rebate, turnover review, and betting-history navigation use General. If a money/funds issue is ambiguous, collect issue_type with ask_user_questions before choosing Deposit, Withdrawal, Promotion, Game, or Account.',
-      handoffGuidance: 'Do not create a human task for ordinary FAQ. Create one only when the customer explicitly requests a human after a relevant automated/KB path was tried, or when available knowledge cannot safely answer a real dispute.',
+      handoffGuidance: 'Do not create a human task for ordinary FAQ, missing/invalid member_id, unclear money category, or a first knowledge gap. Ask a clarifying form question or search a narrower KB instead. Create a human task only when the customer explicitly requests a human after a relevant automated/KB path was tried, when a real dispute cannot be safely answered from available evidence, or when the same unresolved issue repeats 3+ times after useful automated help.',
       steps: [
         {
           id: 'general_search',
@@ -457,19 +458,19 @@ const CASE_TYPES: CaseTypeSeed[] = [
     description: 'Customer asks about latest deposit, missing deposit, pending deposit, or deposit status.',
     icon: 'deposit',
     requiredFacts: ['member_id'],
-    defaultGoal: 'Verify latest deposit evidence with the live deposit tool and explain the status or create a payment review task.',
-    escalateOn: ['explicit_human_request', 'tool_failed', 'empty_result', 'evidence_conflict'],
+    defaultGoal: 'Verify latest deposit evidence with the live deposit tool and explain the status. Create a payment review task only for explicit human request after automation, confirmed evidence conflict, or repeated unresolved dispute with usable evidence.',
+    escalateOn: ['explicit_human_request_after_automated_path', 'confirmed_evidence_conflict', 'repeated_unresolved_dispute_with_evidence'],
     maxAutoTurns: 10,
     procedure: procedure({
       whenToUse: 'Use when the customer asks whether a deposit arrived, is pending, failed, delayed, or missing.',
-      overview: 'Use deposit context engineering first, then verify the latest deposit status with live evidence and hand off unresolved cases.',
+      overview: 'Use deposit context engineering first, then verify the latest deposit status with live evidence. Prefer correcting/collecting facts and explaining verified status before handoff.',
       knowledgeGuidance: 'Use Deposit knowledge for policy wording, timing, and required proof. Use live tool evidence for status.',
-      handoffGuidance: 'Escalate to payment_ops when the tool fails, returns no useful result, or conflicts with the customer report.',
+      handoffGuidance: 'Escalate to payment_ops only when the customer explicitly requests a human after the deposit lookup path was tried, when valid live evidence conflicts with the customer receipt/screenshot, or when the same unresolved deposit dispute repeats with usable member_id and payment evidence. Do not escalate only because member_id is missing/invalid/unclear, a lookup returns empty/Not Found once, a tool fails once, or the deposit is within normal 3-5 minute processing time; collect/correct member_id or receipt details, search Deposit KB, and explain the next step.',
       steps: [
         {
           id: 'deposit_investigate',
           title: 'Check latest deposit',
-          guidance: 'If member_id is already present in the latest message or profile context, use it directly. If member_id is missing or unclear, first call read_user_profile; if profile still has no usable member_id, call ask_user_questions for member_id. Do not ask for the player/member id in plain text. Search deposit guidance, then verify current deposit status using live tool evidence.',
+          guidance: 'If member_id is already present in the latest message or profile context, use it directly. If member_id is missing or unclear, first call read_user_profile; if profile still has no usable member_id, call ask_user_questions for member_id. If the customer gives an invalid/non-JAYA id, ask them to confirm or correct it with ask_user_questions instead of creating a human task. Do not ask for the player/member id in plain text. Search deposit guidance, then verify current deposit status using live tool evidence.',
           actions: [
             {
               id: 'deposit_kb',
@@ -485,7 +486,7 @@ const CASE_TYPES: CaseTypeSeed[] = [
             },
           ],
           branches: explicitHumanBranch('deposit', 'payment_ops'),
-          completionGuidance: 'Do not claim credited, failed, pending, or rejected without check_latest_deposit_status evidence. If the live result is empty, stale, failed, or conflicts with the customer report, create a human task instead of forcing a conclusion.',
+          completionGuidance: 'Do not claim credited, failed, pending, or rejected without check_latest_deposit_status evidence. If member_id is invalid/unclear or the live result is empty/Not Found once, ask the customer to confirm the correct JAYA member_id and receipt details rather than handing off. If a tool attempt fails once, retry or explain that the status cannot be verified yet and request evidence. Create a human task only for explicit human request after automation, confirmed live-vs-receipt conflict, or repeated unresolved dispute with usable member_id and payment evidence.',
         },
         finalizeStep('deposit', 'Explain deposit result', 'Finish deposit answer'),
       ],
@@ -497,19 +498,19 @@ const CASE_TYPES: CaseTypeSeed[] = [
     description: 'Customer asks about their own current withdrawal status, latest withdrawal, remaining turnover, rejected/failed withdrawal, or withdrawal dispute.',
     icon: 'withdrawal',
     requiredFacts: ['member_id'],
-    defaultGoal: 'Check turnover/withdraw condition and latest withdrawal status, then answer from evidence or hand off.',
-    escalateOn: ['explicit_human_request', 'tool_failed', 'empty_result', 'evidence_conflict'],
+    defaultGoal: 'Check turnover/withdraw condition and latest withdrawal status, then answer from evidence. Create a payment review task only for explicit human request after automation, confirmed evidence conflict, or repeated unresolved dispute with usable evidence.',
+    escalateOn: ['explicit_human_request_after_automated_path', 'confirmed_evidence_conflict', 'repeated_unresolved_dispute_with_evidence'],
     maxAutoTurns: 10,
     procedure: procedure({
       whenToUse: 'Use only when the customer asks for a member-specific withdrawal lookup: my withdrawal status, latest withdrawal, remaining turnover, failed/rejected withdrawal, delayed withdrawal on my account, or a transaction-specific withdrawal dispute. Do not use for FAQ such as how to withdraw, withdrawal process, withdrawal method, withdrawal processing time, crypto withdrawal, adding bank, or whether withdrawal PIN is required.',
       overview: 'Use withdrawal context engineering, then verify turnover condition and latest withdrawal status with live evidence.',
       knowledgeGuidance: 'Use Withdrawal knowledge for self-service wording and timing; use live tools only for current member-specific state. For FAQ, stay in General Support with Withdrawal KB and do not ask member_id. For crypto withdrawal, keep the phrase "currently not supported". For how-to-withdraw, keep "minimum withdrawal 1500 NPR" when present.',
-      handoffGuidance: 'Escalate to payment_ops when live evidence is missing, conflicting, or requires manual review.',
+      handoffGuidance: 'Escalate to payment_ops only when the customer explicitly requests a human after the withdrawal lookup path was tried, when valid live evidence conflicts with the customer screenshot/claim, or when the same unresolved withdrawal dispute repeats with usable member_id and withdrawal evidence. Do not escalate only because member_id is missing/invalid/unclear, a lookup returns empty/Not Found once, a tool fails once, or the withdrawal is still within normal 5-10 minute processing time; collect/correct member_id, search Withdrawal KB, and explain the next step.',
       steps: [
         {
           id: 'withdrawal_investigate',
           title: 'Check withdrawal evidence',
-          guidance: 'Confirm the request is member-specific before collecting member_id. If member_id is already present in the latest message or profile context, use it directly. If member_id is missing or unclear, first call read_user_profile; if profile still has no usable member_id, call ask_user_questions for member_id. Do not ask for the member id in plain text. Review withdrawal KB, turnover condition, and latest withdrawal status before answering.',
+          guidance: 'Confirm the request is member-specific before collecting member_id. If member_id is already present in the latest message or profile context, use it directly. If member_id is missing or unclear, first call read_user_profile; if profile still has no usable member_id, call ask_user_questions for member_id. If the customer gives an invalid/non-JAYA id, ask them to confirm or correct it with ask_user_questions instead of creating a human task. Do not ask for the member id in plain text. Review withdrawal KB, turnover condition, and latest withdrawal status before answering.',
           actions: [
             {
               id: 'withdrawal_kb',
@@ -531,7 +532,7 @@ const CASE_TYPES: CaseTypeSeed[] = [
             },
           ],
           branches: explicitHumanBranch('withdrawal', 'payment_ops'),
-          completionGuidance: 'Do not claim approval, rejection, or remaining turnover without live tool evidence. If either live result is empty, stale, failed, or inconsistent with the customer report, create a human task.',
+          completionGuidance: 'Do not claim approval, rejection, or remaining turnover without live tool evidence. If member_id is invalid/unclear or either live result is empty/Not Found once, ask the customer to confirm the correct JAYA member_id and withdrawal details rather than handing off. If a tool attempt fails once, retry or explain that the status cannot be verified yet and request evidence. Create a human task only for explicit human request after automation, confirmed live-vs-screenshot conflict, or repeated unresolved dispute with usable member_id and withdrawal evidence.',
         },
         finalizeStep('withdrawal', 'Explain withdrawal result', 'Finish withdrawal answer'),
       ],
@@ -577,18 +578,18 @@ const CASE_TYPES: CaseTypeSeed[] = [
     icon: 'promo',
     requiredFacts: ['member_id'],
     defaultGoal: 'Search promotion rules and verify member-specific promotion or turnover status with live tools.',
-    escalateOn: ['explicit_human_request', 'tool_failed', 'evidence_conflict'],
+    escalateOn: ['explicit_human_request_after_automated_path', 'confirmed_evidence_conflict', 'repeated_unresolved_dispute_with_evidence'],
     maxAutoTurns: 10,
     procedure: procedure({
       whenToUse: 'Use only when the customer asks for member-specific promotion eligibility/status, active promotion on their account, why they cannot claim/play due to promotion, or personal promotion turnover. Do not use for standalone promotion rules, welcome bonus terms, cashback FAQ, VIP bonus FAQ, or "what promotion do you have" questions; those stay in General Support with Promotion KB.',
       overview: 'Use promotion context engineering first, then verify member-specific promotion status with live evidence.',
       knowledgeGuidance: 'For promotion rule answers, search Promotion KB first and preserve available fields: minimum deposit, turnover, max bonus, issue time, eligible provider/game, claim location, and promotion link. If the row has minimum deposit, turnover, and max bonus, include all three even when the user asks only for minimum deposit. Use promotion and turnover_promotion_active_status only for member-specific facts.',
-      handoffGuidance: 'Escalate to promo_ops when eligibility or turnover evidence is unclear or disputed.',
+      handoffGuidance: 'Escalate to promo_ops only when the customer explicitly requests a human after promotion KB/live lookup was tried, when valid live evidence conflicts with the promotion terms/customer screenshot, or when the same promotion dispute repeats with usable member_id and evidence. Do not escalate only because member_id is missing/invalid/unclear, a promotion lookup returns empty once, or the user asks a standalone promotion-rule FAQ; search Promotion KB or collect/correct member_id first.',
       steps: [
         {
           id: 'promotion_investigate',
           title: 'Check promotion evidence',
-          guidance: 'Confirm the request is member-specific before collecting member_id. If member_id is already present in the latest message or profile context, use it directly. If member_id is missing or unclear, first call read_user_profile; if profile still has no usable member_id, call ask_user_questions for member_id. Do not ask for member_id in plain text. Search promotion terms first, then call member-specific promotion tools.',
+          guidance: 'Confirm the request is member-specific before collecting member_id. If member_id is already present in the latest message or profile context, use it directly. If member_id is missing or unclear, first call read_user_profile; if profile still has no usable member_id, call ask_user_questions for member_id. If the customer gives an invalid/non-JAYA id, ask them to confirm or correct it with ask_user_questions instead of creating a human task. Do not ask for member_id in plain text. Search promotion terms first, then call member-specific promotion tools.',
           actions: [
             {
               id: 'promotion_kb',
