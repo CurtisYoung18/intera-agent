@@ -1,6 +1,14 @@
 import { stripInternalMemoryKeys } from './memory'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 
+export type HumanHandoffKnownFacts = Record<string, string | number | boolean>
+
+export interface HumanHandoffNotePayload {
+  known_facts?: HumanHandoffKnownFacts
+  chat_summary?: string
+  handoff_reason?: string
+}
+
 function containsCjk(text: string): boolean {
   return /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/.test(text)
 }
@@ -22,6 +30,34 @@ function normalizeContext(
     }
   }
   return Object.fromEntries(Object.entries(normalized).slice(0, 8))
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeKnownFactsValue(value: unknown): HumanHandoffKnownFacts | undefined {
+  if (typeof value === 'string' && value.trim()) {
+    return { details: value.trim() }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const normalized = normalizeContext(value as Record<string, unknown>)
+  return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
+export function normalizeHumanHandoffNotePayload(input: Record<string, unknown>): HumanHandoffNotePayload {
+  const knownFacts =
+    normalizeKnownFactsValue(input.known_facts) ??
+    normalizeKnownFactsValue(input.knownFacts) ??
+    normalizeKnownFactsValue(input.context)
+  const chatSummary = optionalString(input.chat_summary) ?? optionalString(input.chatSummary)
+  const handoffReason = optionalString(input.handoff_reason) ?? optionalString(input.handoffReason)
+
+  return {
+    ...(knownFacts ? { known_facts: knownFacts } : {}),
+    ...(chatSummary ? { chat_summary: chatSummary } : {}),
+    ...(handoffReason ? { handoff_reason: handoffReason } : {}),
+  }
 }
 
 export function buildHumanHandoffQuestion(input: {

@@ -191,6 +191,51 @@ describe('livechat bridge', () => {
     expect(mockSendCard.mock.invocationCallOrder[0]).toBeLessThan(mockTransferChat.mock.invocationCallOrder[0])
   })
 
+  it('posts an agent-only handoff note from create_human_task summary fields', async () => {
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      {
+        type: 'human_task_created',
+        data: {
+          taskId: 'task-1',
+          queue: 'payment_ops',
+          question: 'Please review this deposit issue.',
+          chat_summary: 'Customer le deposit gareko cha tara balance update bhayeko chaina.',
+          known_facts: {
+            member_id: 'JAYA1197202',
+            amount: '500 NPR',
+          },
+          handoff_reason: 'Tool evidence ra customer report milena, human payment team le verify garnu parcha.',
+        },
+        timestamp: '2026-06-11T09:34:43.500Z',
+      },
+      { type: 'escalated', data: {}, timestamp: '2026-06-11T09:34:44.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      { type: 'message', text: 'human agent please' } satisfies IncomingEvent,
+      makeConfig(),
+    )
+
+    expect(mockSendAgentNote).toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringContaining('[Intera] Human handoff'),
+      'bot-token',
+      'lic-1',
+      undefined,
+      undefined,
+      undefined,
+    )
+    const note = String(mockSendAgentNote.mock.calls[0]?.[1] ?? '')
+    expect(note).toContain('payment_ops')
+    expect(note).toContain('Customer le deposit gareko cha')
+    expect(note).toContain('member_id: JAYA1197202')
+    expect(note).toContain('human payment team le verify garnu parcha')
+    expect(mockTransferChat).toHaveBeenCalled()
+  })
+
   it('posts an agent-only note when a form is requested', async () => {
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       {

@@ -1,11 +1,13 @@
 import type { AssistantMessage, CaseStatus, Message, SSEEvent } from '@intera/shared/types'
 import { escalationMessageFor, latestUserText } from './customer-messages'
 import type { TraceWriter } from './trace'
+import type { HumanHandoffNotePayload } from './human-handoff'
 
 export interface PendingHumanTaskEscalation {
   taskId: string
   queue: string
   question: string
+  handoffNote?: HumanHandoffNotePayload
 }
 
 export type HumanTaskHandoffResult = {
@@ -32,7 +34,7 @@ export class HumanTaskHandoffHandler {
     fullText: string,
     sendEvent: (event: SSEEvent) => void,
   ): Promise<HumanTaskHandoffResult> {
-    const { taskId, queue, question } = pending
+    const { taskId, queue, question, handoffNote } = pending
 
     if (!fullText.trim()) {
       const safeMessage = escalationMessageFor(latestUserText(this.deps.getMessages()))
@@ -53,7 +55,7 @@ export class HumanTaskHandoffHandler {
 
     sendEvent({
       type: 'human_task_created',
-      data: { taskId, queue, question, status: 'pending' },
+      data: { taskId, queue, question, status: 'pending', ...(handoffNote ?? {}) },
       timestamp: this.timestamp(),
     })
     await this.deps.traceWriter.writeEscalated('human_task_created', { taskId, queue })

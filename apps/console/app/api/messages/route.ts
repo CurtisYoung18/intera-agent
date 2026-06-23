@@ -966,6 +966,11 @@ export async function POST(request: NextRequest) {
             const hasAutomatedEvidence = evidenceTraces.some((trace) => isOperationalEvidenceTool(trace.title))
             if (hasAutomatedEvidence) {
               const queue = caseSchema?.escalateOn?.[0] || 'general'
+              const handoffQuestion = [
+                'Customer explicitly requested a human after automated support was attempted.',
+                `Latest customer message: ${userMessage}`,
+                caseSchema?.type ? `CaseType: ${caseSchema.type}` : null,
+              ].filter(Boolean).join('\n')
               const task = existingTask ?? await prisma.humanTask.create({
                 data: {
                   caseId: resolvedCaseId,
@@ -973,11 +978,7 @@ export async function POST(request: NextRequest) {
                   chatId: resolvedChatId,
                   runId: runtimeProcedure?.id ?? null,
                   queue,
-                  question: [
-                    'Customer explicitly requested a human after automated support was attempted.',
-                    `Latest customer message: ${userMessage}`,
-                    caseSchema?.type ? `CaseType: ${caseSchema.type}` : null,
-                  ].filter(Boolean).join('\n'),
+                  question: handoffQuestion,
                   status: 'pending',
                 },
                 select: { id: true, queue: true, status: true },
@@ -1022,7 +1023,7 @@ export async function POST(request: NextRequest) {
               }).catch((err: unknown) => { console.error('[Intera] Failed to persist explicit handoff assistant message:', err) })
               sendEvent({
                 type: 'human_task_created',
-                data: { taskId: task.id, queue: task.queue, status: task.status },
+                data: { taskId: task.id, queue: task.queue, question: handoffQuestion, status: task.status },
                 timestamp: new Date().toISOString(),
               })
               sendEvent({

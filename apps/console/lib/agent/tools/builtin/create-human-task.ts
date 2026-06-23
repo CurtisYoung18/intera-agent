@@ -5,6 +5,9 @@ import { registerBuiltin } from '@intera/shared/tools/tool'
 const inputSchema = z.object({
   queue: z.string().describe('Human queue to route to'),
   question: z.string().describe('Structured question for human'),
+  known_facts: z.record(z.union([z.string(), z.number(), z.boolean()])).optional().describe('Compact facts already collected for the operator handoff note'),
+  chat_summary: z.string().optional().describe('Short chat summary for the operator handoff note'),
+  handoff_reason: z.string().optional().describe('Why a human is needed'),
 })
 
 type Input = z.infer<typeof inputSchema>
@@ -22,6 +25,8 @@ export const createHumanTaskTool: Tool<Input, Output> = {
       'Call this when a human must take over; do not only promise a transfer in plain text. ' +
       'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
       'even if the outer case or chat remains waiting_human for operator work. ' +
+      'When useful, include known_facts, chat_summary, and handoff_reason for the human operator note. ' +
+      'Write those fields in the same support language required by the active system prompt. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
       'their answers return as structured runtime input when they resolve the task.'
   },

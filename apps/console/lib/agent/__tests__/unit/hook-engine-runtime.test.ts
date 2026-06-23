@@ -459,6 +459,9 @@ describe('AgentLoop Hook checkpoints', () => {
       mockToolUseStream('create_human_task', {
         queue: 'general',
         question: 'Customer requested a human specialist.',
+        chat_summary: 'Customer le deposit issue report gareko cha.',
+        known_facts: { member_id: 'JAYA1197202' },
+        handoff_reason: 'Automated path le resolve garna sakeko chaina.',
       }, 'tool_handoff'),
     ])
 
@@ -473,6 +476,12 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.humanTasks).toHaveLength(1)
     expect(memory.humanTasks[0].queue).toBe('general')
     expect(memory.humanTasks[0].question).toContain('Customer requested a human specialist')
+    const handoffEvent = events.find((event) => event.type === 'human_task_created')
+    expect(handoffEvent?.data).toMatchObject({
+      chat_summary: 'Customer le deposit issue report gareko cha.',
+      known_facts: { member_id: 'JAYA1197202' },
+      handoff_reason: 'Automated path le resolve garna sakeko chaina.',
+    })
     expect(memory.memories).toHaveLength(1)
     expect(memory.memories[0].humanTaskStatus).toBe('pending')
     expect(events.some((e) => e.type === 'human_task_created')).toBe(true)

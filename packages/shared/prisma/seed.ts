@@ -78,12 +78,19 @@ const SEED_TOOLS = [
   },
   {
     name: 'create_human_task',
-    description: 'Create a structured task for a human operator to review, investigate, or decide.',
+    description: 'Create a structured task for a human operator to review, investigate, or decide. Include compact known_facts, chat_summary, and handoff_reason for channel operator notes when useful.',
     inputSchema: JSON.stringify({
       type: 'object',
       properties: {
         queue: { type: 'string', description: 'Target operator queue (e.g. payment_ops, account_ops)' },
         question: { type: 'string', description: 'Detailed question or context for the human operator' },
+        known_facts: {
+          type: 'object',
+          description: 'Compact facts already collected from the customer or tools',
+          additionalProperties: true,
+        },
+        chat_summary: { type: 'string', description: 'Short chat summary for the human operator' },
+        handoff_reason: { type: 'string', description: 'Why a human is needed' },
       },
       required: ['queue', 'question'],
     }),

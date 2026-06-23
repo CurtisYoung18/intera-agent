@@ -37,6 +37,18 @@ type FormSnapshot = {
   answers?: Record<string, string>
 }
 
+type HandoffSnapshot = {
+  taskId?: string
+  queue?: string
+  question?: string
+  known_facts?: Record<string, string | number | boolean> | string
+  knownFacts?: Record<string, string | number | boolean> | string
+  chat_summary?: string
+  chatSummary?: string
+  handoff_reason?: string
+  handoffReason?: string
+}
+
 /** Extract optional LiveChat API params from config for transparent pass-through. */
 function lcParams(config: LiveChatConfig): {
   region?: string; authType?: string; accountId?: string
@@ -191,6 +203,56 @@ function formatAgentVisibleFormSubmission(form: FormSnapshot | undefined): strin
     const label = labelById.get(key) ?? key
     const rendered = typeof value === 'string' ? value.trim() : String(value)
     lines.push(`- ${label}: ${rendered || '(empty)'}`)
+  }
+
+  return lines.join('\n')
+}
+
+function trimString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeHandoffFacts(value: HandoffSnapshot['known_facts']): Array<[string, string]> {
+  if (typeof value === 'string' && value.trim()) return [['details', value.trim()]]
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value)
+    .map(([key, raw]) => {
+      const rendered = typeof raw === 'string' ? raw.trim() : String(raw)
+      return [key.trim(), rendered.trim()] as [string, string]
+    })
+    .filter(([key, rendered]) => key && rendered)
+    .slice(0, 12)
+}
+
+function formatAgentVisibleHandoffNote(handoff: HandoffSnapshot | undefined): string | null {
+  if (!handoff) return null
+
+  const chatSummary = trimString(handoff.chat_summary) || trimString(handoff.chatSummary)
+  const handoffReason = trimString(handoff.handoff_reason) || trimString(handoff.handoffReason)
+  const question = trimString(handoff.question)
+  const facts = normalizeHandoffFacts(handoff.known_facts ?? handoff.knownFacts)
+  const queue = trimString(handoff.queue)
+  const taskId = trimString(handoff.taskId)
+
+  if (!chatSummary && !handoffReason && facts.length === 0 && !question) return null
+
+  const lines = ['[Intera] Human handoff']
+  if (queue) lines.push(`Queue: ${queue}`)
+  if (taskId) lines.push(`Task ID: ${taskId}`)
+  if (chatSummary) {
+    lines.push('Chat summary:')
+    lines.push(chatSummary)
+  }
+  if (facts.length > 0) {
+    lines.push('Known facts:')
+    for (const [key, value] of facts) lines.push(`- ${key}: ${value}`)
+  }
+  if (handoffReason) {
+    lines.push('Handoff reason:')
+    lines.push(handoffReason)
+  } else if (question) {
+    lines.push('Handoff question:')
+    lines.push(question)
   }
 
   return lines.join('\n')
@@ -584,10 +646,15 @@ export async function handleIncomingEvent(
         )
       }
       if (sseEvent.type === 'human_task_created' && typeof sseEvent.data === 'object' && sseEvent.data) {
-        const payload = sseEvent.data as { taskId?: string; queue?: string }
+        const payload = sseEvent.data as HandoffSnapshot
         pendingHumanHandoff = {
           taskId: typeof payload.taskId === 'string' ? payload.taskId : undefined,
           queue: typeof payload.queue === 'string' ? payload.queue : undefined,
+        }
+        const note = formatAgentVisibleHandoffNote(payload)
+        if (note) {
+          await sendAgentNote(chatId, note, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+            .catch((err) => console.error('[Bridge] sendAgentNote(human_task_created) failed:', err))
         }
       }
       const actions = livechatRenderer.render(sseEvent, renderCtx)

@@ -391,16 +391,17 @@ export async function processPendingHookToolCalls(
           ...ctx.chatMemory.getDbFields(),
           humanTaskStatus: 'pending',
         })
+        const question = `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`
         const task = await ctx.persistence.createHumanTask({
           caseId: ctx.caseId,
           queue,
-          question: `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
+          question,
           status: 'pending',
         })
         await ctx.traceWriter.writeHumanTaskCreated(task.id, queue)
         sendEvent({
           type: 'human_task_created',
-          data: { taskId: task.id, queue, status: 'pending' },
+          data: { taskId: task.id, queue, question, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
       } catch (err) {
@@ -428,16 +429,17 @@ export async function processPendingHookToolCalls(
         ...ctx.chatMemory.getDbFields(),
         humanTaskStatus: 'pending',
       })
+      const question = `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`
       const task = await ctx.persistence.createHumanTask({
         caseId: ctx.caseId,
         queue,
-        question: `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
+        question,
         status: 'pending',
       })
       await ctx.traceWriter.writeHumanTaskCreated(task.id, queue)
       sendEvent({
         type: 'human_task_created',
-        data: { taskId: task.id, queue, status: 'pending' },
+        data: { taskId: task.id, queue, question, status: 'pending' },
         timestamp: new Date().toISOString(),
       })
     } catch (err) {

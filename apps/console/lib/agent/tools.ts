@@ -200,6 +200,8 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
       'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
       'even if the outer case or chat remains waiting_human for operator work. ' +
       'It creates the durable handoff record and triggers channel-specific handoff UI/transfer behavior. ' +
+      'For channel handoff notes, include only these compact operator-facing fields when useful: ' +
+      'known_facts, chat_summary, and handoff_reason. Write those fields in the same support language required by the active system prompt, such as Romanized Nepali for Nepali agents. ' +
       'Optionally provide structured fields to collect specific data from the operator — ' +
       'their answers come back as structured runtime input for follow-up operator handling or later customer work, not to resume the finalized handoff Procedure.',
     inputSchema: {
@@ -224,6 +226,19 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
           },
         },
         context: { type: 'object', description: 'Additional context for the human reviewer' },
+        known_facts: {
+          type: 'object',
+          description: 'Compact facts already collected from the customer or tools. Keep values short and in the active support language.',
+          additionalProperties: true,
+        },
+        chat_summary: {
+          type: 'string',
+          description: 'Short summary for the human operator in the active support language.',
+        },
+        handoff_reason: {
+          type: 'string',
+          description: 'Why a human is needed, written in the active support language.',
+        },
       },
       required: ['queue', 'question'],
     },
@@ -244,6 +259,9 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
         options: z.array(z.string()).optional(),
       })).optional(),
       context: z.object({}).optional(),
+      known_facts: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+      chat_summary: z.string().optional(),
+      handoff_reason: z.string().optional(),
     }),
   },
   {

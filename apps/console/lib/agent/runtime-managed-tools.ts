@@ -7,7 +7,7 @@ import { ChatMemoryManager } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import type { ToolExecutionResult } from './streaming-tool-executor'
-import { buildHumanHandoffQuestion } from './human-handoff'
+import { buildHumanHandoffQuestion, normalizeHumanHandoffNotePayload, type HumanHandoffNotePayload } from './human-handoff'
 import { HUMAN_TASK_CREATE_FAILED_MESSAGE } from './human-task-errors'
 import { latestUserText } from './customer-messages'
 import { profileKey } from './identity'
@@ -23,6 +23,7 @@ export interface PendingHumanTaskEscalation {
   taskId: string
   queue: string
   question: string
+  handoffNote?: HumanHandoffNotePayload
 }
 
 export interface RuntimeManagedToolResolverDeps {
@@ -135,6 +136,7 @@ export class RuntimeManagedToolResolver {
       latestCustomerMessage: latestUserText(this.deps.messages),
       contextMap: this.deps.chatMemory.getContextMap(),
     })
+    const handoffNote = normalizeHumanHandoffNotePayload(input)
     const taskFields = Array.isArray(input.fields) ? input.fields : undefined
     const resolvedCaseType = this.deps.caseSchema?.type || 'general'
 
@@ -163,7 +165,7 @@ export class RuntimeManagedToolResolver {
       })
       await this.deps.traceWriter.writeHumanTaskCreated(task.id, queue)
       this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending', persisted: true })
-      return { taskId: task.id, queue, question }
+      return { taskId: task.id, queue, question, ...(Object.keys(handoffNote).length > 0 ? { handoffNote } : {}) }
     } catch (error) {
       console.error('[AgentLoop] Failed to persist create_human_task in general mode:', error)
       this.replaceToolOutput(result, {

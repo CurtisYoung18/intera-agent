@@ -19,6 +19,7 @@ import {
   HUMAN_TASK_CREATE_FAILED_MESSAGE,
   HUMAN_TASK_CREATE_FAILED_PROGRESS,
 } from './human-task-errors'
+import { normalizeHumanHandoffNotePayload } from './human-handoff'
 
 export interface CaseLoopServices {
   caseId: string
@@ -176,6 +177,14 @@ export class CaseAgentLoop {
     const queue = String(toolInput.queue || 'general')
     const question = String(toolInput.question || 'Human task requested')
     const taskFields = toolInput.fields as Array<Record<string, unknown>> | undefined
+    const handoffNote = normalizeHumanHandoffNotePayload(toolInput as Record<string, unknown>)
+    const taskOutput = {
+      taskId: '',
+      queue,
+      status: 'pending' as const,
+      persisted: true,
+      ...(Object.keys(handoffNote).length > 0 ? { handoffNote } : {}),
+    }
 
     const { caseId, orgId, userId, chatId } = this.services
     let taskId: string | null = null
@@ -232,6 +241,7 @@ export class CaseAgentLoop {
               },
             })
         taskId = task.id
+        taskOutput.taskId = task.id
 
         if (existingTask?.id) {
           await this.services.traceWriter.write('loop_decision', 'Pending human task reused', {
@@ -243,7 +253,7 @@ export class CaseAgentLoop {
         }
         humanTaskResult.output = {
           ok: true,
-          output: { taskId: task.id, queue, status: 'pending', persisted: true },
+          output: taskOutput,
           latencyMs: humanTaskResult.latencyMs,
         }
         if (humanTaskResult.toolUse) {
@@ -253,7 +263,7 @@ export class CaseAgentLoop {
         recordProcedureToolResult(this.services.caseId, {
           toolName: humanTaskResult.name,
           toolUseId: humanTaskResult.toolUse?.id,
-          toolOutput: { taskId: task.id, queue, status: 'pending', persisted: true },
+          toolOutput: taskOutput,
         })
         sendEvent({
           type: 'tool_result',
@@ -269,7 +279,7 @@ export class CaseAgentLoop {
           `Tool: ${humanTaskResult.name}`,
           {
             toolName: humanTaskResult.name,
-            output: { taskId: task.id, queue, status: 'pending', persisted: true },
+            output: taskOutput,
             iteration: iterationCount,
           },
         )
@@ -289,7 +299,7 @@ export class CaseAgentLoop {
 
         sendEvent({
           type: 'human_task_created',
-          data: { taskId: task.id, queue, status: 'pending' },
+          data: { taskId: task.id, queue, question, status: 'pending', ...handoffNote },
           timestamp: new Date().toISOString(),
         })
         await this.services.traceWriter.writeEscalated(existingTask?.id ? 'human_task_reused' : 'human_task_created', { taskId: task.id, queue })
