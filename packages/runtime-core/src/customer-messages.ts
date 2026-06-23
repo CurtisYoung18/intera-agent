@@ -90,6 +90,7 @@ function messageText(msg: MessageLike): string {
 
 function isSyntheticUserText(text: string): boolean {
   return /^\[(?:PROCEDURE RUNTIME|SYSTEM)\]/i.test(text) ||
+    /^\[HOOK:/i.test(text) ||
     /^Tool\s+[A-Za-z0-9_]+\s+result:/i.test(text)
 }
 

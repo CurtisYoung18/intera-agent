@@ -547,9 +547,16 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.cases[0].status).toBe('escalated')
     expect(memory.cases[0].blocker).toContain('Stop Hook fallback')
     expect(memory.humanTasks).toHaveLength(1)
-    expect(memory.humanTasks[0].question).toContain('stop_requires_human:escalate')
+    expect(memory.humanTasks[0].question).toContain('Customer-facing automated reply could not be sent safely')
+    expect(memory.humanTasks[0].question).not.toContain('stop_requires_human')
     expect(memory.humanTasks[0].status).toBe('pending')
-    expect(events.some((event) => event.type === 'human_task_created')).toBe(true)
+    const handoffEvent = events.find((event) => event.type === 'human_task_created')
+    expect(handoffEvent).toBeTruthy()
+    expect(handoffEvent?.data).toMatchObject({
+      suppressCustomerCard: true,
+      known_facts: { case_type: 'general' },
+    })
+    expect(JSON.stringify(handoffEvent?.data)).not.toContain('stop_requires_human')
     expect(memory.traces.some((trace) => trace.actionType === 'loop_decision' && trace.title === 'Stop Hook fallback')).toBe(true)
     expect(memory.traces.some((trace) => trace.actionType === 'escalated')).toBe(true)
     expect(events.some((event) => event.type === 'message_stop' && (event.data as { reason?: string }).reason === 'stop_hook_fallback')).toBe(true)

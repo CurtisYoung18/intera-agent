@@ -174,10 +174,12 @@ export class LiveChatRenderer implements ChannelRenderer<BridgeAction> {
       }
 
       // ── human_task_created: { taskId, caseId, question? } ──
-      // Show a compact handoff confirmation card before the actual transfer.
+      // Customer-facing handoff cards are opt-in. The durable handoff signal is
+      // the agent-only note plus transfer_chat; optional card failures must not
+      // block a handoff.
       case 'human_task_created': {
-        const d = event.data as { question?: string; queue?: string; suppressCustomerCard?: boolean } | undefined
-        if (d?.suppressCustomerCard) return { type: 'noop' }
+        const d = event.data as { question?: string; queue?: string; showCustomerCard?: boolean; suppressCustomerCard?: boolean } | undefined
+        if (d?.suppressCustomerCard || d?.showCustomerCard !== true) return { type: 'noop' }
         const locale = detectWidgetLocale({
           title: d?.question,
           description: d?.queue,

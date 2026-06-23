@@ -185,6 +185,7 @@ describe('LiveChatRenderer', () => {
       const r = new LiveChatRenderer(true)
       const actions = r.render(makeEvent('human_task_created', {
         question: '客户反馈存款未到账，需要人工跟进。',
+        showCustomerCard: true,
       }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_card')
@@ -207,6 +208,7 @@ describe('LiveChatRenderer', () => {
       })
       const actions = r.render(makeEvent('human_task_created', {
         question: 'Need help with payment.',
+        showCustomerCard: true,
       }), makeCtx())
       const a = actions[0]!
       expect(a.type).toBe('send_card')
@@ -222,6 +224,16 @@ describe('LiveChatRenderer', () => {
         taskId: 'task-1',
         queue: 'payment_ops',
         suppressCustomerCard: true,
+      }), makeCtx())
+
+      expect(actions[0]!.type).toBe('noop')
+    })
+
+    it('does not send a customer-facing handoff card unless explicitly requested', () => {
+      const r = new LiveChatRenderer(true)
+      const actions = r.render(makeEvent('human_task_created', {
+        taskId: 'task-1',
+        queue: 'payment_ops',
       }), makeCtx())
 
       expect(actions[0]!.type).toBe('noop')

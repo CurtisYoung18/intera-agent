@@ -11,7 +11,11 @@ import type { ChatMemoryManager } from './memory'
 import type { PersistencePort } from './persistence-port'
 import type { TraceWriter } from './trace'
 import { escalationMessageForRuntime, latestUserText } from './customer-messages'
-import { buildHumanHandoffQuestion, defaultHumanQueueForCaseSchema } from './human-handoff'
+import {
+  buildHumanHandoffQuestion,
+  defaultHumanQueueForCaseSchema,
+  normalizeHumanHandoffNotePayload,
+} from './human-handoff'
 
 export type StopHookTerminalResult = {
   messages: Message[]
@@ -71,7 +75,8 @@ export class StopHookHandler {
     }
 
     const messages = this.deps.getMessages()
-    const safeMessage = escalationMessageForRuntime(latestUserText(messages), this.deps.config)
+    const latestCustomerMessage = latestUserText(messages)
+    const safeMessage = escalationMessageForRuntime(latestCustomerMessage, this.deps.config)
 
     const queue = defaultHumanQueueForCaseSchema(this.deps.caseSchema)
 
@@ -91,10 +96,20 @@ export class StopHookHandler {
         ...this.deps.chatMemory.getDbFields(),
         humanTaskStatus: 'pending',
       })
+      const handoffNote = normalizeHumanHandoffNotePayload({
+        known_facts: {
+          case_type: resolvedCaseType,
+          ...this.deps.chatMemory.getContextMap(),
+        },
+        chat_summary: latestCustomerMessage
+          ? `Customer ko latest message: ${latestCustomerMessage}`
+          : 'Customer ko issue automated response path bata safely resolve huna sakena.',
+        handoff_reason: `Automated reply safety guard le ${stopRetryCount} retries pachhi pani customer-facing answer approve garena, tesaile human review chahiyo.`,
+      })
       const question = buildHumanHandoffQuestion({
-        baseQuestion: `Stop Hook blocked the customer reply after ${stopRetryCount} retries. Hooks: ${stopEval.results.map((r) => `${r.hookName}:${r.action}`).join(', ')}.`,
+        baseQuestion: 'Customer-facing automated reply could not be sent safely after retries. Human review is required.',
         caseType: this.deps.caseSchema?.type,
-        latestCustomerMessage: latestUserText(messages),
+        latestCustomerMessage,
         contextMap: this.deps.chatMemory.getContextMap(),
       })
       const task = await this.deps.persistence.createHumanTask({
@@ -106,7 +121,7 @@ export class StopHookHandler {
       await this.deps.traceWriter.writeHumanTaskCreated(task.id, queue)
       sendEvent({
         type: 'human_task_created',
-        data: { taskId: task.id, queue, question, status: 'pending' },
+        data: { taskId: task.id, queue, question, status: 'pending', suppressCustomerCard: true, ...handoffNote },
         timestamp: this.timestamp(),
       })
     } catch (err) {

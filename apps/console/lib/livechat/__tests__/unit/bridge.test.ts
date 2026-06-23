@@ -161,7 +161,7 @@ describe('livechat bridge', () => {
     expect(mockSetTypingIndicator).not.toHaveBeenCalledWith('chat-1', false, 'bot-token', 'lic-1', undefined, undefined, undefined)
   })
 
-  it('flushes model handoff text before sending the handoff card and transferring', async () => {
+  it('flushes model handoff text before transferring without requiring a handoff card', async () => {
     mockFlushTextBuffer.mockResolvedValueOnce('Maile human support task create gareko chu.')
     mockFetch.mockResolvedValueOnce(makeSseResponse([
       { type: 'human_task_created', data: { taskId: 'task-1', queue: 'general' }, timestamp: '2026-06-11T09:34:43.500Z' },
@@ -185,10 +185,9 @@ describe('livechat bridge', () => {
       undefined,
       undefined,
     )
-    expect(mockSendCard).toHaveBeenCalled()
+    expect(mockSendCard).not.toHaveBeenCalled()
     expect(mockTransferChat).toHaveBeenCalled()
-    expect(mockSendTextMessage.mock.invocationCallOrder[0]).toBeLessThan(mockSendCard.mock.invocationCallOrder[0])
-    expect(mockSendCard.mock.invocationCallOrder[0]).toBeLessThan(mockTransferChat.mock.invocationCallOrder[0])
+    expect(mockSendTextMessage.mock.invocationCallOrder[0]).toBeLessThan(mockTransferChat.mock.invocationCallOrder[0])
   })
 
   it('posts an agent-only handoff note from create_human_task summary fields', async () => {

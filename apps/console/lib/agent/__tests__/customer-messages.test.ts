@@ -5,6 +5,7 @@ import {
   detectCustomerLocale,
   escalationMessageFor,
   ESCALATION_TO_HUMAN,
+  latestUserText,
 } from '../customer-messages'
 
 describe('detectCustomerLocale', () => {
@@ -38,6 +39,15 @@ describe('escalationMessageFor', () => {
 
   it('regression: English input must NOT return the Chinese constant', () => {
     expect(escalationMessageFor('I need help')).not.toBe(ESCALATION_TO_HUMAN.zh)
+  })
+})
+
+describe('latestUserText', () => {
+  it('skips synthetic Stop Hook repair feedback', () => {
+    expect(latestUserText([
+      { role: 'user', content: 'human agent please' },
+      { role: 'user', content: '[HOOK: Stop]\nThe reply draft was not sent. Revise the answer using the Hook feedback.' },
+    ])).toBe('human agent please')
   })
 })
 
