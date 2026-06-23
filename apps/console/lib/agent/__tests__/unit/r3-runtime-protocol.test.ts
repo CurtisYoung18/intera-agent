@@ -442,6 +442,10 @@ describe('R3 HookContext and memory boundaries', () => {
     })
 
     const upsertArg = h.userProfileUpsert.mock.calls[0][0]
+    expect(upsertArg.create.profile).toContain('## Preferences')
+    expect(upsertArg.create.profile).toContain('- preference: prefers SMS updates')
+    expect(upsertArg.create.profile).not.toContain('## Activity')
+    expect(upsertArg.create.profile).not.toContain('Memory reason')
     h.userProfileFindUnique.mockResolvedValueOnce({
       profile: upsertArg.create.profile,
       sections: upsertArg.create.sections,
@@ -469,6 +473,9 @@ describe('R3 HookContext and memory boundaries', () => {
     })
 
     const firstUpsertArg = h.userProfileUpsert.mock.calls[0][0]
+    expect(firstUpsertArg.create.profile).toContain('## Identity')
+    expect(firstUpsertArg.create.profile).toContain('- vip_level: gold')
+    expect(firstUpsertArg.create.profile).not.toContain('## Activity')
     h.userProfileFindUnique.mockResolvedValueOnce({
       profile: firstUpsertArg.create.profile,
       sections: firstUpsertArg.create.sections,

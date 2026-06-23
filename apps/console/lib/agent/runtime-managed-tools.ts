@@ -281,8 +281,8 @@ export class RuntimeManagedToolResolver {
       return { ok: false, scope: 'user', error: 'No stable user/chat identity is available for UserProfile writes.', rejectedKeys }
     }
 
-    const bullets = Object.entries(filteredFacts).map(([factKey, factValue]) => `- ${factKey}: ${JSON.stringify(factValue)}`)
-    if (bullets.length === 0) {
+    const incoming = buildUserProfileMemoryMarkdown(filteredFacts)
+    if (!incoming) {
       appendRuntimeEvent(this.deps.caseId, {
         origin: 'system',
         source: 'remember',
@@ -303,7 +303,6 @@ export class RuntimeManagedToolResolver {
         authority: 'memory_context_only',
       }
     }
-    const incoming = ['# User Profile', '', '## Activity', ...bullets, `- Memory reason: ${reason}`].join('\n')
     if (this.shouldPersistRuntimeMemory()) {
       const existing = await readUserProfile(prisma as any, {
         orgId: this.deps.orgId,
@@ -405,8 +404,56 @@ function filterUserProfileFacts(facts: Record<string, unknown>): Record<string, 
   return filtered
 }
 
+function buildUserProfileMemoryMarkdown(facts: Record<string, unknown>): string | null {
+  const sections: Record<'Identity' | 'Contact' | 'Preferences', string[]> = {
+    Identity: [],
+    Contact: [],
+    Preferences: [],
+  }
+  for (const [key, value] of Object.entries(facts)) {
+    const section = profileSectionForFactKey(key)
+    sections[section].push(`- ${key}: ${formatProfileFactValue(value)}`)
+  }
+
+  const parts: string[] = ['# User Profile']
+  for (const section of ['Identity', 'Contact', 'Preferences'] as const) {
+    if (sections[section].length === 0) continue
+    parts.push('')
+    parts.push(`## ${section}`)
+    parts.push(...sections[section])
+  }
+  return parts.length > 1 ? parts.join('\n') : null
+}
+
+function profileSectionForFactKey(key: string): 'Identity' | 'Contact' | 'Preferences' {
+  const normalized = normalizedProfileFactKey(key)
+  if (
+    normalized === 'member_id' ||
+    normalized === 'memberid' ||
+    normalized === 'player_id' ||
+    normalized === 'playerid' ||
+    normalized === 'user_id' ||
+    normalized === 'username' ||
+    normalized === 'name' ||
+    normalized === 'vip_level' ||
+    normalized === 'vip_status'
+  ) {
+    return 'Identity'
+  }
+  if (normalized === 'email' || normalized === 'phone' || normalized === 'mobile') {
+    return 'Contact'
+  }
+  return 'Preferences'
+}
+
+function formatProfileFactValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
 function isStableProfileKey(key: string): boolean {
-  const normalized = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  const normalized = normalizedProfileFactKey(key)
   return (
     normalized === 'member_id' ||
     normalized === 'memberid' ||
@@ -435,12 +482,16 @@ function isSafeProfileValue(key: string, value: unknown): boolean {
   if (/(tool_use|tool_result|providerContent|caseId|runId|inputEpoch|currentStepId|procedureRun|screenshot|receipt|transaction id)/i.test(text)) {
     return false
   }
-  const normalizedKey = key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  const normalizedKey = normalizedProfileFactKey(key)
   if (['member_id', 'memberid', 'player_id', 'playerid'].includes(normalizedKey)) {
     if (!/^JAYA[A-Z0-9]{6,12}$/i.test(text)) return false
     if (/^JAYA0+$/i.test(text) || /^JAYA1234567890$/i.test(text) || /^JAYATEST/i.test(text)) return false
   }
   return true
+}
+
+function normalizedProfileFactKey(key: string): string {
+  return key.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
 function safeJson(value: unknown, fallback: unknown): unknown {

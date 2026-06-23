@@ -226,6 +226,52 @@ describe('compactUserProfile — dual-write (C3)', () => {
     }
   })
 
+  it('sanitizes runtime internals before persisting compacted user profile', async () => {
+    h.existingProfiles['test-org:user:test-user'] = {
+      profile: [
+        '# User Profile',
+        '',
+        '## Identity',
+        '- member_id: JAYA1197202',
+        '- [assistant tool_use id=toolu_old name=read_user_profile input={}]',
+        '- No prior sessions available',
+        '',
+        '## Activity',
+        '- Customer asked about deposit status.',
+      ].join('\n'),
+    }
+
+    h.mockCompactConversation.mockResolvedValueOnce({
+      summary: [
+        '# User Profile',
+        '',
+        '## Activity',
+        '- [assistant tool_use id=toolu_1 name=kb_search_deposit input={"query":"deposit"}]',
+        '- [user tool_result tool_use_id=toolu_1 content={"ok":true}]',
+        '- receipt filename: latest-deposit.png',
+        '- Customer prefers Romanized Nepali replies.',
+      ].join('\n'),
+      model: 'test-model',
+      provider: 'test',
+      tokensUsed: 100,
+    })
+
+    const loop = createLoop()
+    await (loop as any).compactUserProfile()
+
+    const persisted = h.persistedProfiles['test-org:user:test-user']
+    expect(persisted).toBeDefined()
+    expect(persisted.profile).toContain('member_id: JAYA1197202')
+    expect(persisted.profile).toContain('Customer prefers Romanized Nepali replies.')
+    expect(persisted.profile).toContain('Customer asked about deposit status.')
+    expect(persisted.profile).not.toMatch(/tool_use|tool_result|read_user_profile|kb_search|No prior sessions|receipt/i)
+
+    const parsed = JSON.parse(persisted.sections)
+    expect(parsed.Identity).toEqual(['member_id: JAYA1197202'])
+    expect(parsed.Activity).toEqual(['Customer prefers Romanized Nepali replies.'])
+    expect(parsed.History).toEqual(['Customer asked about deposit status.'])
+  })
+
   it('respects dryRun mode — does not write to DB', async () => {
     const config = {
       model: 'claude-sonnet-4-20250514',

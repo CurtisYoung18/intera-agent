@@ -35,6 +35,20 @@ describe('PROFILE_COMPACT_PROMPT', () => {
     expect(PROFILE_COMPACT_PROMPT).toMatch(/do NOT reword/i)
   })
 
+  it('forbids runtime internals and one-off case artifacts in cross-chat profile summaries', () => {
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/Never include tool names, tool calls, tool results/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/raw JSON/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/internal notes/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/Do not store one-off transaction records/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/current chat\/case memory/i)
+  })
+
+  it('requires customer messages to be summarized rather than copied verbatim', () => {
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/compress into concise reusable facts/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/Do NOT preserve every utterance/i)
+    expect(PROFILE_COMPACT_PROMPT).not.toMatch(/Customer messages:\s*never compress/i)
+  })
+
   it('is a non-empty string', () => {
     expect(PROFILE_COMPACT_PROMPT).toBeTruthy()
     expect(typeof PROFILE_COMPACT_PROMPT).toBe('string')

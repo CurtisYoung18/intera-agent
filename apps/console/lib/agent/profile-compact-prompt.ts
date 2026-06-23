@@ -15,11 +15,11 @@ import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 const sectionsBlock = PROFILE_SECTIONS.map((s: ProfileSection, i: number) => {
   const header = sectionHeader(s)
   const descriptions: Record<ProfileSection, string> = {
-    Identity: 'Everything known about this person — identifiers, affiliations, roles, status. Any stable attributes that persist across sessions. Put these FIRST.',
-    Contact: 'Any contact information or communication channels mentioned or confirmed.',
-    Preferences: 'Recurring topics, preferred tone or format, common requests, language choices, behavioral patterns. Accumulate these across sessions.',
-    Activity: 'Summary of recent conversations and cases. What they asked about, what was resolved, what tools were used. One line per interaction.',
-    History: 'Long-term patterns, recurring issues, escalation frequency, relationship notes. Aggregate across all past sessions.',
+    Identity: 'Stable facts about this person only — identifiers, roles, durable account status, or other attributes that persist across sessions. Put these FIRST.',
+    Contact: 'Confirmed contact information or durable communication channels only.',
+    Preferences: 'Recurring preferences such as language, tone, format, contact style, or repeated support needs. Accumulate these across sessions.',
+    Activity: 'User-visible recent support topics and outcomes only. Keep at most a few concise lines; do not preserve every utterance.',
+    History: 'Long-term patterns, recurring issues, escalation frequency, and relationship notes. Aggregate across sessions.',
   }
   return `${i + 1}. ${header}: ${descriptions[s]}`
 }).join('\n\n')
@@ -40,8 +40,11 @@ CRITICAL: The parser extracts content between \`## SectionName\` headers. If you
 COMPRESSION RULES:
 - Facts older than 7 days: one-line summary only.
 - Facts older than 30 days: merge into a single aggregate line.
-- Customer messages: never compress. Every utterance matters.
+- Customer messages: compress into concise reusable facts and outcomes. Do NOT preserve every utterance.
 - Duplicate facts: keep the most recent value.
 - If the token budget is tight, prioritize Identity, Contact, and Preferences over Activity and History.
+- Never include tool names, tool calls, tool results, raw JSON, internal notes, hook feedback, trace IDs, run IDs, case IDs, task IDs, or model/runtime details.
+- Do not store one-off transaction records, receipt/screenshot filenames, temporary status checks, or dispute evidence in the cross-chat profile. Those belong in the current chat/case memory.
+- If a recent conversation produced no durable user fact, leave the relevant section empty instead of inventing a profile item.
 
 Respond with TEXT ONLY — no tool calls, no analysis tags, no thinking blocks. Output just the ${PROFILE_SECTIONS.length} sections with the exact headers above.`

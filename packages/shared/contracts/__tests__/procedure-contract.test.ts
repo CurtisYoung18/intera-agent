@@ -12,6 +12,12 @@ describe('Procedure v2 contract', () => {
     version: 'v2' as const,
     whenToUse: 'Use this when the customer reports a missing deposit or asks where to find deposit evidence.',
     overview: 'Collect evidence, search knowledge if needed, then investigate or hand off.',
+    runtimeSignalDetectors: [
+      {
+        signal: 'explicit_human_request' as const,
+        patterns: ['human', 'agent'],
+      },
+    ],
     steps: [
       {
         id: 'understand_issue',
@@ -25,7 +31,7 @@ describe('Procedure v2 contract', () => {
           {
             id: 'if_human',
             kind: 'if' as const,
-            condition: { id: 'human_request', kind: 'runtime_signal' as const, signal: 'explicit_human_request' },
+            condition: { id: 'human_request', kind: 'runtime_signal' as const, signal: 'explicit_human_request' as const },
             actions: [
               { id: 'handoff_now', kind: 'request_human_handoff' as const, label: 'Request human help', queue: 'general' },
             ],
@@ -40,6 +46,7 @@ describe('Procedure v2 contract', () => {
           { id: 'lookup_deposit', kind: 'call_tool' as const, label: 'Check latest deposit', toolName: 'get_latest_deposit' },
           { id: 'wrap_up', kind: 'end' as const, label: 'Explain next step', status: 'completed' as const },
         ],
+        branches: [],
       },
     ],
   }
@@ -91,6 +98,7 @@ describe('Procedure v2 contract', () => {
     const procedureWithKnowledgeEvent = {
       version: 'v2' as const,
       whenToUse: 'Use this when a docs lookup tool should drive the next branch.',
+      runtimeSignalDetectors: [],
       steps: [
         {
           id: 'docs_step',

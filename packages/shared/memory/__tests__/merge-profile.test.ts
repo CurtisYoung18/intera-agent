@@ -153,6 +153,77 @@ describe('mergeProfile — deduplication', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Sanitization and semantic updates
+// ---------------------------------------------------------------------------
+
+describe('mergeProfile — profile hygiene', () => {
+  it('removes runtime internals from existing and incoming profile text', () => {
+    const existing = [
+      '# User Profile',
+      '',
+      '## Identity',
+      '- member_id: JAYA1197202',
+      '- [assistant tool_use id=toolu_1 name=kb_search_deposit input={"query":"deposit"}]',
+      '- No prior sessions available',
+      '',
+      '## Activity',
+      '- automated_tools: kb_search_deposit, start_procedure',
+      '- Customer asked about deposit delay.',
+    ].join('\n')
+    const incoming = [
+      '# User Profile',
+      '',
+      '## Activity',
+      '- [user tool_result tool_use_id=toolu_1 content={"ok":true}]',
+      '- receipt filename: deposit-slip.png',
+      '- Customer still prefers Romanized Nepali replies.',
+    ].join('\n')
+
+    const result = mergeProfile(existing, incoming)
+    const sections = parseSections(result.sections)
+
+    expect(result.profile).not.toMatch(/tool_use|tool_result|kb_search|start_procedure|No prior sessions|receipt/i)
+    expect(sections.Identity).toEqual(['member_id: JAYA1197202'])
+    expect(sections.Activity).toEqual(['Customer still prefers Romanized Nepali replies.'])
+    expect(sections.History).toEqual(['Customer asked about deposit delay.'])
+  })
+
+  it('replaces stable keyed facts with the newest value instead of appending contradictions', () => {
+    const existing = markdown({
+      Identity: ['member_id: JAYA1111111'],
+      Preferences: ['language: English'],
+    })
+    const incoming = markdown({
+      Identity: ['Member ID: JAYA1197202'],
+      Preferences: ['preferred language: Romanized Nepali'],
+    })
+
+    const result = mergeProfile(existing, incoming)
+    const sections = parseSections(result.sections)
+
+    expect(sections.Identity).toEqual(['Member ID: JAYA1197202'])
+    expect(sections.Preferences).toEqual(['preferred language: Romanized Nepali'])
+    expect(result.profile).not.toContain('JAYA1111111')
+    expect(result.profile).not.toContain('language: English')
+  })
+
+  it('drops old-format raw summaries that only contain runtime artifacts', () => {
+    const raw = [
+      '# User Profile',
+      '[assistant tool_use id=toolu_1 name=read_user_profile input={}]',
+      '[user tool_result tool_use_id=toolu_1 content={"profile":"No prior sessions available"}]',
+      'Task ID: cmqq123',
+    ].join('\n')
+
+    const result = mergeProfile('', raw)
+    const sections = parseSections(result.sections)
+
+    expect(result.profile).toBe('# User Profile')
+    expect(totalItems(sections)).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Activity rolls into History
 // ---------------------------------------------------------------------------
 
