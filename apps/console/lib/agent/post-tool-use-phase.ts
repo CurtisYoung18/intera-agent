@@ -24,6 +24,7 @@ export interface PostToolUsePhaseDeps {
   getToolRouter: () => ToolRouter
   addMessage: (content: string) => void
   buildToolInterceptorContext: () => ToolInterceptorContext
+  shouldDeferTerminalToolTrace?: (toolName: string) => boolean
 }
 
 export interface PostToolUsePhaseInput {
@@ -109,7 +110,8 @@ export class PostToolUsePhase {
     const basedOnInputEpoch = result.toolUse?.id
       ? input.toolBasedOnEpoch.get(result.toolUse.id)
       : undefined
-    if (shouldRecordProcedureEvidence(result.name)) {
+    const deferTerminalTrace = this.deps.shouldDeferTerminalToolTrace?.(result.name) === true
+    if (!deferTerminalTrace && shouldRecordProcedureEvidence(result.name)) {
       const toolDefinition = this.deps.getToolRouter().getTool(result.name)
       recordProcedureToolResult(this.deps.caseId, {
         toolName: result.name,
@@ -120,6 +122,8 @@ export class PostToolUsePhase {
         isKnowledgeTool: !!toolDefinition?.knowledgeSourceId,
       })
     }
+
+    if (deferTerminalTrace) return
 
     await this.deps.traceWriter.write(
       'tool_result',

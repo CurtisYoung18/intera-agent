@@ -20,6 +20,7 @@ import type { CaseAgentLoop } from './case-agent-loop'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import { isInvestigableCaseType } from './case-type-slugs'
 import { escalationMessageForRuntime, latestUserText } from './customer-messages'
+import { defaultHumanQueueForCaseSchema } from './human-handoff'
 import { startProcedureRun } from './session-store'
 
 type CaseTypeRowLike = {
@@ -375,6 +376,7 @@ export async function processPendingHookToolCalls(
     if (ptc.tool === 'create_human_task') {
       try {
         const resolvedCaseType = ctx.caseSchema?.type || 'general'
+        const queue = defaultHumanQueueForCaseSchema(ctx.caseSchema)
         await ctx.persistence.ensureCase({
           id: ctx.caseId,
           orgId: ctx.orgId,
@@ -391,14 +393,14 @@ export async function processPendingHookToolCalls(
         })
         const task = await ctx.persistence.createHumanTask({
           caseId: ctx.caseId,
-          queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
+          queue,
           question: `Auto-escalated by Hook "${ptc.hookName}". ${ptc.reason}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
           status: 'pending',
         })
-        await ctx.traceWriter.writeHumanTaskCreated(task.id, ctx.caseSchema?.escalateOn?.[0] || 'general')
+        await ctx.traceWriter.writeHumanTaskCreated(task.id, queue)
         sendEvent({
           type: 'human_task_created',
-          data: { taskId: task.id, queue: ctx.caseSchema?.escalateOn?.[0] || 'general', status: 'pending' },
+          data: { taskId: task.id, queue, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
       } catch (err) {
@@ -411,6 +413,7 @@ export async function processPendingHookToolCalls(
   if (pendingCalls.length === 0 && escalatedResults.length > 0) {
     try {
       const resolvedCaseType = ctx.caseSchema?.type || 'general'
+      const queue = defaultHumanQueueForCaseSchema(ctx.caseSchema)
       await ctx.persistence.ensureCase({
         id: ctx.caseId,
         orgId: ctx.orgId,
@@ -427,14 +430,14 @@ export async function processPendingHookToolCalls(
       })
       const task = await ctx.persistence.createHumanTask({
         caseId: ctx.caseId,
-        queue: ctx.caseSchema?.escalateOn?.[0] || 'general',
+        queue,
         question: `Auto-escalated by Hook. ${escalatedReasons}. Tools called: ${ctx.chatMemory.getToolsCalled().join(', ')}.`,
         status: 'pending',
       })
-      await ctx.traceWriter.writeHumanTaskCreated(task.id, ctx.caseSchema?.escalateOn?.[0] || 'general')
+      await ctx.traceWriter.writeHumanTaskCreated(task.id, queue)
       sendEvent({
         type: 'human_task_created',
-        data: { taskId: task.id, queue: ctx.caseSchema?.escalateOn?.[0] || 'general', status: 'pending' },
+        data: { taskId: task.id, queue, status: 'pending' },
         timestamp: new Date().toISOString(),
       })
     } catch (err) {
@@ -717,36 +720,16 @@ function shouldPromotePlaceholderToDefault(value: string): boolean {
 }
 
 function defaultPlaceholderForField(key: string): string | undefined {
-  if (key === 'member_id') return 'JAYA...'
   return undefined
 }
 
 function formFieldFromFact(fact: string): Record<string, unknown> {
   const key = normalizeFactKey(fact)
-  if (key === 'issue_type') {
-    return {
-      key,
-      label: 'Issue type',
-      type: 'select',
-      required: true,
-      options: ['Deposit not credited', 'Withdrawal not received', 'Bonus/cashback not received', 'Game/bet money issue', 'Other'],
-    }
-  }
-  if (key === 'method') {
-    return {
-      key,
-      label: 'Transaction type',
-      type: 'select',
-      required: true,
-      options: ['deposit', 'withdrawal'],
-    }
-  }
   return {
     key,
     label: humanizeFieldKey(key),
     type: 'text',
     required: true,
-    placeholder: key === 'member_id' ? 'JAYA...' : undefined,
   }
 }
 
@@ -775,10 +758,10 @@ function fallbackFormTitle(requiredFacts: string[]): string {
 function fallbackFormDescription(requiredFacts: string[]): string {
   const normalized = requiredFacts.map(normalizeFactKey)
   if (normalized.length === 1 && normalized[0] === 'member_id') {
-    return 'Please provide your Jayabaji Member ID so I can continue.'
+    return 'Please provide your Member ID so I can continue.'
   }
   if (normalized.includes('issue_type')) {
-    return 'Please select the closest issue type so I can route this correctly.'
+    return 'Please provide the issue type so I can route this correctly.'
   }
   return 'Please provide the missing details so I can continue.'
 }

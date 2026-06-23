@@ -1,4 +1,5 @@
 import { stripInternalMemoryKeys } from './memory'
+import type { CaseSchemaConfig } from '@intera/shared/types'
 
 function containsCjk(text: string): boolean {
   return /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/.test(text)
@@ -56,4 +57,23 @@ export function buildHumanHandoffQuestion(input: {
     )
   }
   return lines.join('\n')
+}
+
+export function defaultHumanQueueForCaseSchema(caseSchema?: CaseSchemaConfig | null): string {
+  const steps = caseSchema?.procedure?.steps ?? []
+  for (const step of steps) {
+    for (const action of step.actions ?? []) {
+      if (action.kind === 'request_human_handoff' && typeof action.queue === 'string' && action.queue.trim()) {
+        return action.queue.trim()
+      }
+    }
+    for (const branch of step.branches ?? []) {
+      for (const action of branch.actions ?? []) {
+        if (action.kind === 'request_human_handoff' && typeof action.queue === 'string' && action.queue.trim()) {
+          return action.queue.trim()
+        }
+      }
+    }
+  }
+  return 'general'
 }

@@ -211,18 +211,36 @@ export class CaseAgentLoop {
           create: { caseId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
         })
 
-        const task = await prisma.humanTask.create({
-          data: {
-            caseId,
-            queue,
-            question,
-            fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
-            status: 'pending',
-          },
-        })
+        const fields = taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null
+        const existingTask = await prisma.humanTask.findFirst({
+          where: { caseId, status: 'pending' },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        }).catch(() => null)
+        const task = existingTask?.id
+          ? await prisma.humanTask.update({
+              where: { id: existingTask.id },
+              data: { queue, question, fields },
+            })
+          : await prisma.humanTask.create({
+              data: {
+                caseId,
+                queue,
+                question,
+                fields,
+                status: 'pending',
+              },
+            })
         taskId = task.id
 
-        await this.services.traceWriter.writeHumanTaskCreated(task.id, queue)
+        if (existingTask?.id) {
+          await this.services.traceWriter.write('loop_decision', 'Pending human task reused', {
+            taskId: task.id,
+            queue,
+          })
+        } else {
+          await this.services.traceWriter.writeHumanTaskCreated(task.id, queue)
+        }
         humanTaskResult.output = {
           ok: true,
           output: { taskId: task.id, queue, status: 'pending', persisted: true },
@@ -274,7 +292,7 @@ export class CaseAgentLoop {
           data: { taskId: task.id, queue, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
-        await this.services.traceWriter.writeEscalated('human_task_created', { taskId: task.id, queue })
+        await this.services.traceWriter.writeEscalated(existingTask?.id ? 'human_task_reused' : 'human_task_created', { taskId: task.id, queue })
         sendEvent({
           type: 'escalated',
           data: { reason: 'human_task_created', taskId: task.id, queue },

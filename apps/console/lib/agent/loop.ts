@@ -43,6 +43,12 @@ import { LlmStreamPhase } from './llm-stream-phase'
 import { finalizeStreamingProviderToolTurn } from './provider-tool-turn-phase'
 import { writeProviderTranscriptHealth } from './provider-transcript-health-writer'
 
+const CASE_TERMINAL_TOOL_NAMES = new Set([
+  'create_human_task',
+  'finalize_procedure',
+  'finalize_consultation',
+])
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -213,6 +219,7 @@ export class AgentLoop {
       getToolRouter: () => this.toolRouter,
       addMessage: addHookFeedbackMessage(this.messages),
       buildToolInterceptorContext: () => this.buildToolInterceptorContext(),
+      shouldDeferTerminalToolTrace: (toolName) => Boolean(this.caseLoop) && CASE_TERMINAL_TOOL_NAMES.has(toolName),
     })
     this.noToolTurnHandler = new NoToolTurnHandler({
       traceWriter: this.traceWriter,
