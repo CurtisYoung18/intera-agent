@@ -1,7 +1,7 @@
 /**
  * Seed the existing production J1N agent with Intera Harness-native config.
  *
- * This script intentionally does not create or mutate HTTP Tool endpoints,
+ * This script intentionally does not create or mutate business HTTP Tool endpoints,
  * OpenAPI schemas, or headers. It updates the agent's Brain prompt,
  * CaseTypes/Procedures, tool/source descriptions, Hooks/HookBindings, Scenario
  * Lab fixtures, and a few test UserProfiles.
@@ -225,6 +225,47 @@ const TOOL_DESCRIPTION_PATCHES: Record<string, string> = {
   get_bet_history: 'Member-specific bet history lookup. Requires non-empty member_id, from_date, and to_date. Do not use for generic instructions on how to check betting history; use General KB first. from_date and to_date must be exact strings in Y-m-d H:i:s format, for example "2026-06-10 00:00:00" and "2026-06-18 23:59:59". Do not call this tool with date-only values like "2026-06-10". If the customer provides only dates, expand the start date to 00:00:00 and the end date to 23:59:59 before calling. If using ask_user_questions, collect text datetime fields or clearly request the full Y-m-d H:i:s format.',
 }
 
+const TOOL_SCHEMA_PATCHES: Record<string, Record<string, unknown>> = {
+  create_human_task: {
+    type: 'object',
+    properties: {
+      queue: { type: 'string', description: 'Human queue to route to' },
+      question: { type: 'string', description: 'Structured question for human' },
+      fields: {
+        type: 'array',
+        description: 'Optional structured form fields for the operator to fill. Their answers flow back as structured runtime input.',
+        items: {
+          type: 'object',
+          properties: {
+            key: { type: 'string', description: 'Fact key, e.g. "actualAmount", "verifyResult"' },
+            label: { type: 'string', description: 'Display label, e.g. "Actual deposit amount"' },
+            type: { type: 'string', enum: ['text', 'number', 'select', 'textarea'], description: 'Field type' },
+            required: { type: 'boolean', description: 'Whether this field must be filled' },
+            placeholder: { type: 'string', description: 'Placeholder text' },
+            options: { type: 'array', items: { type: 'string' }, description: 'Options for select type' },
+          },
+          required: ['key', 'label', 'type'],
+        },
+      },
+      context: { type: 'object', description: 'Additional context for the human reviewer' },
+      known_facts: {
+        type: 'object',
+        description: 'Compact facts already collected from the customer or tools. Keep values short and in the active support language.',
+        additionalProperties: true,
+      },
+      chat_summary: {
+        type: 'string',
+        description: 'Short summary for the human operator in the active support language.',
+      },
+      handoff_reason: {
+        type: 'string',
+        description: 'Why a human is needed, written in the active support language.',
+      },
+    },
+    required: ['queue', 'question'],
+  },
+}
+
 const TEST_MEMBER_IDS = ['JAYA1197202', 'JAYA1108F7C', 'JAYA117FFEB'] as const
 
 const CORE_SYSTEM_PROMPT = `You are J1N, the Jayabaji customer support agent running on Intera Harness.
@@ -274,6 +315,8 @@ Memory and profile:
 
 Structured collection:
 - For member-specific deposit status, withdrawal status, reset PIN, personal promotion eligibility/status, current account/KYC state, live transaction history, live bet history, and personalized recommendation requests, the correct missing-info pattern is: start_procedure -> read_user_profile if member_id is not in the latest message -> ask_user_questions only if still missing -> wait for form result -> continue with live tools.
+- Romanized Nepali money-status examples: "mero deposit gareko paisa balance ma aayeko chaina", "deposit paisa aayena", "deposit balance ma update bhayena", or "deposit credit bhayena" are member-specific deposit status workflows, not ordinary deposit processing-time FAQ. Start j1n_deposit_status and collect member_id via read_user_profile/ask_user_questions if missing.
+- Romanized Nepali withdrawal examples: "withdrawal paisa aayena", "withdraw gareko paisa receive bhayena", or "mero withdrawal pending cha" are member-specific withdrawal workflows. Start j1n_withdrawal_status and collect member_id via read_user_profile/ask_user_questions if missing.
 - ask_user_questions calls must include a short title and a non-empty fields array. If you only know that the customer needs to choose an intent, use a single select field named issue_type.
 - If a required fact is missing, a plain-text question like "Please provide your Member ID" without an ask_user_questions call is the wrong move.
 - Keep form copy short and specific. Ask only for the minimum fields needed for the next tool step.
@@ -288,6 +331,8 @@ Human handoff:
 - Do not create human tasks for ordinary FAQ unless the customer explicitly requests a human after the AI has already tried the relevant automated/KB path.
 - If the user asks for human/live agent/operator after an automated path was tried, call create_human_task instead of only saying that you will transfer.
 - Use create_human_task for VIP/sensitive/account-risk/conflicting-evidence/no-progress cases.
+- If you are about to say that a team, department, specialist, human operator, manual review, or future follow-up will handle the issue, call create_human_task in the same turn first and use the tool result as evidence.
+- In create_human_task, keep question concise and include known_facts, chat_summary, and handoff_reason in Romanized Nepali for the operator note.
 - Do not say "I have forwarded this", "the team will review", or "I transferred you" unless create_human_task has returned a successful pending task.
 
 Procedure use:
@@ -388,7 +433,7 @@ const CASE_TYPES: CaseTypeSeed[] = [
         {
           id: 'general_search',
           title: 'Search relevant knowledge',
-          guidance: 'Use dynamic KB search instead of routing through fixed GPTBots branches. Do not call ask_user_questions for FAQ/self-service questions like turnover review, username change, real-name change, how to withdraw, or how to verify an account. Do call ask_user_questions for ambiguous money/funds issues with a single issue_type select field before any member_id/detail form.',
+          guidance: 'Use dynamic KB search instead of routing through fixed GPTBots branches. Do not call ask_user_questions for FAQ/self-service questions like turnover review, username change, real-name change, how to withdraw, or how to verify an account. Do call ask_user_questions for ambiguous money/funds issues with a single issue_type select field before any member_id/detail form. If the message already names deposit plus not-arrived/not-credited/not-updated balance cues such as "aayeko chaina", "aayena", or "update bhayena", start j1n_deposit_status instead of answering a processing-time FAQ.',
           actions: [
             {
               id: 'general_kb_search',
@@ -1440,9 +1485,13 @@ async function main(): Promise<void> {
       })
 
       for (const [name, description] of Object.entries(TOOL_DESCRIPTION_PATCHES)) {
+        const schemaPatch = TOOL_SCHEMA_PATCHES[name]
         await tx.tool.updateMany({
           where: { agentConfigId: agent.id, name },
-          data: { description },
+          data: {
+            description,
+            ...(schemaPatch ? { inputSchema: JSON.stringify(schemaPatch) } : {}),
+          },
         })
       }
 
