@@ -150,6 +150,15 @@ const FIX_MARKERS = [
   },
 ]
 
+const RESOLVED_AUDITS = {
+  TH12XG7AWZ: {
+    status: 'fixed',
+    fixedAt: '2026-06-24 17:49 CST',
+    commit: '7e85eb95 + 11901373',
+    note: 'Historical P0. Handoff promise is now guarded by fixed handoff wording, persisted-human-task Stop Hook fallback, and internal runtime feedback isolation. Keep only as regression fixture; do not count as active P0 unless a post-marker trace reproduces the same promise-without-tool pattern.',
+  },
+}
+
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true })
 }
@@ -495,6 +504,15 @@ function renderDocPage({ doc, type, allDocs, pairedDoc }) {
   const next = allDocs[index + 1]
   const sourceDir = type === 'trace' ? TRACE_DIR : AUDIT_DIR
   const title = type === 'trace' ? `Trace: ${doc.base}` : `Audit: ${doc.base}`
+  const chatId = extractField(doc.markdown, 'Chat id') || chatIdFromName(doc.name)
+  const resolution = RESOLVED_AUDITS[chatId]
+  const resolutionBanner = resolution
+    ? `<aside class="card neutral" style="margin-bottom:16px;">
+        <div class="card-top"><div><div class="label">Resolved historical case</div><h3>已修复 / historical regression fixture</h3></div><span class="tag">${escapeHtml(resolution.fixedAt)}</span></div>
+        <p>${escapeHtml(resolution.note)}</p>
+        <p><strong>Commit：</strong><code>${escapeHtml(resolution.commit)}</code></p>
+      </aside>`
+    : ''
   const navLinks = [
     { label: '总入口', href: relative(htmlPath, STABLE_DASHBOARD) },
     prev && { label: '上一篇', href: relative(htmlPath, htmlFileFor(prev, type === 'trace' ? TRACE_HTML_DIR : AUDIT_HTML_DIR)) },
@@ -506,6 +524,7 @@ function renderDocPage({ doc, type, allDocs, pairedDoc }) {
     { label: '原始 Markdown', href: relative(htmlPath, path.join(sourceDir, doc.name)) },
   ]
   const body = `<section class="doc">
+    ${resolutionBanner}
     ${renderMarkdown(doc.markdown)}
     <details class="raw-source">
       <summary>查看原始 Markdown</summary>
@@ -519,7 +538,7 @@ function renderDocPage({ doc, type, allDocs, pairedDoc }) {
     body,
   }).replace('<aside class="hero-side"></aside>', `<aside class="hero-side">
         <div class="metric"><span>文件</span><strong>${escapeHtml(doc.name)}</strong><em>${type === 'trace' ? 'raw trace' : 'audit'}</em></div>
-        <div class="metric"><span>Chat</span><strong>${escapeHtml(extractField(doc.markdown, 'Chat id') || chatIdFromName(doc.name))}</strong><em>${escapeHtml(extractField(doc.markdown, 'Case id') || 'no case id field')}</em></div>
+        <div class="metric"><span>Chat</span><strong>${escapeHtml(chatId)}</strong><em>${escapeHtml(extractField(doc.markdown, 'Case id') || 'no case id field')}</em></div>
       </aside>`)
 }
 
@@ -555,6 +574,7 @@ function buildModels() {
     )
     const categories = categorize(issueText)
     const observedAt = traceUpdatedAt(trace)
+    const resolution = RESOLVED_AUDITS[chatId]
     return {
       ...audit,
       severity,
@@ -567,6 +587,8 @@ function buildModels() {
       categories,
       traceUpdatedAt: observedAt.label,
       traceUpdatedAtMs: observedAt.ms,
+      resolution,
+      resolved: Boolean(resolution),
     }
   })
 
@@ -579,6 +601,7 @@ function renderCategoryCards(auditModels) {
   return CATEGORY_DEFINITIONS.map((category) => {
     const matching = auditModels.filter((audit) => audit.categories.includes(category.id))
     const examples = matching
+      .filter((audit) => !audit.resolved)
       .sort((a, b) => severityRank(a.severity) - severityRank(b.severity) || a.name.localeCompare(b.name))
       .slice(0, 4)
       .map((audit) => {
@@ -601,7 +624,7 @@ function renderCategoryCards(auditModels) {
 
 function renderPriorityCards(auditModels) {
   return auditModels
-    .filter((audit) => ['P0', 'P1'].includes(audit.severity))
+    .filter((audit) => ['P0', 'P1'].includes(audit.severity) && !audit.resolved)
     .sort((a, b) => severityRank(a.severity) - severityRank(b.severity) || b.mtimeMs - a.mtimeMs)
     .slice(0, 8)
     .map((audit) => {
@@ -629,12 +652,18 @@ function renderAuditRows(auditModels) {
       const rawHref = audit.trace ? relative(STABLE_DASHBOARD, path.join(TRACE_DIR, audit.trace.name)) : ''
       const categories = audit.categories.length ? audit.categories : ['uncategorized']
       const search = stripMarkdown([audit.name, audit.chatId, audit.caseId, audit.keyFinding, audit.recommendation, categories.join(' ')].join(' '))
+      const resolutionBadge = audit.resolution
+        ? `<div class="subline"><span class="tag">已修复 / historical</span> fixed ${escapeHtml(audit.resolution.fixedAt)} · <code>${escapeHtml(audit.resolution.commit)}</code></div>`
+        : ''
+      const recommendation = audit.resolution
+        ? `<p><strong>已修复：</strong>${escapeHtml(audit.resolution.note)}</p><p><strong>原建议：</strong>${inlineMarkdown(audit.recommendation)}</p>`
+        : inlineMarkdown(audit.recommendation)
       return `<tr data-severity="${escapeAttr(audit.severity)}" data-categories="${escapeAttr(categories.join(' '))}" data-search="${escapeAttr(search.toLowerCase())}">
         <td><span class="pill sev-${escapeAttr(audit.severity.toLowerCase())}">${escapeHtml(audit.severity)}</span></td>
-        <td><a href="${escapeAttr(auditHref)}">${escapeHtml(audit.chatId)}</a><div class="subline">${escapeHtml(audit.caseId || audit.name)}</div></td>
+        <td><a href="${escapeAttr(auditHref)}">${escapeHtml(audit.chatId)}</a><div class="subline">${escapeHtml(audit.caseId || audit.name)}</div>${resolutionBadge}</td>
         <td>${inlineMarkdown(audit.keyFinding || 'No summary extracted.')}</td>
         <td><div class="tags">${categories.map((category) => `<span class="tag">${escapeHtml(category)}</span>`).join('')}</div></td>
-        <td>${inlineMarkdown(audit.recommendation)}</td>
+        <td>${recommendation}</td>
         <td><div class="file-links"><a href="${escapeAttr(auditHref)}">audit html</a>${traceHref ? `<a href="${escapeAttr(traceHref)}">trace html</a>` : ''}<a href="${escapeAttr(sourceHref)}">audit md</a>${rawHref ? `<a href="${escapeAttr(rawHref)}">trace md</a>` : ''}</div></td>
       </tr>`
     })
@@ -714,10 +743,11 @@ function renderFixMarkers(auditModels) {
 }
 
 function renderDashboard({ traces, auditModels, rawWithoutAudit }) {
-  const severityCounts = auditModels.reduce((acc, audit) => {
+  const activeSeverityCounts = auditModels.filter((audit) => !audit.resolved).reduce((acc, audit) => {
     acc[audit.severity] = (acc[audit.severity] ?? 0) + 1
     return acc
   }, {})
+  const fixedHighSeverityCount = auditModels.filter((audit) => audit.resolved && ['P0', 'P1'].includes(audit.severity)).length
   const body = `
     <section class="section">
       <div class="section-head"><div><h2>修复观察备注</h2><p class="section-note">用于区分历史样本和修复后新复现；后续自动化刷新总入口时会保留这些基线。</p></div></div>
@@ -730,7 +760,7 @@ function renderDashboard({ traces, auditModels, rawWithoutAudit }) {
     </section>
 
     <section class="section">
-      <div class="section-head"><div><h2>P0/P1 优先样例</h2><p class="section-note">自动从当前 audit 提取，优先展示最高严重度和最近更新的案例。</p></div></div>
+      <div class="section-head"><div><h2>P0/P1 优先样例</h2><p class="section-note">自动从当前 audit 提取，已修复 historical 案例不再进入 active priority。</p></div></div>
       <div class="grid">${renderPriorityCards(auditModels)}</div>
     </section>
 
@@ -845,7 +875,7 @@ function renderDashboard({ traces, auditModels, rawWithoutAudit }) {
   }).replace('<aside class="hero-side"></aside>', `<aside class="hero-side">
         <div class="metric"><span>Audit files</span><strong>${auditModels.length}</strong><em>不含 README / INDEX</em></div>
         <div class="metric"><span>Raw traces</span><strong>${traces.length}</strong><em>每份都有 HTML drill-down</em></div>
-        <div class="metric"><span>P0 / P1</span><strong>${severityCounts.P0 ?? 0} / ${severityCounts.P1 ?? 0}</strong><em>优先进入修复队列</em></div>
+        <div class="metric"><span>Active P0 / P1</span><strong>${activeSeverityCounts.P0 ?? 0} / ${activeSeverityCounts.P1 ?? 0}</strong><em>${fixedHighSeverityCount} fixed high-severity kept as regression fixtures</em></div>
         <div class="metric"><span>Unreviewed raw</span><strong>${rawWithoutAudit.length}</strong><em>audit automation 下一轮处理</em></div>
       </aside>`)
 }
