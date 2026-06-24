@@ -32,6 +32,7 @@ export type CaseByIdParams = z.infer<typeof CaseByIdParams>
 export const CaseSummarySchema = z.object({
   id: z.string(),
   runId: z.string().nullable().optional(),
+  chatId: z.string().optional(),
   type: z.string(),
   status: z.string(),
   source: z.string().optional(),

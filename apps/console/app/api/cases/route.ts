@@ -61,6 +61,7 @@ export const GET = defineRoute({
       return {
         id: runId ?? caseRow.id,
         runId,
+        chatId: caseRow.chatId,
         type: caseRow.type,
         status: caseRow.status,
         source: caseRow.source,

@@ -200,6 +200,7 @@ describe('/api/cases agent scoping', () => {
     expect(body.data.cases.find((item: any) => item.id === 'run-a-waiting')).toMatchObject({
       id: 'run-a-waiting',
       runId: 'run-a-waiting',
+      chatId: 'chat-a',
       status: 'waiting_human',
       goal: 'Agent A handoff',
     })

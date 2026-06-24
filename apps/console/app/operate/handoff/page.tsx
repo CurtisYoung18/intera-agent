@@ -3,11 +3,12 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  Activity,
   AlertCircle,
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Gauge,
   Handshake,
@@ -67,6 +68,8 @@ interface HandoffCaseDetail {
   }
 }
 
+const HANDOFF_PAGE_SIZE = 10
+
 function fmtRelative(iso: string, locale: 'en' | 'zh') {
   const diff = Date.now() - new Date(iso).getTime()
   const mins = Math.max(0, Math.floor(diff / 60_000))
@@ -95,6 +98,10 @@ function fmtPercent(value: number | null | undefined) {
   return `${Math.round((value ?? 0) * 1000) / 10}%`
 }
 
+function hasMeaningfulText(value: string | null | undefined) {
+  return Boolean(value?.trim())
+}
+
 export default function HumanHandoffPage() {
   const { locale } = useConsoleLocale()
   const { selectedAgentId, loading: agentLoading, loadError: agentLoadError } = useAgentContext()
@@ -106,12 +113,18 @@ export default function HumanHandoffPage() {
     }
   }, [selectedAgentId])
   const [cases, setCases] = useState<HandoffCaseSummary[]>([])
+  const [caseTotal, setCaseTotal] = useState(0)
   const [metrics, setMetrics] = useState<HandoffMetrics | null>(null)
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [detail, setDetail] = useState<HandoffCaseDetail | null>(null)
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPage(0)
+  }, [selectedAgentId])
 
   useEffect(() => {
     let active = true
@@ -121,6 +134,7 @@ export default function HumanHandoffPage() {
       if (!selectedAgentId) {
         setLoading(false)
         setCases([])
+        setCaseTotal(0)
         setMetrics(null)
         setSelectedRunId(null)
         setError(agentLoadError || (isZh ? '没有可用 Agent' : 'No agent available'))
@@ -131,7 +145,8 @@ export default function HumanHandoffPage() {
       try {
         const params = new URLSearchParams({
           handoff: 'active',
-          limit: '100',
+          limit: String(HANDOFF_PAGE_SIZE),
+          offset: String(page * HANDOFF_PAGE_SIZE),
           agentId: selectedAgentId,
         })
         const metricsParams = new URLSearchParams({ agentId: selectedAgentId })
@@ -141,8 +156,14 @@ export default function HumanHandoffPage() {
         ])
         if (!active) return
         const nextCases = result.data.cases as HandoffCaseSummary[]
+        const total = result.data.total
         setCases(nextCases)
+        setCaseTotal(total)
         setMetrics(metricsResult.data.metrics)
+        if (nextCases.length === 0 && total > 0 && page > 0) {
+          setPage(Math.max(0, Math.ceil(total / HANDOFF_PAGE_SIZE) - 1))
+          return
+        }
         setSelectedRunId((prev) => {
           if (prev && nextCases.some((item) => item.runId === prev)) return prev
           return nextCases[0]?.runId ?? null
@@ -151,6 +172,7 @@ export default function HumanHandoffPage() {
         if (!active) return
         setError(err instanceof ApiClientError ? err.envelope.error.message : (isZh ? '加载人工接管列表失败' : 'Failed to load handoff list'))
         setCases([])
+        setCaseTotal(0)
         setMetrics(null)
         setSelectedRunId(null)
       } finally {
@@ -162,7 +184,7 @@ export default function HumanHandoffPage() {
     return () => {
       active = false
     }
-  }, [agentLoadError, agentLoading, isZh, selectedAgentId])
+  }, [agentLoadError, agentLoading, isZh, page, selectedAgentId])
 
   useEffect(() => {
     if (!selectedRunId) {
@@ -194,23 +216,20 @@ export default function HumanHandoffPage() {
     }
   }, [selectedRunId, withAgent])
 
-  const handoffListCount = cases.length
-  const activeHandoffProcedureRuns = metrics?.activeHandoffProcedureRuns ?? handoffListCount
-  const activeHandoffConversations = metrics?.activeHandoffConversations ?? handoffListCount
   const procedureTypes = useMemo(() => new Set(cases.map((item) => item.type)).size, [cases])
   const latestTask = detail?.humanTasks?.[0]
   const totalConversations = metrics?.totalConversations ?? 0
   const totalProcedureRuns = metrics?.totalProcedureRuns ?? 0
   const escalatedConversations = metrics?.escalatedConversations ?? 0
+  const totalPages = Math.max(1, Math.ceil(caseTotal / HANDOFF_PAGE_SIZE))
+  const canGoPrev = page > 0
+  const canGoNext = page + 1 < totalPages
+  const runSummary = hasMeaningfulText(detail?.memory?.summary) ? detail?.memory?.summary?.trim() ?? null : null
+  const runTodos = hasMeaningfulText(detail?.memory?.todos) ? detail?.memory?.todos?.trim() ?? null : null
+  const hasRunNotes = Boolean(runSummary || runTodos)
   const escalationSubcopy = isZh
     ? `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} 个对话`
     : `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} chats`
-  const handoffActiveSubcopy = isZh
-    ? `${fmtNumber(activeHandoffProcedureRuns, locale)} 个 ProcedureRun / ${fmtNumber(metrics?.activeHumanTasks ?? 0, locale)} 个未处理 HumanTask`
-    : `${fmtNumber(activeHandoffProcedureRuns, locale)} ProcedureRuns / ${fmtNumber(metrics?.activeHumanTasks ?? 0, locale)} active HumanTasks`
-  const activeTaskSubcopy = isZh
-    ? `${fmtNumber(metrics?.resolvedHumanTasks ?? 0, locale)} 个 HumanTask 已处理`
-    : `${fmtNumber(metrics?.resolvedHumanTasks ?? 0, locale)} HumanTasks resolved`
   const generatedAt = metrics?.generatedAt ? fmtTimestamp(metrics.generatedAt, locale) : (isZh ? '未同步' : 'Not synced')
 
   if (loading) {
@@ -242,25 +261,25 @@ export default function HumanHandoffPage() {
               href="/build/components/procedures"
               className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] bg-white/84 px-3 py-1.5 text-[11px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/18 hover:text-indigo"
             >
-              {isZh ? 'Procedures' : 'Procedures'}
+              {isZh ? '流程' : 'Procedures'}
               <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
             <Link
               href="/build/components/hooks"
               className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] bg-white/84 px-3 py-1.5 text-[11px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/18 hover:text-indigo"
             >
-              {isZh ? 'Hooks' : 'Hooks'}
+              {isZh ? '钩子' : 'Hooks'}
               <ArrowUpRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2">
           <KpiTile
             icon={MessageSquare}
             label={isZh ? 'Agent 总对话' : 'Agent chats'}
             value={fmtNumber(totalConversations, locale)}
-            detail={`${fmtNumber(totalProcedureRuns, locale)} ProcedureRuns`}
+            detail={isZh ? `${fmtNumber(totalProcedureRuns, locale)} 次流程运行` : `${fmtNumber(totalProcedureRuns, locale)} ProcedureRuns`}
             tone="neutral"
           />
           <KpiTile
@@ -270,26 +289,12 @@ export default function HumanHandoffPage() {
             detail={escalationSubcopy}
             tone="amber"
           />
-          <KpiTile
-            icon={Handshake}
-            label={isZh ? '已转接对话' : 'Escalated chats'}
-            value={fmtNumber(activeHandoffConversations, locale)}
-            detail={handoffActiveSubcopy}
-            tone="amber"
-          />
-          <KpiTile
-            icon={Activity}
-            label={isZh ? '未处理人工任务' : 'Open HumanTasks'}
-            value={fmtNumber(metrics?.activeHumanTasks ?? 0, locale)}
-            detail={activeTaskSubcopy}
-            tone="amber"
-          />
         </div>
 
         <div className="grid gap-3 lg:grid-cols-3">
           <SignalStrip
             icon={BarChart3}
-            label={isZh ? '已转接 Procedure 类型' : 'Escalated procedure types'}
+            label={isZh ? '已转接流程类型' : 'Escalated procedure types'}
             value={fmtNumber(metrics?.handoffProcedureTypes ?? procedureTypes, locale)}
           />
           <SignalStrip
@@ -332,7 +337,7 @@ export default function HumanHandoffPage() {
           <Sparkles className="h-6 w-6 text-indigo/55" />
           <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '当前没有已转接会话' : 'No active escalations'}</h2>
           <p className="mt-2 max-w-md text-[13px] leading-6 text-[var(--fog)]">
-            {isZh ? '当前没有会话带有未处理 HumanTask。只要新的 ProcedureRun 创建人工任务，它就会出现在这里。' : 'No conversation currently has an open HumanTask. New escalations appear here once a ProcedureRun creates a human task.'}
+            {isZh ? '当前没有会话带有未处理人工任务。只要新的流程运行创建人工任务，它就会出现在这里。' : 'No conversation currently has an open HumanTask. New escalations appear here once a ProcedureRun creates a human task.'}
           </p>
           <Link
             href={withAgent('/operate/conversations')}
@@ -348,7 +353,7 @@ export default function HumanHandoffPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
               <div className="min-w-0">
                 <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '已转接会话' : 'Escalated conversations'}</h2>
-                <p className="text-[11px] text-[var(--fog)]">{isZh ? '按最近转人工活动排序；每条都对应真实 HumanTask。' : 'Sorted by latest escalation activity; every row has a real HumanTask.'}</p>
+                <p className="text-[11px] text-[var(--fog)]">{isZh ? '按最近转人工活动排序；每条都对应真实人工任务。' : 'Sorted by latest escalation activity; every row has a real HumanTask.'}</p>
               </div>
               <Link href={withAgent('/operate/conversations')} className="flex-shrink-0 text-[11px] font-medium text-indigo/70 hover:text-indigo">
                 {isZh ? '全部会话' : 'All conversations'}
@@ -390,6 +395,34 @@ export default function HumanHandoffPage() {
                 )
               })}
             </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-black/[0.06] px-1 pt-4">
+              <p className="text-[11px] text-[var(--fog)]">
+                {isZh
+                  ? `第 ${fmtNumber(page + 1, locale)} / ${fmtNumber(totalPages, locale)} 页 · 共 ${fmtNumber(caseTotal, locale)} 条 · 每页 ${HANDOFF_PAGE_SIZE} 条`
+                  : `Page ${fmtNumber(page + 1, locale)} / ${fmtNumber(totalPages, locale)} · ${fmtNumber(caseTotal, locale)} total · ${HANDOFF_PAGE_SIZE} per page`}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(0, current - 1))}
+                  disabled={!canGoPrev}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo disabled:cursor-not-allowed disabled:opacity-35"
+                  aria-label={isZh ? '上一页' : 'Previous page'}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                  disabled={!canGoNext}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo disabled:cursor-not-allowed disabled:opacity-35"
+                  aria-label={isZh ? '下一页' : 'Next page'}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
           </section>
 
           <section className="min-w-0 rounded-[28px] border border-black/[0.06] bg-white/72 p-5 shadow-[var(--shadow-card)] backdrop-blur-xl">
@@ -401,7 +434,7 @@ export default function HumanHandoffPage() {
               <div className="space-y-5">
                 <div className="flex flex-col gap-3 border-b border-black/[0.06] pb-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--fog)]">{isZh ? '当前 ProcedureRun' : 'Selected ProcedureRun'}</p>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--fog)]">{isZh ? '当前流程运行' : 'Selected ProcedureRun'}</p>
                     <h2 className="mt-1 text-[18px] font-semibold text-[var(--mist)]">{detail.type.replace(/_/g, ' ')}</h2>
                     <p className="mt-1 break-words text-[12px] text-[var(--fog)]">
                       {isZh
@@ -420,64 +453,74 @@ export default function HumanHandoffPage() {
                       href={withAgent(`/operate/conversations/runs/${encodeURIComponent(detail.runId ?? '')}`)}
                       className="inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-[12px] font-medium text-[var(--mist)] transition-colors hover:border-indigo/20 hover:text-indigo"
                     >
-                      {isZh ? '打开 ProcedureRun 详情' : 'Open ProcedureRun detail'}
+                      {isZh ? '打开流程运行详情' : 'Open ProcedureRun detail'}
                     </Link>
                   </div>
                 </div>
 
-                <div className="grid gap-3 md:grid-cols-3">
-                  <DetailCard label={isZh ? '当前阻塞点' : 'Current blocker'} value={detail.blocker || (isZh ? '未记录' : 'Not recorded')} />
-                  <DetailCard label={isZh ? '消息数' : 'Messages'} value={String(detail._count?.messages ?? 0)} />
-                  <DetailCard label={isZh ? '时间线事件' : 'Timeline events'} value={String(detail._count?.traces ?? 0)} />
-                </div>
-
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
                   <div className="space-y-4">
-                    <Panel title={isZh ? 'Handoff note / 内部备注' : 'Handoff note'} description={isZh ? '来自真实 HumanTask 的内部转人工备注，用于人工接手时快速理解上下文。' : 'Internal handoff note from the persisted HumanTask.'}>
+                    <Panel title={isZh ? '内部转人工备注' : 'Handoff note'} description={isZh ? '来自真实人工任务的接手说明，用于人工同事快速理解上下文。' : 'Internal handoff note from the persisted HumanTask.'}>
                       {latestTask ? (
                         <div className="space-y-3">
-                          <InlineRow label={isZh ? '接管队列' : 'Queue'} value={latestTask.queue || (isZh ? '未设置' : 'Not set')} />
-                          <InlineRow label={isZh ? '状态' : 'Status'} value={latestTask.status || (isZh ? '待处理' : 'pending')} />
-                          <InlineRow label={isZh ? '创建时间' : 'Created'} value={fmtTimestamp(latestTask.createdAt, locale)} />
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <InlineRow label={isZh ? '接管队列' : 'Queue'} value={latestTask.queue || (isZh ? '未设置' : 'Not set')} />
+                            <InlineRow label={isZh ? '状态' : 'Status'} value={latestTask.status || (isZh ? '待处理' : 'pending')} />
+                            <InlineRow label={isZh ? '创建时间' : 'Created'} value={fmtTimestamp(latestTask.createdAt, locale)} />
+                          </div>
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? 'Handoff note' : 'Handoff note'}</p>
-                            <p className="mt-1 rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-[13px] leading-6 text-[var(--mist)]">
-                              {latestTask.question || (isZh ? '没有保存 handoff note。' : 'No handoff note stored.')}
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '备注内容' : 'Handoff note'}</p>
+                            <p className="mt-1 whitespace-pre-wrap rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-[13px] leading-6 text-[var(--mist)]">
+                              {latestTask.question || (isZh ? '没有保存内部备注。' : 'No handoff note stored.')}
                             </p>
                           </div>
                         </div>
                       ) : (
-                        <p className="text-[13px] text-[var(--fog)]">{isZh ? '这个 ProcedureRun 没有关联到真实 HumanTask，不能作为已转接证据。' : 'No persisted HumanTask is linked to this ProcedureRun, so it should not be treated as escalated evidence.'}</p>
+                        <p className="text-[13px] text-[var(--fog)]">{isZh ? '这个流程运行没有关联到真实人工任务，不能作为已转接证据。' : 'No persisted HumanTask is linked to this ProcedureRun, so it should not be treated as escalated evidence.'}</p>
                       )}
                     </Panel>
 
-                    <Panel title={isZh ? '运行备注' : 'Run notes'} description={isZh ? 'ProcedureRun 当前携带的摘要和下一步引导。' : 'Current summary and next-step guidance carried with the ProcedureRun.'}>
-                      <div className="space-y-3 text-[13px] leading-6 text-[var(--mist)]">
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '摘要' : 'Summary'}</p>
-                          <p className="mt-1">{detail.memory?.summary || (isZh ? '还没有记录摘要。' : 'No summary recorded yet.')}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '待办项' : 'Open items'}</p>
-                          <p className="mt-1">{detail.memory?.todos || (isZh ? '还没有记录待办项。' : 'No open items recorded.')}</p>
-                        </div>
-                      </div>
-                    </Panel>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <DetailCard label={isZh ? '当前阻塞点' : 'Current blocker'} value={detail.blocker || (isZh ? '未记录' : 'Not recorded')} />
+                      <DetailCard label={isZh ? '消息数' : 'Messages'} value={String(detail._count?.messages ?? 0)} />
+                      <DetailCard label={isZh ? '时间线事件' : 'Timeline events'} value={String(detail._count?.traces ?? 0)} />
+                    </div>
                   </div>
 
-                  <Panel title={isZh ? '转接时间线' : 'Escalation timeline'} description={isZh ? '当前 HumanTask 转人工记录的关键时间点。' : 'Quick checkpoints for the current HumanTask-backed escalation.'}>
-                    <div className="space-y-3">
-                      <TimelineRow label={isZh ? '创建时间' : 'Created'} value={fmtTimestamp(detail.createdAt, locale)} />
-                      <TimelineRow label={isZh ? '转人工时间' : 'Escalated'} value={fmtTimestamp(latestTask?.createdAt ?? detail.updatedAt, locale)} />
-                      <TimelineRow label={isZh ? '最近转人工活动' : 'Last escalation activity'} value={fmtTimestamp(detail.updatedAt, locale)} />
-                      <TimelineRow label={isZh ? '转接时长' : 'Escalation age'} value={fmtRelative(detail.updatedAt, locale)} />
-                    </div>
-                  </Panel>
+                  <div className="space-y-4">
+                    <Panel title={isZh ? '转接时间线' : 'Escalation timeline'} description={isZh ? '当前人工任务转接记录的关键时间点。' : 'Quick checkpoints for the current HumanTask-backed escalation.'}>
+                      <div className="space-y-3">
+                        <TimelineRow label={isZh ? '创建时间' : 'Created'} value={fmtTimestamp(detail.createdAt, locale)} />
+                        <TimelineRow label={isZh ? '转人工时间' : 'Escalated'} value={fmtTimestamp(latestTask?.createdAt ?? detail.updatedAt, locale)} />
+                        <TimelineRow label={isZh ? '最近转人工活动' : 'Last escalation activity'} value={fmtTimestamp(detail.updatedAt, locale)} />
+                        <TimelineRow label={isZh ? '转接时长' : 'Escalation age'} value={fmtRelative(detail.updatedAt, locale)} />
+                      </div>
+                    </Panel>
+
+                    {hasRunNotes ? (
+                      <Panel title={isZh ? '运行备注' : 'Run notes'} description={isZh ? '当前流程运行携带的真实摘要和下一步引导。' : 'Current summary and next-step guidance carried with the ProcedureRun.'}>
+                        <div className="space-y-3 text-[13px] leading-6 text-[var(--mist)]">
+                          {runSummary ? (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '摘要' : 'Summary'}</p>
+                              <p className="mt-1 whitespace-pre-wrap">{runSummary}</p>
+                            </div>
+                          ) : null}
+                          {runTodos ? (
+                            <div>
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '待办项' : 'Open items'}</p>
+                              <p className="mt-1 whitespace-pre-wrap">{runTodos}</p>
+                            </div>
+                          ) : null}
+                        </div>
+                      </Panel>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-black/[0.08] bg-white/55 text-[13px] text-[var(--fog)]">
-                {isZh ? '选择一个已转接 ProcedureRun，就能在这里查看 HumanTask 和 handoff note。' : 'Select an escalated ProcedureRun to inspect its HumanTask and handoff note.'}
+                {isZh ? '选择一个已转接流程运行，就能在这里查看人工任务和内部备注。' : 'Select an escalated ProcedureRun to inspect its HumanTask and handoff note.'}
               </div>
             )}
           </section>
