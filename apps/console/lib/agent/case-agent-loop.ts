@@ -4,7 +4,7 @@
 // case tool handling. The customer path stays inline.
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
-import type { Message, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
+import type { AssistantMessage, Message, SSEEvent, CaseSchemaConfig } from '@intera/shared/types'
 import { prisma } from '@intera/shared/prisma'
 import { ProcedureExecutor } from './procedure-executor'
 import type { ChatMemoryManager } from './memory'
@@ -20,6 +20,7 @@ import {
   HUMAN_TASK_CREATE_FAILED_PROGRESS,
 } from './human-task-errors'
 import { normalizeHumanHandoffNotePayload } from './human-handoff'
+import { escalationMessageForRuntime, latestUserText } from './customer-messages'
 
 export interface CaseLoopServices {
   caseId: string
@@ -303,6 +304,20 @@ export class CaseAgentLoop {
           timestamp: new Date().toISOString(),
         })
         await this.services.traceWriter.writeEscalated(existingTask?.id ? 'human_task_reused' : 'human_task_created', { taskId: task.id, queue })
+        const receiptMessage = escalationMessageForRuntime(latestUserText(this.services.getMessages()), this.services.config)
+        const receipt: AssistantMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: receiptMessage,
+          createdAt: new Date(),
+          isStreaming: false,
+        }
+        this.services.addMessage(receipt)
+        sendEvent({
+          type: 'text_delta',
+          data: receiptMessage,
+          timestamp: new Date().toISOString(),
+        })
         sendEvent({
           type: 'escalated',
           data: { reason: 'human_task_created', taskId: task.id, queue },

@@ -175,6 +175,7 @@ export class AgentLoop {
       getCurrentStage: () => this.currentStage,
     })
     this.humanTaskHandoffHandler = new HumanTaskHandoffHandler({
+      config: deps.config,
       traceWriter: this.traceWriter,
       getMessages: () => this.messages,
       addMessage: (message) => this.messages.push(message),

@@ -1,5 +1,5 @@
-import type { AssistantMessage, CaseStatus, Message, SSEEvent } from '@intera/shared/types'
-import { escalationMessageFor, latestUserText } from './customer-messages'
+import type { AgentConfigData, AssistantMessage, CaseStatus, Message, SSEEvent } from '@intera/shared/types'
+import { escalationMessageForRuntime, latestUserText } from './customer-messages'
 import type { TraceWriter } from './trace'
 import type { HumanHandoffNotePayload } from './human-handoff'
 
@@ -19,6 +19,7 @@ export type HumanTaskHandoffResult = {
 }
 
 export interface HumanTaskHandoffHandlerDeps {
+  config: AgentConfigData
   traceWriter: TraceWriter
   getMessages: () => Message[]
   addMessage: (message: Message) => void
@@ -31,27 +32,25 @@ export class HumanTaskHandoffHandler {
 
   async complete(
     pending: PendingHumanTaskEscalation,
-    fullText: string,
+    _fullText: string,
     sendEvent: (event: SSEEvent) => void,
   ): Promise<HumanTaskHandoffResult> {
     const { taskId, queue, question, handoffNote } = pending
 
-    if (!fullText.trim()) {
-      const safeMessage = escalationMessageFor(latestUserText(this.deps.getMessages()))
-      const fallbackMessage: AssistantMessage = {
-        id: this.createId(),
-        role: 'assistant',
-        content: safeMessage,
-        createdAt: this.deps.now?.() ?? new Date(),
-        isStreaming: false,
-      }
-      this.deps.addMessage(fallbackMessage)
-      sendEvent({
-        type: 'text_delta',
-        data: safeMessage,
-        timestamp: this.timestamp(),
-      })
+    const receiptMessage = escalationMessageForRuntime(latestUserText(this.deps.getMessages()), this.deps.config)
+    const runtimeReceipt: AssistantMessage = {
+      id: this.createId(),
+      role: 'assistant',
+      content: receiptMessage,
+      createdAt: this.deps.now?.() ?? new Date(),
+      isStreaming: false,
     }
+    this.deps.addMessage(runtimeReceipt)
+    sendEvent({
+      type: 'text_delta',
+      data: receiptMessage,
+      timestamp: this.timestamp(),
+    })
 
     sendEvent({
       type: 'human_task_created',

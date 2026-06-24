@@ -186,7 +186,7 @@ export const DEFAULT_HOOKS: DefaultHookSeed[] = [
   },
   {
     name: 'human_handoff_promise_requires_task',
-    description: 'Block replies that promise human support before create_human_task has actually run',
+    description: 'Block model-authored human-support promises unless create_human_task has already run',
     checkpoint: 'Stop',
     handlerKind: 'declarative',
     handler: JSON.stringify({
@@ -195,11 +195,11 @@ export const DEFAULT_HOOKS: DefaultHookSeed[] = [
         kind: 'rule',
         match: { ifPattern: HUMAN_HANDOFF_PROMISE_PATTERN },
         requireTools: ['create_human_task'],
-        reason: 'Reply promises human support before a persisted human task exists.',
+        reason: 'Reply promises human support before create_human_task has run.',
       },
       effect: {
         decision: 'block',
-        guidance: 'Call create_human_task before promising human support, or revise the reply so it does not imply handoff is arranged.',
+        guidance: 'Call create_human_task when human support is needed. Let the runtime send the customer-visible handoff receipt instead of writing the confirmation yourself.',
       },
     }),
     severity: 'critical',

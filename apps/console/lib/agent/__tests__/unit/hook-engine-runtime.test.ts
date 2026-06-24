@@ -5,7 +5,7 @@ import { AgentLoop } from '../../loop'
 import { ToolRouter } from '../../tools'
 import { HookEngine } from '../../hook-engine'
 import { createMemoryPersistence } from '../../persistence-port'
-import { mockTextStream, mockToolUseStream } from '../mocks/anthropic'
+import { createMockStream, mockTextStream, mockToolUseStream } from '../mocks/anthropic'
 import {
   closeSession,
   recordInitialInputEvent,
@@ -96,6 +96,33 @@ function makeLoop(engine: HookEngine, streams: unknown[], cfg = config(), caseId
   })
 
   return { loop, memory, events, sendEvent, client }
+}
+
+function mockTextAndToolUseStream(
+  text: string,
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  toolId = 'tool_001',
+) {
+  return createMockStream([
+    { type: 'message_start', message: { id: 'msg_1', model: 'claude-sonnet-4-20250514', role: 'assistant', content: [] } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text', index: 0 } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+    { type: 'content_block_stop', index: 0 },
+    {
+      type: 'content_block_start',
+      index: 1,
+      content_block: { type: 'tool_use', id: toolId, name: toolName, index: 1 },
+    },
+    {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'input_json_delta', partial_json: JSON.stringify(toolInput) },
+    },
+    { type: 'content_block_stop', index: 1 },
+    { type: 'message_delta', delta: { type: 'message_delta', stop_reason: 'tool_use' }, usage: { input_tokens: 100, output_tokens: 50 } },
+    { type: 'message_stop' },
+  ])
 }
 
 function staticHook(
@@ -387,10 +414,10 @@ describe('HookEngine bindings and handlers', () => {
     expect(withoutTask.results[0]).toMatchObject({
       hookName: 'human_handoff_promise_requires_task',
       action: 'block',
-      reason: 'Reply promises human support before a persisted human task exists.',
+      reason: 'Reply promises human support before create_human_task has run.',
     })
 
-    const withTask = await engine.evaluate('Stop', {
+    const withToolNameOnly = await engine.evaluate('Stop', {
       checkpoint: 'Stop',
       agentConfigId: 'agent_1',
       procedureStepIds: [],
@@ -400,7 +427,43 @@ describe('HookEngine bindings and handlers', () => {
       traceSummary: [],
       replyDraft: '已安排人工客服为您继续处理，请稍候。',
     })
-    expect(withTask.summary).toBe('allow')
+    expect(withToolNameOnly.summary).toBe('allow')
+
+    const withCurrentPersistedTask = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [],
+      currentToolCalls: [{
+        name: 'create_human_task',
+        output: { ok: true, output: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true } },
+      }],
+      traceSummary: [],
+      replyDraft: '已安排人工客服为您继续处理，请稍候。',
+    })
+    expect(withCurrentPersistedTask.summary).toBe('block')
+    expect(withCurrentPersistedTask.results[0]).toMatchObject({
+      hookName: 'human_handoff_promise_requires_task',
+      action: 'block',
+      reason: 'Reply promises human support before create_human_task has run.',
+    })
+
+    const withPreviousPersistedTask = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [{
+        name: 'create_human_task',
+        output: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
+      }],
+      traceSummary: [],
+      replyDraft: '已安排人工客服为您继续处理，请稍候。',
+    })
+    expect(withPreviousPersistedTask.summary).toBe('allow')
   })
 })
 
@@ -492,6 +555,41 @@ describe('AgentLoop Hook checkpoints', () => {
       .map((event) => String(event.data))
       .join('')
     expect(streamedText).toContain('human specialist')
+  })
+
+  it('withholds model-authored handoff receipts and sends the runtime-owned receipt after task persistence', async () => {
+    const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
+    expect(defaultHook).toBeDefined()
+    const engine = new HookEngine('agent_1')
+    engine.setHook(defaultHook!)
+    const modelReceipt = '已安排人工客服为您继续处理，请稍候。'
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockTextAndToolUseStream(modelReceipt, 'create_human_task', {
+        queue: 'general',
+        question: 'Customer needs human review.',
+        chat_summary: 'Customer requested human support.',
+        handoff_reason: 'Automated answer could not safely resolve the case.',
+      }, 'tool_handoff'),
+    ])
+
+    const result = await loop.run('human agent please', sendEvent)
+
+    expect(result.transition).toBe('waiting_human')
+    expect(memory.humanTasks).toHaveLength(1)
+    const streamedText = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).not.toContain(modelReceipt)
+    expect(streamedText).toContain('support ticket')
+    const assistantMessages = result.messages.filter((message) => message.role === 'assistant').map((message) => String(message.content))
+    expect(assistantMessages.join('\n')).not.toContain(modelReceipt)
+    expect(assistantMessages.join('\n')).toContain('support ticket')
+    expect(memory.traces.some((trace) =>
+      trace.actionType === 'loop_decision' &&
+      trace.title === 'Hook checkpoint Stop: block' &&
+      String(trace.payload ?? '').includes('Reply promises human support before create_human_task has run')
+    )).toBe(true)
   })
 
   it('Stop block prevents the final answer and retries safely', async () => {
