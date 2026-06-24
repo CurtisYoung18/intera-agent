@@ -135,12 +135,24 @@ async function handleStartProcedure(
   const requestedCurrentAction = normalizeCurrentProcedureAction(toolInput.currentProcedureAction)
 
   if (!requestedProcedureId || !isInvestigableCaseType(requestedProcedureId)) {
-    return { kind: 'pass' }
+    return rejectStartProcedure(ctx, result, sendEvent, {
+      requestedProcedureId,
+      error: 'invalid_procedure_id',
+      availableProcedureIds: await availableProcedureIdsForAgent(ctx.agentConfigId),
+      instruction: 'Do not claim a procedure has started. Choose one of the available procedureId values or continue without a procedure.',
+    })
   }
 
   try {
     const resolved = await resolveCaseTypeForProcedure(ctx.agentConfigId, requestedProcedureId)
-    if (!resolved?.row) return { kind: 'pass' }
+    if (!resolved?.row) {
+      return rejectStartProcedure(ctx, result, sendEvent, {
+        requestedProcedureId,
+        error: 'unsupported_procedure_id',
+        availableProcedureIds: resolved?.availableProcedureIds ?? [],
+        instruction: 'Do not claim a procedure has started. Retry start_procedure with one of the available procedureId values if a guided runtime is still needed.',
+      })
+    }
     const ctRow = resolved.row
 
     const requiredFacts = safeJson<string[]>(ctRow.requiredFacts, [])
@@ -169,6 +181,15 @@ async function handleStartProcedure(
       requestId: typeof toolInput.requestId === 'string' ? toolInput.requestId : result.toolUse?.id,
       currentProcedureAction: requestedCurrentAction,
     })
+    if (!start.run?.runId) {
+      return rejectStartProcedure(ctx, result, sendEvent, {
+        requestedProcedureId,
+        resolvedProcedureId: ctRow.type,
+        error: 'procedure_run_not_created',
+        availableProcedureIds: [ctRow.type],
+        instruction: 'Do not claim a procedure has started. Runtime did not create a durable ProcedureRun, so ask for clarification or retry with a valid procedureId.',
+      })
+    }
     ctx.chatMemory.setCaseStatus('investigating')
     try {
       await prisma.case.upsert({
@@ -252,7 +273,12 @@ async function handleStartProcedure(
     return { kind: 'continue' }
   } catch (err) {
     console.error('[ToolInterceptor] Failed to start inline procedure:', err)
-    return { kind: 'pass' }
+    return rejectStartProcedure(ctx, result, sendEvent, {
+      requestedProcedureId,
+      error: 'procedure_start_failed',
+      availableProcedureIds: [],
+      instruction: 'Do not claim a procedure has started. Runtime failed before durable ProcedureRun creation; recover by asking for clarification or retrying with a valid procedureId.',
+    })
   }
 }
 
@@ -510,34 +536,103 @@ async function resolveCaseTypeForProcedure(
   agentConfigId: string,
   requestedProcedureId: string,
 ): Promise<{
-  row: CaseTypeRowLike
+  row: CaseTypeRowLike | null
   routingCorrection: null | {
     requestedProcedureId: string
     resolvedProcedureId: string
     reason: string
   }
-} | null> {
+  availableProcedureIds: string[]
+}> {
   const direct = await prisma.caseType.findUnique({
     where: { agentConfigId_type: { agentConfigId, type: requestedProcedureId } },
   }) as CaseTypeRowLike | null
   if (direct) {
-    return { row: direct, routingCorrection: null }
+    return { row: direct, routingCorrection: null, availableProcedureIds: [] }
   }
 
   const candidates = await prisma.caseType.findMany({
     where: { agentConfigId, enabled: true },
   }).catch(() => []) as CaseTypeRowLike[]
   const resolved = rankCaseTypeCandidates(candidates, requestedProcedureId)[0]
-  if (!resolved) return null
+  const availableProcedureIds = candidates.map((row) => row.type).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  if (!resolved) return { row: null, routingCorrection: null, availableProcedureIds }
 
   return {
     row: resolved.row,
+    availableProcedureIds,
     routingCorrection: {
       requestedProcedureId,
       resolvedProcedureId: resolved.row.type,
       reason: resolved.reason,
     },
   }
+}
+
+async function availableProcedureIdsForAgent(agentConfigId: string): Promise<string[]> {
+  const rows = await prisma.caseType.findMany({
+    where: { agentConfigId, enabled: true },
+  }).catch(() => []) as Array<{ type?: string | null }>
+  return rows
+    .map((row) => row.type)
+    .filter((type): type is string => typeof type === 'string' && type.trim().length > 0)
+    .sort((a, b) => a.localeCompare(b))
+}
+
+async function rejectStartProcedure(
+  ctx: ToolInterceptorContext,
+  result: ToolExecutionResult,
+  sendEvent: (event: SSEEvent) => void,
+  input: {
+    requestedProcedureId: string
+    resolvedProcedureId?: string
+    error: 'invalid_procedure_id' | 'unsupported_procedure_id' | 'procedure_run_not_created' | 'procedure_start_failed'
+    availableProcedureIds: string[]
+    instruction: string
+  },
+): Promise<InterceptAction> {
+  const payload = {
+    ok: false,
+    mode: 'procedure_start_rejected',
+    caseId: ctx.caseId,
+    requestedProcedureId: input.requestedProcedureId || null,
+    resolvedProcedureId: input.resolvedProcedureId ?? null,
+    error: input.error,
+    durableRunCreated: false,
+    availableProcedureIds: input.availableProcedureIds,
+    instruction: input.instruction,
+  }
+  result.output = payload
+  if (result.toolUse) {
+    result.toolUse.status = 'error'
+    result.toolUse.result = {
+      ok: false,
+      output: payload,
+      error: input.error,
+      latencyMs: result.latencyMs ?? 0,
+    }
+  }
+  replaceToolResultMessage(ctx.messages, result.toolUse?.id, payload)
+  await ctx.traceWriter.write('loop_decision', 'start_procedure rejected before durable run creation', {
+    caseId: ctx.caseId,
+    requestedProcedureId: input.requestedProcedureId || null,
+    resolvedProcedureId: input.resolvedProcedureId ?? null,
+    error: input.error,
+    availableProcedureIds: input.availableProcedureIds,
+  })
+  sendEvent({
+    type: 'case_status',
+    data: {
+      caseId: ctx.caseId,
+      status: 'procedure_start_rejected',
+      requestedProcedureId: input.requestedProcedureId || null,
+      resolvedProcedureId: input.resolvedProcedureId ?? null,
+      error: input.error,
+      durableRunCreated: false,
+    },
+    timestamp: new Date().toISOString(),
+  })
+  return { kind: 'continue' }
 }
 
 function rankCaseTypeCandidates(
@@ -858,8 +953,12 @@ function replaceToolResultMessage(
     const block = content.find((b) => isRecord(b) && b.tool_use_id === toolUseId)
     if (block && isRecord(block)) {
       block.content = JSON.stringify(payload)
-      block.is_error = false
+      block.is_error = isToolErrorPayload(payload)
       return
     }
   }
+}
+
+function isToolErrorPayload(payload: unknown): boolean {
+  return isRecord(payload) && payload.ok === false
 }

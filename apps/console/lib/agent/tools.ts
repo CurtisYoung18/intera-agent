@@ -102,7 +102,7 @@ export const SYSTEM_TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        procedureId: { type: 'string', description: 'Procedure id / Procedure type slug, e.g. deposit_issue, account_access.' },
+        procedureId: { type: 'string', description: 'Procedure id from the runtime-provided Available Procedures prompt block. Unsupported or stale ids are rejected.' },
         reason: { type: 'string', description: 'Why this Procedure matches the customer message.' },
         confidence: { type: 'number', description: 'Optional confidence from 0 to 1.' },
         currentProcedureAction: {

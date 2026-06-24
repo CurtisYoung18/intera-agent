@@ -445,6 +445,225 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     })
   })
 
+  it('rejects unsupported procedure ids instead of letting system-managed mock success through', async () => {
+    h.prisma.caseType.findUnique.mockResolvedValue(null)
+    h.prisma.caseType.findMany.mockResolvedValue([
+      {
+        type: 'j1n_deposit_status',
+        displayName: 'J1N Deposit Status',
+        description: 'Customer asks about latest deposit.',
+        icon: 'D',
+        requiredFacts: '["member_id"]',
+        defaultGoal: 'Check deposit.',
+        escalateOn: '[]',
+        autoCloseConditions: null,
+        maxAutoTurns: 3,
+        procedure: JSON.stringify({ version: 'v2', whenToUse: 'Use for deposits', steps: [] }),
+      },
+      {
+        type: 'j1n_withdrawal_status',
+        displayName: 'J1N Withdrawal Status',
+        description: 'Customer asks about latest withdrawal.',
+        icon: 'W',
+        requiredFacts: '["member_id"]',
+        defaultGoal: 'Check withdrawal.',
+        escalateOn: '[]',
+        autoCloseConditions: null,
+        maxAutoTurns: 3,
+        procedure: JSON.stringify({ version: 'v2', whenToUse: 'Use for withdrawals', steps: [] }),
+      },
+    ])
+    const messages = [{
+      role: 'assistant',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'toolu_bad_procedure',
+        content: '{"ok":true,"handled":"system_managed"}',
+        is_error: false,
+      }],
+    }] as any
+    const sendEvent = vi.fn()
+    const traceWrite = vi.fn(async () => {})
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-unsupported-procedure',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: traceWrite,
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages,
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'start_procedure',
+        output: { ok: true, handled: 'system_managed' },
+        latencyMs: 4,
+        toolUse: {
+          id: 'toolu_bad_procedure',
+          name: 'start_procedure',
+          status: 'completed',
+          input: {
+            procedureId: 'account_access',
+            reason: 'Customer issue was routed using an old example id.',
+          },
+        },
+      } as any],
+      sendEvent,
+    )
+
+    expect(result.action).toEqual({ kind: 'continue' })
+    expect(h.startProcedureRun).not.toHaveBeenCalled()
+    expect(h.prisma.case.upsert).not.toHaveBeenCalled()
+    expect(result.toolResults[0]?.output).toMatchObject({
+      ok: false,
+      mode: 'procedure_start_rejected',
+      error: 'unsupported_procedure_id',
+      durableRunCreated: false,
+      availableProcedureIds: ['j1n_deposit_status', 'j1n_withdrawal_status'],
+    })
+    expect(result.toolResults[0]?.toolUse?.status).toBe('error')
+    expect(result.toolResults[0]?.toolUse?.result).toMatchObject({
+      ok: false,
+      error: 'unsupported_procedure_id',
+    })
+    const toolResultBlock = messages[0].content[0]
+    expect(JSON.parse(toolResultBlock.content)).toMatchObject({
+      ok: false,
+      error: 'unsupported_procedure_id',
+      availableProcedureIds: ['j1n_deposit_status', 'j1n_withdrawal_status'],
+    })
+    expect(toolResultBlock.is_error).toBe(true)
+    expect(traceWrite).toHaveBeenCalledWith(
+      'loop_decision',
+      'start_procedure rejected before durable run creation',
+      expect.objectContaining({
+        caseId: 'case-unsupported-procedure',
+        requestedProcedureId: 'account_access',
+        error: 'unsupported_procedure_id',
+      }),
+    )
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'case_status',
+      data: expect.objectContaining({
+        caseId: 'case-unsupported-procedure',
+        status: 'procedure_start_rejected',
+        error: 'unsupported_procedure_id',
+        durableRunCreated: false,
+      }),
+    }))
+  })
+
+  it('rejects start_procedure when runtime does not create a durable ProcedureRun', async () => {
+    h.startProcedureRun.mockReturnValue({
+      run: {
+        procedureId: 'deposit_not_credited',
+        currentStepId: 'collect_txid',
+        inputEpoch: 1,
+      },
+      pausedRun: null,
+      idempotent: false,
+    })
+    const messages = [{
+      role: 'assistant',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: 'toolu_missing_run',
+        content: '{"ok":true,"handled":"system_managed"}',
+        is_error: false,
+      }],
+    }] as any
+    const setCaseStatus = vi.fn()
+    const activateProcedureContext = vi.fn(async () => {})
+    const traceWrite = vi.fn(async () => {})
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-missing-run',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus,
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: traceWrite,
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages,
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext,
+      },
+      [{
+        name: 'start_procedure',
+        output: { ok: true, handled: 'system_managed' },
+        latencyMs: 2,
+        toolUse: {
+          id: 'toolu_missing_run',
+          name: 'start_procedure',
+          status: 'completed',
+          input: {
+            procedureId: 'deposit_not_credited',
+            reason: 'Customer said the deposit is missing.',
+          },
+        },
+      } as any],
+      vi.fn(),
+    )
+
+    expect(result.action).toEqual({ kind: 'continue' })
+    expect(setCaseStatus).not.toHaveBeenCalled()
+    expect(h.prisma.case.upsert).not.toHaveBeenCalled()
+    expect(activateProcedureContext).not.toHaveBeenCalled()
+    expect(result.toolResults[0]?.output).toMatchObject({
+      ok: false,
+      mode: 'procedure_start_rejected',
+      error: 'procedure_run_not_created',
+      durableRunCreated: false,
+      resolvedProcedureId: 'deposit_not_credited',
+    })
+    expect(result.toolResults[0]?.toolUse?.status).toBe('error')
+    expect(JSON.parse(messages[0].content[0].content)).toMatchObject({
+      ok: false,
+      error: 'procedure_run_not_created',
+      resolvedProcedureId: 'deposit_not_credited',
+    })
+    expect(messages[0].content[0].is_error).toBe(true)
+    expect(traceWrite).toHaveBeenCalledWith(
+      'loop_decision',
+      'start_procedure rejected before durable run creation',
+      expect.objectContaining({
+        caseId: 'case-missing-run',
+        requestedProcedureId: 'deposit_not_credited',
+        resolvedProcedureId: 'deposit_not_credited',
+        error: 'procedure_run_not_created',
+      }),
+    )
+  })
+
   it('repairs an empty ask_user_questions tool call into a renderable required-facts form', async () => {
     const sendEvent = vi.fn()
     const traceWrite = vi.fn(async () => {})
