@@ -124,21 +124,6 @@ type ScenarioStoreFile = {
   agents: Record<string, AgentScenarioBucket>
 }
 
-const MANAGED_J1N_HOOK_NAMES = [
-  'j1n_verified_member_id_before_member_tools',
-  'j1n_reset_pin_member_only',
-  'j1n_no_status_claim_without_tool_evidence',
-  'j1n_human_transfer_requires_task',
-  'j1n_support_promise_requires_current_handoff',
-  'j1n_future_action_promise_requires_current_tool',
-  'support_promise_requires_handoff',
-  'j1n_romanized_nepali_output_guard',
-  'j1n_member_fact_collection_requires_form',
-  'j1n_reset_pin_claim_requires_tool',
-  'j1n_member_id_reply_requires_remember',
-  'j1n_transaction_history_method_type_guard',
-] as const
-
 const ORG_ID = process.env.J1N_ORG_ID || 'default'
 const AGENT_NAME = process.env.J1N_AGENT_NAME || 'J1N'
 const PLAN_ONLY = process.argv.includes('--plan')
@@ -776,55 +761,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
 
 const HOOKS: HookSeed[] = [
   {
-    name: 'j1n_transaction_history_method_type_guard',
-    displayName: 'Transaction history method type guard',
-    description: 'Blocks transaction-history calls where method is a payment rail/channel instead of deposit or withdraw.',
-    checkpoint: 'PreToolUse',
-    handlerKind: 'declarative',
-    severity: 'medium',
-    enabled: true,
-    handler: {
-      kind: 'declarative',
-      check: {
-        kind: 'rule',
-        always: true,
-        match: {
-          tools: ['get_transaction_history'],
-          ifPattern: '"method"\\s*:\\s*"(?!deposit"|withdraw")[^"]+"',
-        },
-        reason: 'get_transaction_history.method must be deposit or withdraw, not a payment rail/channel.',
-      },
-      effect: {
-        decision: 'block',
-        guidance: 'get_transaction_history.method must be exactly "deposit" or "withdraw". If the customer mentions eSewa, Bank, Khalti, online banking, or another payment rail/channel, treat it as payment_channel context, not method. Ask the customer to choose deposit or withdraw, then retry get_transaction_history with only method=deposit|withdraw. Keep the payment channel only as context unless a future API explicitly supports it.',
-      },
-    },
-  },
-  {
-    name: 'j1n_no_status_claim_without_tool_evidence',
-    displayName: 'No status claim without live evidence',
-    description: 'Blocks direct approved/credited/successful status claims from screenshots unless a live lookup tool already ran.',
-    checkpoint: 'Stop',
-    handlerKind: 'declarative',
-    severity: 'high',
-    enabled: true,
-    handler: {
-      kind: 'declarative',
-      check: {
-        kind: 'rule',
-        match: {
-          ifPattern: '\\b(wallet\\s+ma\\s+credit|status\\s+pani\\s+approved)\\b|\\b(timro|tapai(?:ko)?|your|yo\\s+(?:deposit\\s+)?receipt|receipt)\\b[\\s\\S]{0,180}\\b(successful\\s+cha|credited|credit\\s+bhayeko|approved\\s+cha)\\b|\\b(successful\\s+cha|credited|credit\\s+bhayeko|approved\\s+cha)\\b[\\s\\S]{0,180}\\b(timro|tapai(?:ko)?|your|yo\\s+(?:deposit\\s+)?receipt|receipt)\\b',
-        },
-        requireToolsAny: ['check_latest_deposit_status', 'get_transaction_history'],
-        reason: 'Reply appears to claim a live deposit/transaction status without live tool evidence.',
-      },
-      effect: {
-        decision: 'block',
-        guidance: 'Do not conclude approved, successful, or credited solely from a screenshot. You may say the screenshot shows those values, then collect Member ID with ask_user_questions and include extracted receipt fields as prefilled confirmation fields before live verification.',
-      },
-    },
-  },
-  {
     name: 'j1n_human_transfer_requires_task',
     displayName: 'J1N human transfer requires task',
     description: 'Auto-create a human task if J1N uses the fixed handoff sentence without create_human_task in the same turn.',
@@ -844,98 +780,6 @@ const HOOKS: HookSeed[] = [
         decision: 'escalate',
         tool: 'create_human_task',
         guidance: 'If you use the fixed J1N human-handoff sentence, call create_human_task in the same turn.',
-      },
-    },
-  },
-  {
-    name: 'j1n_romanized_nepali_output_guard',
-    displayName: 'J1N Romanized Nepali output guard',
-    description: 'Block customer-facing replies that drift into Devanagari when the customer did not ask for Nepali script.',
-    checkpoint: 'Stop',
-    handlerKind: 'declarative',
-    severity: 'high',
-    enabled: true,
-    handler: {
-      kind: 'declarative',
-      check: {
-        kind: 'rule',
-        match: { ifPattern: '[\\u0900-\\u097F]' },
-        always: true,
-        reason: 'Reply uses Devanagari script. J1N customer-facing replies must use Romanized Nepali / Latin script unless explicitly requested otherwise.',
-      },
-      effect: {
-        decision: 'block',
-        guidance: 'Rewrite the full customer reply in Romanized Nepali using Latin letters. Keep product names, field names, URLs, numeric values, and exact English policy phrases such as "cannot be changed" unchanged.',
-      },
-    },
-  },
-  {
-    name: 'j1n_member_fact_collection_requires_form',
-    displayName: 'J1N member fact collection requires form',
-    description: 'Block plain-text member/player ID collection so J1N uses ask_user_questions rich forms for missing required facts.',
-    checkpoint: 'Stop',
-    handlerKind: 'declarative',
-    severity: 'high',
-    enabled: true,
-    handler: {
-      kind: 'declarative',
-      check: {
-        kind: 'rule',
-        match: {
-          ifPattern: '(?:provide|enter|send|share|give|fill)\\s+(?:your\\s+)?(?:jaya(?:baji)?\\s+)?(?:member|player)\\s*(?:id|ID)|(?:member|player)\\s*(?:id|ID)\\s+(?:provide|enter|send|share|give|fill)|(?:member|player)\\s*(?:id|ID).{0,60}(?:dinuhos|dinus|dinu|pathaunus|pathaunu|chahinchha|chahincha|chaahincha|chaincha|required)|(?:member_id|player_id)',
-        },
-        requireTools: ['ask_user_questions'],
-        reason: 'Reply asks for member/player ID in plain text before a structured form was shown.',
-      },
-      effect: {
-        decision: 'block',
-        guidance: 'Use ask_user_questions to collect missing required facts instead of asking in plain text. For member-specific J1N procedures, include a member_id text field. When multiple required facts are missing, collect them in one form.',
-      },
-    },
-  },
-  {
-    name: 'j1n_reset_pin_claim_requires_tool',
-    displayName: 'J1N reset PIN claim requires tool',
-    description: 'Block withdrawal PIN reset success claims unless reset_withdrawal_pin was called in the current response.',
-    checkpoint: 'Stop',
-    handlerKind: 'declarative',
-    severity: 'high',
-    enabled: true,
-    handler: {
-      kind: 'declarative',
-      check: {
-        kind: 'rule',
-        match: {
-          ifPattern: '(?:withdrawal\\s*)?pin.{0,80}(?:reset|bhayo|confirmation|naya)|reset.{0,80}(?:withdrawal\\s*)?pin',
-        },
-        requireTools: ['reset_withdrawal_pin'],
-        reason: 'Reply claims or implies withdrawal PIN reset without reset_withdrawal_pin evidence.',
-      },
-      effect: {
-        decision: 'block',
-        guidance: 'Call reset_withdrawal_pin with the confirmed member_id before telling the customer the withdrawal PIN reset is done or in progress. Do not claim reset success from the request alone.',
-      },
-    },
-  },
-  {
-    name: 'j1n_member_id_reply_requires_remember',
-    displayName: 'J1N member ID reply requires remember',
-    description: 'Nudge J1N to persist stable member_id profile facts when a customer-facing reply references a JAYA member id.',
-    checkpoint: 'Stop',
-    handlerKind: 'declarative',
-    severity: 'medium',
-    enabled: true,
-    handler: {
-      kind: 'declarative',
-      check: {
-        kind: 'rule',
-        match: { ifPattern: '\\bJAYA(?=[A-Z0-9]*\\d)[A-Z0-9]{4,}\\b' },
-        requireTools: ['remember'],
-        reason: 'Reply references a JAYA member_id but remember(scope="user") was not called.',
-      },
-      effect: {
-        decision: 'block',
-        guidance: 'Call remember(scope="user") with facts.member_id set to the customer-provided JAYA member_id and a short reason, unless the customer said it belongs to someone else. Then continue the customer reply.',
       },
     },
   },
@@ -1545,23 +1389,20 @@ async function main(): Promise<void> {
       }
 
       const hookNamesToKeep = new Set(HOOKS.map((hook) => hook.name))
-      const staleManagedHookNames = MANAGED_J1N_HOOK_NAMES.filter((name) => !hookNamesToKeep.has(name))
-      if (staleManagedHookNames.length > 0) {
-        await tx.hookBinding.deleteMany({
-          where: {
-            agentConfigId: agent.id,
-            hook: {
-              name: { in: staleManagedHookNames },
-            },
+      await tx.hookBinding.deleteMany({
+        where: {
+          agentConfigId: agent.id,
+          hook: {
+            name: { notIn: [...hookNamesToKeep] },
           },
-        })
-        await tx.hook.deleteMany({
-          where: {
-            agentConfigId: agent.id,
-            name: { in: staleManagedHookNames },
-          },
-        })
-      }
+        },
+      })
+      await tx.hook.deleteMany({
+        where: {
+          agentConfigId: agent.id,
+          name: { notIn: [...hookNamesToKeep] },
+        },
+      })
 
       for (const ct of CASE_TYPES) {
         await tx.caseType.upsert({
