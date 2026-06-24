@@ -21,6 +21,7 @@
     "check:isolation-seam": "node scripts/check-isolation-seam.mjs",
     "check:runtime-core-boundary": "node scripts/check-runtime-core-boundary.mjs",
     "check:production-readiness": "node scripts/production-readiness-check.mjs",
+    "reports:production-chat": "node scripts/generate-production-chat-trace-dashboard.mjs",
     "test": "npm run check:migration-prefixes && npm run check:isolation-seam && npm run check:runtime-core-boundary && npx vitest run",
     "test:watch": "npx vitest",
     "test:coverage": "npx vitest run --coverage"
