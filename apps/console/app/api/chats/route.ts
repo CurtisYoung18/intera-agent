@@ -48,6 +48,10 @@ type ChatSearchData = {
   searchMode: ChatsListQueryMeta['searchMode']
 }
 
+type ChatMetadataSearchData = {
+  matchedChatIds: Set<string>
+}
+
 const MAX_MATCHES_PER_CHAT = 3
 
 function escapeLikePattern(value: string): string {
@@ -204,6 +208,84 @@ async function searchVisibleMessages(
   }
 }
 
+function includesQuery(value: string | null | undefined, normalizedQuery: string): boolean {
+  return typeof value === 'string' && value.toLowerCase().includes(normalizedQuery.toLowerCase())
+}
+
+function matchingRunCaseIds(scope: AgentCaseScope, normalizedQuery: string): string[] {
+  return scope.runs
+    .filter((run) => includesQuery(run.id, normalizedQuery))
+    .map((run) => run.caseId)
+}
+
+async function searchChatMetadata(
+  repo: {
+    externalConversation: {
+      findMany: (args: {
+        where: Record<string, unknown>
+        select: { internalCaseId: true }
+      }) => Promise<Array<{ internalCaseId: string | null }>>
+    }
+    case: {
+      findMany: (args: {
+        where: Record<string, unknown>
+        select: { id: true; chatId: true }
+      }) => Promise<Array<{ id: string; chatId: string }>>
+    }
+  },
+  scope: AgentCaseScope,
+  normalizedQuery: string,
+): Promise<ChatMetadataSearchData> {
+  if (scope.caseIds.length === 0) {
+    return { matchedChatIds: new Set() }
+  }
+
+  const runCaseIds = matchingRunCaseIds(scope, normalizedQuery)
+  const externalMatches = await repo.externalConversation.findMany({
+    where: {
+      internalCaseId: { in: scope.caseIds },
+      externalChatId: { contains: normalizedQuery, mode: 'insensitive' },
+    },
+    select: { internalCaseId: true },
+  })
+  const externalCaseIds = externalMatches
+    .map((row) => row.internalCaseId)
+    .filter((caseId): caseId is string => typeof caseId === 'string' && caseId.length > 0)
+  const directCaseIds = [...new Set([...runCaseIds, ...externalCaseIds])]
+
+  const metadataOr: Record<string, unknown>[] = [
+    { chatId: { contains: normalizedQuery, mode: 'insensitive' } },
+    { userId: { contains: normalizedQuery, mode: 'insensitive' } },
+    { id: { contains: normalizedQuery, mode: 'insensitive' } },
+    { type: { contains: normalizedQuery, mode: 'insensitive' } },
+    { goal: { contains: normalizedQuery, mode: 'insensitive' } },
+  ]
+  if (directCaseIds.length > 0) metadataOr.push({ id: { in: directCaseIds } })
+
+  const cases = await repo.case.findMany({
+    where: { ...caseIdFilterForScope(scope), OR: metadataOr },
+    select: { id: true, chatId: true },
+  })
+
+  return {
+    matchedChatIds: new Set(cases.map((row) => row.chatId)),
+  }
+}
+
+function metadataScore(session: ChatSession, metadataMatchedChatIds: Set<string>, normalizedQuery: string): number {
+  const exactValues = [
+    session.chatId,
+    session.userId,
+    ...session.cases.flatMap((caseItem) => [caseItem.id, caseItem.runId ?? '', caseItem.type, caseItem.goal ?? '']),
+  ]
+  const query = normalizedQuery.toLowerCase()
+  if (exactValues.some((value) => value.toLowerCase() === query)) return 2
+  if (exactValues.some((value) => value.toLowerCase().startsWith(query))) return 1.5
+  if (exactValues.some((value) => value.toLowerCase().includes(query))) return 1
+  if (metadataMatchedChatIds.has(session.chatId)) return 1
+  return 0
+}
+
 function buildChatSessions(
   cases: ChatCaseRow[],
   scope: AgentCaseScope,
@@ -265,7 +347,8 @@ export const GET = defineRoute({
 
     if (normalizedQuery) {
       const search = await searchVisibleMessages(repo, scope, normalizedQuery)
-      const matchedChatIds = [...search.matchesByChatId.keys()]
+      const metadata = await searchChatMetadata(repo, scope, normalizedQuery)
+      const matchedChatIds = [...new Set([...search.matchesByChatId.keys(), ...metadata.matchedChatIds])]
       if (matchedChatIds.length === 0) {
         return apiOk({
           sessions: [],
@@ -286,7 +369,9 @@ export const GET = defineRoute({
       const sorted = buildChatSessions(cases, scope, search.matchesByChatId).sort((a, b) => {
         const aSort = search.sortByChatId.get(a.chatId) ?? { maxRank: 0, latestMatchAt: a.lastActivity }
         const bSort = search.sortByChatId.get(b.chatId) ?? { maxRank: 0, latestMatchAt: b.lastActivity }
-        if (bSort.maxRank !== aSort.maxRank) return bSort.maxRank - aSort.maxRank
+        const aRank = Math.max(aSort.maxRank, metadataScore(a, metadata.matchedChatIds, normalizedQuery))
+        const bRank = Math.max(bSort.maxRank, metadataScore(b, metadata.matchedChatIds, normalizedQuery))
+        if (bRank !== aRank) return bRank - aRank
         const matchTime = bSort.latestMatchAt.localeCompare(aSort.latestMatchAt)
         if (matchTime !== 0) return matchTime
         return b.lastActivity.localeCompare(a.lastActivity)

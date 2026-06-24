@@ -91,6 +91,14 @@ const h = vi.hoisted(() => {
       internalCaseId: 'case-livechat-general',
       metadata: { agentConfigId: 'agent-a' },
     },
+    {
+      id: 'external-livechat-alias',
+      orgId: 'default',
+      platform: 'livechat',
+      externalChatId: 'TH12XG7AWZ',
+      internalCaseId: 'case-new',
+      metadata: { agentConfigId: 'agent-a' },
+    },
   ]
   const messages = [
     {
@@ -162,15 +170,32 @@ const h = vi.hoisted(() => {
   return { mockGetSession, agentConfigs, cases, runs, externalConversations, messages, currentQuery: '', currentAgentId: '', queryRawCalls: 0 }
 })
 
+function matchesValue(value: any, condition: any): boolean {
+  if (condition === undefined) return true
+  if (condition === null || typeof condition !== 'object' || Array.isArray(condition)) return value === condition
+  if (Array.isArray(condition.in)) return condition.in.includes(value)
+  if (condition.not === null) return value !== null && value !== undefined
+  if (typeof condition.startsWith === 'string') return typeof value === 'string' && value.startsWith(condition.startsWith)
+  if (typeof condition.contains === 'string') {
+    if (typeof value !== 'string') return false
+    const haystack = condition.mode === 'insensitive' ? value.toLowerCase() : value
+    const needle = condition.mode === 'insensitive' ? condition.contains.toLowerCase() : condition.contains
+    return haystack.includes(needle)
+  }
+  if ('equals' in condition) return value === condition.equals
+  return Object.entries(condition).every(([key, nested]) => matchesValue(value?.[key], nested))
+}
+
 function matchesWhere(row: any, where: Record<string, any> = {}) {
-  if (where.orgId && row.orgId !== where.orgId) return false
-  if (where.agentConfigId && row.agentConfigId !== where.agentConfigId) return false
-  if (typeof where.chatId === 'object' && where.chatId?.startsWith && !row.chatId?.startsWith(where.chatId.startsWith)) return false
-  if (where.chatId?.in && !where.chatId.in.includes(row.chatId)) return false
-  if (where.internalCaseId?.not === null && row.internalCaseId === null) return false
-  if (where.metadata?.path?.[0] === 'agentConfigId' && row.metadata?.agentConfigId !== where.metadata.equals) return false
-  if (where.id?.in && !where.id.in.includes(row.id)) return false
-  if (where.caseId?.in && !where.caseId.in.includes(row.caseId)) return false
+  if (Array.isArray(where.OR) && !where.OR.some((branch: Record<string, any>) => matchesWhere(row, branch))) return false
+  for (const [key, condition] of Object.entries(where)) {
+    if (key === 'OR') continue
+    if (key === 'metadata' && condition?.path?.[0] === 'agentConfigId') {
+      if (row.metadata?.agentConfigId !== condition.equals) return false
+      continue
+    }
+    if (!matchesValue(row[key], condition)) return false
+  }
   return true
 }
 
@@ -477,6 +502,45 @@ describe('/api/chats route', () => {
     expect(body.data.query.searchMode).toBe('contains_fallback')
     expect(body.data.total).toBe(1)
     expect(body.data.sessions[0].matchedMessages[0].messageId).toBe('msg-deposit-user')
+  })
+
+  it('searches chat ids without requiring a transcript content match', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a&q=TG2RX99U7R'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.query).toEqual({ normalizedQuery: 'TG2RX99U7R', searchMode: 'contains_fallback' })
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'TG2RX99U7R',
+      userId: 'livechat-TG2RX99U7R',
+    })
+    expect(body.data.sessions[0].matchedMessages).toBeUndefined()
+  })
+
+  it('searches LiveChat external chat aliases scoped to the selected agent', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a&q=TH12XG7AWZ'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'chat-new',
+      userId: 'user-new',
+    })
+    expect(body.data.sessions[0].matchedMessages).toBeUndefined()
+  })
+
+  it('searches ProcedureRun ids inside the selected agent scope', async () => {
+    const res = await GET(makeRequest('?limit=200&agentId=agent-a&q=run-new'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(1)
+    expect(body.data.sessions[0]).toMatchObject({
+      chatId: 'chat-new',
+      userId: 'user-new',
+    })
   })
 
   it('returns an empty search page without querying messages when the selected agent has no scoped cases', async () => {
