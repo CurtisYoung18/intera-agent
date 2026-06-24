@@ -27,8 +27,18 @@ const NOISE_PATTERNS = [
   /\b(?:hook|trace|debug|internal note|system note)\b/i,
   /\b(?:screenshot|receipt|transaction id|task id|queue:)\b/i,
   /\b(?:no prior sessions available|no stable identity|memory reason)\b/i,
+  /\b(?:no prior sessions?|no long-?term patterns?|first interaction|single session)\b/i,
+  /\b(?:not provided|not confirmed|no confirmed|no durable|not available)\b/i,
   /^\s*[{}[\]]+\s*$/,
 ]
+
+const SECTION_LIMITS: Record<ProfileSection, number> = {
+  Identity: 10,
+  Contact: 6,
+  Preferences: 10,
+  Activity: 4,
+  History: 8,
+}
 
 const KEY_ALIASES: Record<string, string> = {
   memberid: 'member_id',
@@ -41,12 +51,14 @@ const KEY_ALIASES: Record<string, string> = {
   email: 'email',
   phone: 'phone',
   mobile: 'phone',
+  lang: 'preferred_language',
   language: 'preferred_language',
   reply_language: 'preferred_language',
   preferred_language: 'preferred_language',
   contact_preference: 'contact_preference',
   preferred_contact: 'contact_preference',
   support_preference: 'support_preference',
+  theme: 'theme',
   vip_level: 'vip_level',
   vip_status: 'vip_status',
 }
@@ -68,16 +80,107 @@ function containsJsonLikePayload(item: string): boolean {
   return open + close >= 4
 }
 
-function sanitizeProfileItem(item: string): string | null {
+function isNegativePlaceholder(text: string): boolean {
+  return /\b(?:no stable|not provided|not confirmed|no confirmed|no durable|not available|no prior|first interaction|single session|not on record|none established)\b/i.test(text)
+}
+
+function isGenericPlatformIdentity(text: string): boolean {
+  return /\b(?:jayabaji|platform|casino)\b/i.test(text) &&
+    /\b(?:user|customer|nepal|nepali|region|online)\b/i.test(text)
+}
+
+function isAssistantStatusOrInstruction(text: string): boolean {
+  return /\b(?:maile|ma check|ma feri|huss|kripaya|wait garnu|pathaidiye|human support|payment ops|tapaiko|tapai ko|timro|aile|ahile|aba|please wait|i checked|i will check)\b/i.test(text)
+}
+
+function isTransientCaseDetail(text: string): boolean {
+  return /\b(?:pending|approved|rejected|status checked|live status|latest status|created at|submit time|submitted|elapsed|seconds?|minutes?|5\s*[-–]\s*10|turnover|ticket|manual review|escalated|human review|member id requested|offered to check|provided with|informed:|withdrawal created)\b/i.test(text)
+}
+
+function isStablePreference(text: string): boolean {
+  if (profileFieldKey(text)) return true
+  if (/\b(?:reported|asked|inquired|status checked|provided with)\b/i.test(text)) return false
+  if (/\b(?:prefers?|preferred|communicates?|communication style|language|tone|style|contact preference|support preference)\b/i.test(text)) {
+    return !isTransientCaseDetail(text)
+  }
+  if (/\b(?:recurring support need|repeated support need)\b/i.test(text)) {
+    return !/\b(?:pending|approved|rejected|created at|seconds?|minutes?|ticket)\b/i.test(text)
+  }
+  return false
+}
+
+function isStructuredIdentityFact(text: string): boolean {
+  const label = text.match(/^\s*([^:：=-]{1,48})\s*[:：=-]\s*(.+)$/)
+  if (!label) return false
+  const normalized = label[1]
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return ![
+    'account_status',
+    'role',
+    'topic',
+    'topics',
+    'status',
+    'latest_status',
+    'withdrawal_status',
+    'deposit_status',
+  ].includes(normalized)
+}
+
+function isMeaningfulHistory(text: string): boolean {
+  if (isTransientCaseDetail(text)) return false
+  return /\b(?:recurring|repeated|multiple prior|prior sessions?|previous|previously|history|pattern|preference|support need|asked about|customer asked|issue)\b/i.test(text)
+}
+
+function sanitizeProfileItem(item: string, section?: ProfileSection): string | null {
   const text = normalizeItem(item)
   if (!text) return null
   if (text.length > 500) return null
   if (containsJsonLikePayload(text)) return null
   if (NOISE_PATTERNS.some((pattern) => pattern.test(text))) return null
+  if (isNegativePlaceholder(text)) return null
+
+  if (section === 'Identity') {
+    if (isGenericPlatformIdentity(text)) return null
+    if (isAssistantStatusOrInstruction(text)) return null
+    if (isTransientCaseDetail(text)) return null
+    if (!profileFieldKey(text) && !isStructuredIdentityFact(text)) return null
+  } else if (section === 'Contact') {
+    const fieldKey = profileFieldKey(text)
+    if (fieldKey !== 'email' && fieldKey !== 'phone' && fieldKey !== 'contact_preference') return null
+  } else if (section === 'Preferences') {
+    if (!isStablePreference(text)) return null
+  } else if (section === 'Activity') {
+    if (isAssistantStatusOrInstruction(text)) return null
+    if (isTransientCaseDetail(text)) return null
+  } else if (section === 'History') {
+    if (isAssistantStatusOrInstruction(text)) return null
+    if (!isMeaningfulHistory(text)) return null
+  }
+
   return text
 }
 
-function normalizedDedupKey(item: string): string {
+function normalizedDedupKey(item: string, section?: ProfileSection): string {
+  const fieldKey = profileFieldKey(item)
+  if (fieldKey) return `field:${fieldKey}`
+  if (section === 'Preferences') {
+    if (/\bnepali\b/i.test(item) && /\b(?:language|communicates?|prefers?|preferred)\b/i.test(item)) {
+      return 'preference:language:nepali'
+    }
+    if (/\b(?:brief|direct|short|concise)\b/i.test(item)) return 'preference:style:brief'
+    if (/\bstep[- ]?by[- ]?step\b/i.test(item)) return 'preference:style:steps'
+  }
+  if (section === 'History') {
+    if (/\bwithdrawal\b/i.test(item) && /\b(?:recurring|repeated|multiple prior|prior sessions?|history|support need)\b/i.test(item)) {
+      return 'history:withdrawal'
+    }
+    if (/\bdeposit\b/i.test(item) && /\b(?:recurring|repeated|multiple prior|prior sessions?|history|support need)\b/i.test(item)) {
+      return 'history:deposit'
+    }
+  }
   return item.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
@@ -92,23 +195,27 @@ function profileFieldKey(item: string): string | null {
   return KEY_ALIASES[rawKey] ?? null
 }
 
-function mergeStableSectionItems(existingItems: string[], incomingItems: string[]): string[] {
+function mergeStableSectionItems(
+  section: ProfileSection,
+  existingItems: string[],
+  incomingItems: string[],
+): string[] {
   const result: string[] = []
   const seen = new Set<string>()
   const fieldIndex = new Map<string, number>()
 
   const add = (item: string, replaceExistingField: boolean) => {
-    const dedupKey = normalizedDedupKey(item)
-    if (seen.has(dedupKey)) return
+    const dedupKey = normalizedDedupKey(item, section)
 
     const fieldKey = profileFieldKey(item)
     if (replaceExistingField && fieldKey && fieldIndex.has(fieldKey)) {
       const index = fieldIndex.get(fieldKey)!
-      seen.delete(normalizedDedupKey(result[index]))
+      seen.delete(normalizedDedupKey(result[index], section))
       result[index] = item
       seen.add(dedupKey)
       return
     }
+    if (seen.has(dedupKey)) return
 
     result.push(item)
     seen.add(dedupKey)
@@ -122,16 +229,42 @@ function mergeStableSectionItems(existingItems: string[], incomingItems: string[
   return result
 }
 
-function mergeAppendDedup(items: string[]): string[] {
+function mergeAppendDedup(items: string[], section?: ProfileSection): string[] {
   const result: string[] = []
   const seen = new Set<string>()
   for (const item of items) {
-    const key = normalizedDedupKey(item)
+    const key = normalizedDedupKey(item, section)
     if (seen.has(key)) continue
     result.push(item)
     seen.add(key)
   }
   return result
+}
+
+function capSectionItems(section: ProfileSection, items: string[]): string[] {
+  const limit = SECTION_LIMITS[section]
+  if (items.length <= limit) return items
+
+  if (section === 'Identity' || section === 'Contact' || section === 'Preferences') {
+    const prioritized: string[] = []
+    const rest: string[] = []
+    for (const item of items) {
+      if (profileFieldKey(item)) prioritized.push(item)
+      else rest.push(item)
+    }
+    const newestRest = rest.slice(Math.max(0, rest.length - Math.max(0, limit - prioritized.length)))
+    return [...prioritized, ...newestRest].slice(0, limit)
+  }
+
+  return items.slice(Math.max(0, items.length - limit))
+}
+
+function capAllSections(sections: ProfileSections): ProfileSections {
+  const capped = emptyProfileSections()
+  for (const section of PROFILE_SECTIONS) {
+    capped[section] = capSectionItems(section, sections[section])
+  }
+  return capped
 }
 
 /**
@@ -166,7 +299,7 @@ function parseProfile(markdown: string): ProfileSections {
     if (current) {
       const bullet = line.match(/^\s*[-*]\s+(.+)/)
       if (bullet) {
-        const item = sanitizeProfileItem(bullet[1])
+        const item = sanitizeProfileItem(bullet[1], current)
         if (item) sections[current].push(item)
       }
     }
@@ -182,7 +315,7 @@ function parseProfile(markdown: string): ProfileSections {
       .split('\n')
       .map((l) => l.trim())
       .filter((l) => l && !/^#+\s/.test(l) && !/^[-*]\s/.test(l))
-      .map((l) => sanitizeProfileItem(l))
+      .map((l) => sanitizeProfileItem(l, 'Identity'))
       .filter((l): l is string => !!l)
     if (lines.length > 0) {
       sections.Identity = lines.slice(0, 20) // cap at 20 lines for raw summaries
@@ -210,11 +343,11 @@ function mergeProfileSections(
 
   // Identity, Contact, Preferences — dedup merge
   for (const sec of ['Identity', 'Contact', 'Preferences'] as ProfileSection[]) {
-    result[sec] = mergeStableSectionItems(existing[sec], incoming[sec])
+    result[sec] = mergeStableSectionItems(sec, existing[sec], incoming[sec])
   }
 
   // Activity — replace (old rolls to History)
-  result.Activity = mergeAppendDedup(incoming.Activity)
+  result.Activity = mergeAppendDedup(incoming.Activity, 'Activity')
 
   // History — append
   // 1. Existing History
@@ -225,9 +358,9 @@ function mergeProfileSections(
 
   // 3. Incoming History
   result.History.push(...incoming.History)
-  result.History = mergeAppendDedup(result.History)
+  result.History = mergeAppendDedup(result.History, 'History')
 
-  return result
+  return capAllSections(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +453,7 @@ export function mergeProfile(
     // Rough heuristic: each bullet line is ~4 tokens (chars/4 ≈ tokens)
     // Use a floor of 10 lines so Identity/Contact always have room.
     const maxLines = Math.max(10, Math.floor(maxTokens / 4))
-    merged = truncateProfile(merged, maxLines)
+    merged = capAllSections(truncateProfile(merged, maxLines))
   }
 
   const rendered = renderProfile(merged)

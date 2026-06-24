@@ -207,6 +207,45 @@ describe('mergeProfile — profile hygiene', () => {
     expect(result.profile).not.toContain('language: English')
   })
 
+  it('prunes assistant/status chatter from durable profile sections', () => {
+    const polluted = markdown({
+      Identity: [
+        'member_id: JAYA116123D',
+        'No stable user identifiers, roles, or account status confirmed in this session.',
+        'User is a Nepali-speaking customer of JAYABAJI online casino platform.',
+        'Account status: Pending',
+        'Maile payment ops team lai note pathaidiye.',
+        'Human support le check garnecha. Kripaya wait garnu hos.',
+        'Withdrawal aaena',
+        'Timro withdrawal pending status ma nai cha. Turnover sabai completed cha.',
+      ],
+      Preferences: [
+        'Prefers communicating in Nepali.',
+        'Communicates in Nepali with code-switching to English.',
+        'Reported withdrawal late; status checked — pending (created 2026-06-23 18:46:06, 70 sec elapsed).',
+        'Provided with: minimum withdrawal 1500 NPR, withdrawal PIN mandatory, processing time 5–10 minutes.',
+        'No prior sessions or long-term patterns on record.',
+        'Repeated support need: Withdrawal delay follow-ups',
+      ],
+      History: [
+        'Multiple prior sessions about pending withdrawals; turnover completed but payment not received',
+        'Previously escalated to payment ops team for manual check',
+        'Recurring support need: withdrawal delay follow-ups',
+      ],
+    })
+
+    const result = mergeProfile(polluted, '', 4000)
+    const sections = parseSections(result.sections)
+
+    expect(sections.Identity).toEqual(['member_id: JAYA116123D'])
+    expect(sections.Preferences).toEqual([
+      'Prefers communicating in Nepali.',
+      'Repeated support need: Withdrawal delay follow-ups',
+    ])
+    expect(sections.History).toEqual(['Recurring support need: withdrawal delay follow-ups'])
+    expect(result.profile).not.toMatch(/pending|payment ops|turnover|No prior|No stable|Provided with|created 2026/i)
+  })
+
   it('drops old-format raw summaries that only contain runtime artifacts', () => {
     const raw = [
       '# User Profile',
@@ -326,21 +365,20 @@ describe('mergeProfile — truncation', () => {
     expect(sections.Identity.length + sections.Contact.length).toBe(5)
   })
 
-  it('no truncation when maxTokens is 0 or undefined', () => {
+  it('still applies section caps when maxTokens is 0 or undefined', () => {
     const existing = markdown({
-      History: Array.from({ length: 50 }, (_, i) => `h${i}`),
+      History: Array.from({ length: 50 }, (_, i) => `history pattern item ${i + 1}`),
     })
     const incoming = markdown({ Activity: ['new'] })
 
     const result0 = mergeProfile(existing, incoming, 0)
     const resultUndef = mergeProfile(existing, incoming)
 
-    // Without a budget, nothing should be truncated
     const s0 = parseSections(result0.sections)
     const sU = parseSections(resultUndef.sections)
 
-    expect(s0.History.length).toBeGreaterThan(30)
-    expect(sU.History.length).toBeGreaterThan(30)
+    expect(s0.History.length).toBeLessThanOrEqual(8)
+    expect(sU.History.length).toBeLessThanOrEqual(8)
   })
 })
 
@@ -354,7 +392,7 @@ describe('mergeProfile — rendered output', () => {
       '',
       markdown({
         Identity: ['name: Alice'],
-        History: ['old chat'],
+        History: ['previous chat about billing'],
         Activity: ['current chat'],
         Contact: ['email: a@b.com'],
       }),
