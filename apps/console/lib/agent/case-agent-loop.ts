@@ -243,13 +243,20 @@ export class CaseAgentLoop {
         taskId = task.id
         taskOutput.taskId = task.id
 
+        const humanTaskTracePayload = {
+          question,
+          status: 'pending',
+          ...(Object.keys(handoffNote).length > 0 ? handoffNote : {}),
+        }
         if (existingTask?.id) {
-          await this.services.traceWriter.write('loop_decision', 'Pending human task reused', {
+          await this.services.traceWriter.write('human_task_created', 'Human task reused', {
             taskId: task.id,
             queue,
+            reused: true,
+            ...humanTaskTracePayload,
           })
         } else {
-          await this.services.traceWriter.writeHumanTaskCreated(task.id, queue)
+          await this.services.traceWriter.writeHumanTaskCreated(task.id, queue, humanTaskTracePayload)
         }
         humanTaskResult.output = {
           ok: true,
@@ -302,7 +309,11 @@ export class CaseAgentLoop {
           data: { taskId: task.id, queue, question, status: 'pending', ...handoffNote },
           timestamp: new Date().toISOString(),
         })
-        await this.services.traceWriter.writeEscalated(existingTask?.id ? 'human_task_reused' : 'human_task_created', { taskId: task.id, queue })
+        await this.services.traceWriter.writeEscalated(existingTask?.id ? 'human_task_reused' : 'human_task_created', {
+          taskId: task.id,
+          queue,
+          ...humanTaskTracePayload,
+        })
         sendEvent({
           type: 'escalated',
           data: { reason: 'human_task_created', taskId: task.id, queue },

@@ -232,6 +232,118 @@ function summarizeLoopDecision(trace: TraceTruthInput, payload: Record<string, u
   return simpleLines.length > 0 ? simpleLines.join('\n') : trace.title || null
 }
 
+const INTERNAL_HANDOFF_FACT_KEY_RE = /(?:^|_)(?:automated_)?(?:tool|tools|hook|hooks|procedure|procedure_id|case_type|case_id|run_id|task_id|queue|runtime|model)(?:_|$)/i
+const INTERNAL_HANDOFF_VALUE_RE = /\b(?:kb_search|start_procedure|create_human_task|ask_user_questions|read_chat_memory|read_user_profile|finalize_procedure|remember|check_latest_|turnover_|reset_withdrawal_pin|get_account_status|get_id_verification_details|get_transaction_history|get_bet_history|get_recommend_games)\b/i
+
+const HANDOFF_FACT_LABELS: Record<string, string> = {
+  member_id: 'Member ID',
+  memberId: 'Member ID',
+  phone: 'Phone',
+  phone_number: 'Phone',
+  phoneNumber: 'Phone',
+  mobile: 'Phone',
+  email: 'Email',
+  name: 'Name',
+  customer_name: 'Name',
+  customerName: 'Name',
+  amount: 'Amount',
+  date: 'Date',
+  time: 'Time',
+  date_time: 'Date/time',
+  dateTime: 'Date/time',
+  method: 'Method',
+  payment_method: 'Payment method',
+  paymentMethod: 'Payment method',
+  transaction_id: 'Transaction/reference no',
+  transactionId: 'Transaction/reference no',
+  reference_no: 'Transaction/reference no',
+  referenceNo: 'Transaction/reference no',
+  screenshot: 'Screenshot/receipt',
+  receipt: 'Screenshot/receipt',
+  status: 'Status',
+}
+
+function trimmedString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function mergedHandoffPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const nested = payload.handoffNote && typeof payload.handoffNote === 'object' && !Array.isArray(payload.handoffNote)
+    ? (payload.handoffNote as Record<string, unknown>)
+    : {}
+  return { ...nested, ...payload }
+}
+
+function normalizeHandoffFacts(value: unknown): Array<[string, string]> {
+  if (typeof value === 'string' && value.trim()) return [['details', value.trim()]]
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, raw]) => {
+      const rendered = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim()
+      return [key.trim(), rendered] as [string, string]
+    })
+    .filter(([key, rendered]) => (
+      key &&
+      rendered &&
+      !INTERNAL_HANDOFF_FACT_KEY_RE.test(key) &&
+      !INTERNAL_HANDOFF_VALUE_RE.test(rendered)
+    ))
+    .slice(0, 12)
+}
+
+function humanizeHandoffFactKey(key: string): string {
+  const known = HANDOFF_FACT_LABELS[key]
+  if (known) return known
+  const spaced = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+  if (!spaced) return key
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+function formatHumanHandoffDetail(
+  trace: TraceTruthInput,
+  payload: Record<string, unknown>,
+): string | null {
+  const handoff = mergedHandoffPayload(payload)
+  const chatSummary = trimmedString(handoff.chat_summary) ?? trimmedString(handoff.chatSummary)
+  const handoffReason = trimmedString(handoff.handoff_reason) ?? trimmedString(handoff.handoffReason)
+  const question = trimmedString(handoff.question)
+  const facts = normalizeHandoffFacts(handoff.known_facts ?? handoff.knownFacts)
+
+  const lines: string[] = []
+  if (chatSummary) {
+    lines.push('Issue summary:')
+    lines.push(chatSummary)
+  }
+  if (facts.length > 0) {
+    lines.push('Known facts collected:')
+    for (const [key, value] of facts) lines.push(`- ${humanizeHandoffFactKey(key)}: ${value}`)
+  }
+  if (handoffReason) {
+    lines.push('Reason for handoff:')
+    lines.push(handoffReason)
+  } else if (question) {
+    lines.push('Reason for handoff:')
+    lines.push(question)
+  }
+
+  if (lines.length > 0) return lines.join('\n')
+
+  const taskId = trimmedString(handoff.taskId)
+  const queue = trimmedString(handoff.queue)
+  const status = trimmedString(handoff.status)
+  const parts = [
+    taskId ? `taskId: ${taskId}` : null,
+    queue ? `queue: ${queue}` : null,
+    status ? `status: ${status}` : null,
+  ].filter(Boolean)
+
+  return parts.length > 0 ? parts.join(' · ') : trace.detail
+}
+
 function detailTextForTrace(
   trace: TraceTruthInput,
   payload: Record<string, unknown> | null,
@@ -320,6 +432,10 @@ function detailTextForTrace(
       }
     }
     return lines.length > 0 ? lines.join('\n') : trace.detail
+  }
+
+  if (trace.actionType === 'human_task_created' || trace.actionType === 'human_task_resolved') {
+    return formatHumanHandoffDetail(trace, payload)
   }
 
   if (trace.actionType === 'tool_call') {

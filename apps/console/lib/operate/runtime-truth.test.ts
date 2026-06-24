@@ -135,6 +135,37 @@ describe('runtime-truth helpers', () => {
     expect(trace.detailText).toContain('Member ID: JAYA117FFEB')
   })
 
+  it('renders human handoff note fields in the trace panel', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'human_task_created',
+      title: 'Human task created',
+      detail: null,
+      payload: JSON.stringify({
+        taskId: 'task-1',
+        queue: 'payment_ops',
+        status: 'pending',
+        chat_summary: 'Customer reported that an approved deposit is not reflected.',
+        known_facts: {
+          member_id: 'JAYA1126511',
+          issue: 'deposit not reflected after approved status',
+          tool_name: 'create_human_task',
+        },
+        handoff_reason: 'Customer explicitly requested a human after automated lookup.',
+      }),
+    })
+
+    expect(trace.kind).toBe('human_handoff')
+    expect(trace.status).toBe('warn')
+    expect(trace.detailText).toContain('Issue summary:')
+    expect(trace.detailText).toContain('Customer reported that an approved deposit is not reflected.')
+    expect(trace.detailText).toContain('Known facts collected:')
+    expect(trace.detailText).toContain('Member ID: JAYA1126511')
+    expect(trace.detailText).toContain('Issue: deposit not reflected after approved status')
+    expect(trace.detailText).toContain('Reason for handoff:')
+    expect(trace.detailText).toContain('Customer explicitly requested a human after automated lookup.')
+    expect(trace.detailText).not.toContain('create_human_task')
+  })
+
   it('summarizes unmatched tool call/result counts', () => {
     const summary = summarizeToolPairing([
       { actionType: 'tool_call', title: 'Tool called: search', detail: null, payload: null },

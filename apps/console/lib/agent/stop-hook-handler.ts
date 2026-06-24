@@ -118,7 +118,12 @@ export class StopHookHandler {
         question,
         status: 'pending',
       })
-      await this.deps.traceWriter.writeHumanTaskCreated(task.id, queue)
+      await this.deps.traceWriter.writeHumanTaskCreated(task.id, queue, {
+        question,
+        status: 'pending',
+        suppressCustomerCard: true,
+        ...handoffNote,
+      })
       sendEvent({
         type: 'human_task_created',
         data: { taskId: task.id, queue, question, status: 'pending', suppressCustomerCard: true, ...handoffNote },

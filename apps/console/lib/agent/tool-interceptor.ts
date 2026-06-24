@@ -402,7 +402,11 @@ export async function processPendingHookToolCalls(
           question,
           status: 'pending',
         })
-        await ctx.traceWriter.writeHumanTaskCreated(task.id, queue)
+        await ctx.traceWriter.writeHumanTaskCreated(task.id, queue, {
+          question,
+          status: 'pending',
+          source: 'hook_auto_escalation',
+        })
         sendEvent({
           type: 'human_task_created',
           data: { taskId: task.id, queue, question, status: 'pending' },
@@ -447,7 +451,11 @@ export async function processPendingHookToolCalls(
         question,
         status: 'pending',
       })
-      await ctx.traceWriter.writeHumanTaskCreated(task.id, queue)
+      await ctx.traceWriter.writeHumanTaskCreated(task.id, queue, {
+        question,
+        status: 'pending',
+        source: 'hook_auto_escalation',
+      })
       sendEvent({
         type: 'human_task_created',
         data: { taskId: task.id, queue, question, status: 'pending' },

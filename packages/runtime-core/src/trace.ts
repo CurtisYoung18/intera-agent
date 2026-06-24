@@ -155,10 +155,12 @@ export class TraceWriter {
   async writeHumanTaskCreated(
     taskId: string,
     queue: string,
+    details: Record<string, unknown> = {},
   ): Promise<void> {
     await this.write('human_task_created', 'Human task created', {
       taskId,
       queue,
+      ...details,
     })
   }
 

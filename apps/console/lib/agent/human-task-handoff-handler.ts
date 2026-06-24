@@ -58,7 +58,13 @@ export class HumanTaskHandoffHandler {
       data: { taskId, queue, question, status: 'pending', ...(handoffNote ?? {}) },
       timestamp: this.timestamp(),
     })
-    await this.deps.traceWriter.writeEscalated('human_task_created', { taskId, queue })
+    await this.deps.traceWriter.writeEscalated('human_task_created', {
+      taskId,
+      queue,
+      question,
+      status: 'pending',
+      ...(handoffNote ?? {}),
+    })
     sendEvent({
       type: 'escalated',
       data: { reason: 'human_task_created', taskId, queue },

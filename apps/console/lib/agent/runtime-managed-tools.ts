@@ -163,7 +163,11 @@ export class RuntimeManagedToolResolver {
         fields: taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null,
         status: 'pending',
       })
-      await this.deps.traceWriter.writeHumanTaskCreated(task.id, queue)
+      await this.deps.traceWriter.writeHumanTaskCreated(task.id, queue, {
+        question,
+        status: 'pending',
+        ...(Object.keys(handoffNote).length > 0 ? handoffNote : {}),
+      })
       this.replaceToolOutput(result, { taskId: task.id, queue, status: 'pending', persisted: true })
       return { taskId: task.id, queue, question, ...(Object.keys(handoffNote).length > 0 ? { handoffNote } : {}) }
     } catch (error) {

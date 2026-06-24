@@ -1031,6 +1031,8 @@ export async function POST(request: NextRequest) {
                   payload: JSON.stringify({
                     taskId: task.id,
                     queue: task.queue,
+                    question: handoffQuestion,
+                    status: task.status,
                     source: 'route_explicit_handoff',
                     ...handoffNote,
                   }),
