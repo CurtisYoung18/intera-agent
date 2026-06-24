@@ -76,6 +76,29 @@ function simpleToolProcedure(toolName: string) {
   }
 }
 
+function singleAskProcedure(stepId: string, actionId: string, field: string) {
+  return {
+    version: 'v2' as const,
+    whenToUse: `Use when ${field} is needed.`,
+    steps: [
+      {
+        id: stepId,
+        title: `Collect ${field}`,
+        guidance: `Ask for ${field}.`,
+        actions: [
+          {
+            id: actionId,
+            kind: 'ask' as const,
+            label: `Ask for ${field}`,
+            fields: [field],
+          },
+        ],
+        branches: [],
+      },
+    ],
+  }
+}
+
 describe('hasSession', () => {
   beforeEach(() => {
     // Clean up any sessions created by other tests
@@ -1080,6 +1103,131 @@ describe('R3 runtime event protocol', () => {
         expect.stringContaining('Waiting for the customer to submit the requested form fields.'),
       ]),
     )
+    closeSession(caseId)
+  })
+
+  it('shares historical form facts into a switched procedure without completing its ask action', () => {
+    const caseId = 'r3-v2-form-facts-shared-progress-scoped'
+    recordInitialInputEvent(caseId, { content: 'My deposit has not arrived.' })
+    const deposit = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: singleAskProcedure('collect_deposit_member', 'ask_deposit_member', 'memberId'),
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Tool ask_user_questions result: {"memberId":"M123"}',
+      source: 'customer_form_result',
+      origin: 'customer',
+      formAnswers: { memberId: 'M123' },
+    })
+    expect(getActiveProcedureRun(caseId)?.steps[0]?.actions?.[0]?.status).toBe('completed')
+
+    const withdrawal = startProcedureRun(caseId, {
+      procedureId: 'withdrawal_issue',
+      displayName: 'Withdrawal',
+      procedure: singleAskProcedure('collect_withdrawal_member', 'ask_withdrawal_member', 'memberId'),
+    })
+
+    const runtime = getProcedureRuntime(caseId)
+    expect(runtime.pausedProcedureRuns.map((run) => run.runId)).toContain(deposit.run.runId)
+    expect(runtime.activeProcedureRun?.runId).toBe(withdrawal.run.runId)
+    expect(runtime.activeProcedureRun?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'customer_form_result',
+          formAnswers: { memberId: 'M123' },
+        }),
+      ]),
+    )
+    expect(runtime.activeProcedureRun?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'form',
+          metadata: expect.objectContaining({ field: 'memberId', value: 'M123' }),
+        }),
+      ]),
+    )
+    expect(runtime.activeProcedureRun?.steps[0]).toMatchObject({
+      id: 'collect_withdrawal_member',
+      status: 'active',
+      actions: [expect.objectContaining({ id: 'ask_withdrawal_member', status: 'pending' })],
+    })
+    closeSession(caseId)
+  })
+
+  it('routes scoped form results to the paused owner run without stealing active focus', () => {
+    const caseId = 'r3-v2-scoped-form-result-paused-owner'
+    recordInitialInputEvent(caseId, { content: 'I have a deposit issue.' })
+    const deposit = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: singleAskProcedure('collect_deposit_amount', 'ask_deposit_amount', 'depositAmount'),
+    })
+    const withdrawal = startProcedureRun(caseId, {
+      procedureId: 'withdrawal_issue',
+      displayName: 'Withdrawal',
+      procedure: singleAskProcedure('collect_withdrawal_amount', 'ask_withdrawal_amount', 'withdrawalAmount'),
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Tool ask_user_questions result: {"depositAmount":"200"}',
+      source: 'customer_form_result',
+      origin: 'customer',
+      runId: deposit.run.runId,
+      formAnswers: { depositAmount: '200' },
+    })
+
+    const runtime = getProcedureRuntime(caseId)
+    expect(runtime.activeProcedureRun?.runId).toBe(withdrawal.run.runId)
+    expect(runtime.activeProcedureRun?.inputs).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ formAnswers: { depositAmount: '200' } }),
+      ]),
+    )
+    const pausedDeposit = runtime.pausedProcedureRuns.find((run) => run.runId === deposit.run.runId)
+    expect(pausedDeposit?.inputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ formAnswers: { depositAmount: '200' } }),
+      ]),
+    )
+    expect(pausedDeposit?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'form',
+          metadata: expect.objectContaining({ field: 'depositAmount', value: '200' }),
+        }),
+      ]),
+    )
+    expect(pausedDeposit?.steps[0]?.actions?.[0]?.status).toBe('pending')
+    closeSession(caseId)
+  })
+
+  it('does not resume the first paused run for an unscoped human task result', () => {
+    const caseId = 'r3-v2-unscoped-human-result-no-paused-shift'
+    recordInitialInputEvent(caseId, { content: 'I have a deposit issue.' })
+    const deposit = startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: singleAskProcedure('collect_deposit_member', 'ask_deposit_member', 'memberId'),
+    })
+    startProcedureRun(caseId, {
+      procedureId: 'withdrawal_issue',
+      displayName: 'Withdrawal',
+    })
+    expect(finalizeProcedureRun(caseId, { summary: 'Withdrawal complete.' })).toMatchObject({
+      ok: true,
+    })
+
+    recordInitialInputEvent(caseId, {
+      content: 'Human task result without owner run.',
+      source: 'human_task_result',
+      origin: 'human',
+    })
+
+    const runtime = getProcedureRuntime(caseId)
+    expect(runtime.activeProcedureRun).toBeUndefined()
+    expect(runtime.pausedProcedureRuns.map((run) => run.runId)).toContain(deposit.run.runId)
     closeSession(caseId)
   })
 

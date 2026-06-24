@@ -1022,12 +1022,16 @@ function normalizeQueuedMessage(session: CaseSession, msg: QueuedMessageInput): 
 }
 
 function appendInputEventToActiveRun(session: CaseSession, event: RuntimeEvent): void {
-  const active = session.procedureRuntime.activeProcedureRun ?? resumePausedRunForInput(session, event)
-  if (!active || !isInputSource(event.source)) return
-  active.timeline.push({ ...event, runId: active.runId })
-  active.updatedAt = event.createdAt
-  ingestInputIntoRun(active, event)
-  scheduleRunPersist(session, active)
+  if (!isInputSource(event.source)) return
+  const target = resolveInputRunTarget(session, event)
+  if (!target) return
+  target.run.timeline.push({ ...event, runId: target.run.runId })
+  target.run.updatedAt = event.createdAt
+  ingestInputIntoRun(target.run, event, {
+    applyFormProgress: target.activeFocus,
+    refreshNoProgress: target.activeFocus,
+  })
+  scheduleRunPersist(session, target.run)
 }
 
 function createRuntimeEvent(input: Partial<RuntimeEvent> & {
@@ -1166,11 +1170,13 @@ function cancelRemainingProcedureRuns(session: CaseSession, outcome: string, rea
 }
 
 function resumePausedRunForInput(session: CaseSession, event: RuntimeEvent): ProcedureRunState | undefined {
-  if (event.source !== 'human_task_result') return undefined
-  const resumed = session.procedureRuntime.pausedProcedureRuns.shift()
+  if (!event.runId) return undefined
+  const resumedIndex = session.procedureRuntime.pausedProcedureRuns.findIndex((run) => run.runId === event.runId)
+  if (resumedIndex < 0) return undefined
+  const resumed = session.procedureRuntime.pausedProcedureRuns.splice(resumedIndex, 1)[0]
   if (!resumed) return undefined
   resumed.status = 'active'
-  resumed.reason = 'Resumed after human task result.'
+  resumed.reason = `Resumed after ${event.source}.`
   resumed.updatedAt = event.createdAt
   resumed.inputEpoch = session.latestInputEpoch
   resumed.lastReconciledInputEpoch = session.latestInputEpoch
@@ -1179,10 +1185,33 @@ function resumePausedRunForInput(session: CaseSession, event: RuntimeEvent): Pro
   appendProcedureTimeline(session, resumed, {
     origin: 'system',
     source: 'control',
-    summary: 'ProcedureRun resumed after human task result',
+    summary: `ProcedureRun resumed after ${event.source}`,
     metadata: { sourceEventId: event.eventId },
   })
   return resumed
+}
+
+function resolveInputRunTarget(
+  session: CaseSession,
+  event: RuntimeEvent,
+): { run: ProcedureRunState; activeFocus: boolean } | undefined {
+  const active = session.procedureRuntime.activeProcedureRun
+  if (event.runId) {
+    if (active?.runId === event.runId) return { run: active, activeFocus: true }
+    const paused = session.procedureRuntime.pausedProcedureRuns.find((run) => run.runId === event.runId)
+    if (!paused) return undefined
+    if (!active) {
+      const resumed = resumePausedRunForInput(session, event)
+      return resumed ? { run: resumed, activeFocus: true } : undefined
+    }
+    return { run: paused, activeFocus: false }
+  }
+  return active ? { run: active, activeFocus: true } : undefined
+}
+
+function eventBelongsToRunForProgress(run: ProcedureRunState, event: RuntimeEvent): boolean {
+  if (event.runId) return event.runId === run.runId
+  return event.inputEpoch === run.inputEpoch
 }
 
 function captureRunInput(run: ProcedureRunState, event: RuntimeEvent): void {
@@ -1210,12 +1239,15 @@ function ingestInputIntoRun(
   event: RuntimeEvent,
   options?: {
     refreshNoProgress?: boolean
+    applyFormProgress?: boolean
   },
 ): void {
   if (!isInputSource(event.source)) return
   captureRunInput(run, event)
   if (event.formAnswers && Object.keys(event.formAnswers).length > 0) {
-    applyFormEvidenceToRun(run, event)
+    applyFormEvidenceToRun(run, event, {
+      completeAskActions: options?.applyFormProgress !== false,
+    })
   }
   if (event.content) {
     updateSignalsFromInput(run, event.content)
@@ -1229,7 +1261,10 @@ function ingestInputIntoRun(
 function seedRunInputsFromRuntime(session: CaseSession, run: ProcedureRunState): void {
   for (const event of session.runtimeEvents) {
     if (!isInputSource(event.source)) continue
-    ingestInputIntoRun(run, event, { refreshNoProgress: false })
+    ingestInputIntoRun(run, event, {
+      applyFormProgress: eventBelongsToRunForProgress(run, event),
+      refreshNoProgress: false,
+    })
   }
 }
 
@@ -1317,7 +1352,11 @@ function targetForAction(action: ProcedureV2Action): string | undefined {
   }
 }
 
-function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): void {
+function applyFormEvidenceToRun(
+  run: ProcedureRunState,
+  event: RuntimeEvent,
+  options?: { completeAskActions?: boolean },
+): void {
   const formAnswers = event.formAnswers
   if (!formAnswers) return
   for (const [field, value] of Object.entries(formAnswers)) {
@@ -1331,6 +1370,7 @@ function applyFormEvidenceToRun(run: ProcedureRunState, event: RuntimeEvent): vo
       metadata: { field, value },
     })
   }
+  if (options?.completeAskActions === false) return
 
   const current = currentStep(run)
   if (!current?.actions?.length) return
