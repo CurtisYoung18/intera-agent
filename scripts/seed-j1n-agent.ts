@@ -211,7 +211,7 @@ const TOOL_DESCRIPTION_PATCHES: Record<string, string> = {
   remember: 'Persist stable customer profile facts with scope="user". Use proactively when the customer naturally provides durable information such as member_id, preferred language/style, contact preference, or recurring support preference. Do not store one-off transaction details, screenshots, receipt ids, amounts, dates, tool results, active ProcedureRun state, or temporary case status.',
   start_procedure: 'Start a runtime ProcedureRun only when the intent matches an Available Procedure. procedureId must be one exact id from ## Available Procedures, such as a j1n_* id. Do not pass tool names, old GPTBots labels, or broad categories as procedureId.',
   ask_user_questions: 'Show a structured form only when required facts are missing for a member-specific workflow, or when a money/funds issue is ambiguous and the customer must choose the issue type before any detailed form. Always provide title and a non-empty fields array. Do not use for ordinary FAQ, how-to, rules, limits, platform navigation, or policy questions that can be answered from KB. If the customer already provided details in text or an uploaded screenshot/image, prefill matching form fields with fields[].defaultValue or initialValues so the customer can confirm or edit them instead of retyping. For receipt/screenshot workflows, if another required field is still missing, keep already-provided receipt facts such as payment method/channel, amount, transaction id, date/time, or status as additional fields with defaultValue; do not drop them just because they were already supplied.',
-  create_human_task: 'Create a human handoff task only for explicit human requests after an automated path was tried, unresolved disputes with usable customer evidence, sensitive account-risk cases, or confirmed conflict between live evidence and the customer report. Do not use for ordinary FAQ, missing member_id, invalid/unclear member_id, one empty lookup, a Not Found result, normal pending time, or a first failed tool attempt; collect/correct information or explain the verified self-service next step instead. If a pending task already exists, acknowledge the existing handoff instead of creating another one. When calling this tool, use the generic known_facts, chat_summary, and handoff_reason inputs to give the human operator a concise, practical note. Include useful customer identifiers, contact details, collected payment/account facts, what the customer needs, why human support is needed, and suggested next steps when known. Do not mention internal tool names, hook names, procedure IDs, case IDs, run IDs, model/runtime details, or implementation details. Write those note fields in Romanized Nepali for J1N so Nepali support staff can read them without translating.',
+  create_human_task: 'Create a human handoff task only for explicit human requests after an automated path was tried, unresolved disputes with usable customer evidence, sensitive account-risk cases, or confirmed conflict between live evidence and the customer report. If you tell the customer a human is taking over, call this tool in the same turn. Do not use for ordinary FAQ, missing member_id, invalid/unclear member_id, one empty lookup, a Not Found result, normal pending time, or a first failed tool attempt; collect/correct information or explain the verified self-service next step instead. If a pending task already exists, acknowledge the existing handoff instead of creating another one. When calling this tool, use the generic known_facts, chat_summary, and handoff_reason inputs to give the human operator a concise, practical note. Include useful customer identifiers, contact details, collected payment/account facts, what the customer needs, why human support is needed, and suggested next steps when known. Do not mention internal tool names, hook names, procedure IDs, case IDs, run IDs, model/runtime details, or implementation details. Write those note fields in Romanized Nepali for J1N so Nepali support staff can read them without translating.',
   check_latest_deposit_status: 'Member-specific live lookup for latest/missing/pending deposit status. Requires non-empty member_id. Do not use for deposit FAQ such as methods, limits, crypto, or how-to deposit; use Deposit KB first.',
   check_latest_withdrawal_status: 'Member-specific live lookup for latest/current withdrawal status. Requires non-empty member_id. Do not use for withdrawal FAQ such as how to withdraw, process time, methods, crypto, or PIN rules; use Withdrawal KB first.',
   turnover_withdraw_condition: 'Member-specific live lookup for remaining withdrawal turnover/blocked withdrawal condition. Requires non-empty member_id. Do not use for generic turnover review or withdrawal how-to FAQ.',
@@ -267,6 +267,10 @@ const TOOL_SCHEMA_PATCHES: Record<string, Record<string, unknown>> = {
 }
 
 const TEST_MEMBER_IDS = ['JAYA1197202', 'JAYA1108F7C', 'JAYA117FFEB'] as const
+const J1N_FIXED_HANDOFF_SENTENCE =
+  'Hami ahile tapaiko yo samasya bisesh rupma samadhan garne sahakarmi sanga joddai chhau. Kripaya kehi ber wait garnuhos.'
+const J1N_FIXED_HANDOFF_PATTERN =
+  String.raw`hami\s+(?:ahile|aile)\s+tapaiko\s+yo\s+samasya\s+bisesh\s+rupma\s+samadhan\s+garne\s+sahakarmi\s+sanga\s+joddai\s+chhau`
 
 const CORE_SYSTEM_PROMPT = `You are J1N, the Jayabaji customer support agent running on Intera Harness.
 
@@ -332,7 +336,8 @@ Human handoff:
 - If the user asks for human/live agent/operator after an automated path was tried, call create_human_task instead of only saying that you will transfer.
 - Use create_human_task for VIP/sensitive account-risk, confirmed conflicting evidence, or no-progress cases only after the relevant automated path has been tried and the same unresolved issue has repeated.
 - Do not create a human task only because member_id is missing/invalid/unclear, a lookup returns Not Found/empty once, a tool attempt fails once, or a deposit/withdrawal is still within normal processing time. In those cases, collect/correct the required facts, explain the normal timing/status, or ask for screenshot/receipt evidence before handoff.
-- If you are about to say that a team, department, specialist, human operator, manual review, or future follow-up will handle the issue, call create_human_task in the same turn first and use the tool result as evidence.
+- When a human handoff is arranged, use this exact Romanized Nepali customer-facing sentence unless the customer explicitly requested Devanagari Nepali: "${J1N_FIXED_HANDOFF_SENTENCE}"
+- If you use that sentence or any equivalent promise that a team, department, specialist, human operator, manual review, or future follow-up will handle the issue, call create_human_task in the same turn first and use the tool result as evidence.
 - In create_human_task, keep question concise. Use known_facts, chat_summary, and handoff_reason to write a practical operator note in Romanized Nepali.
 - The operator note is for a human support agent, not a developer. Include useful information already known in the chat when available: customer name, member_id, phone, email, payment/withdrawal method, amount, date/time, transaction/reference number, screenshot/receipt status, account or transaction status already checked, what the customer is asking for, why human support is needed now, and a suggested next step.
 - If a fact is unknown, omit it unless the missing fact is important for the human agent to collect. Do not fill unknown fields with fake values.
@@ -816,6 +821,29 @@ const HOOKS: HookSeed[] = [
       effect: {
         decision: 'block',
         guidance: 'Do not conclude approved, successful, or credited solely from a screenshot. You may say the screenshot shows those values, then collect Member ID with ask_user_questions and include extracted receipt fields as prefilled confirmation fields before live verification.',
+      },
+    },
+  },
+  {
+    name: 'j1n_human_transfer_requires_task',
+    displayName: 'J1N human transfer requires task',
+    description: 'Auto-create a human task if J1N uses the fixed handoff sentence without create_human_task in the same turn.',
+    checkpoint: 'Stop',
+    handlerKind: 'declarative',
+    severity: 'critical',
+    enabled: true,
+    handler: {
+      kind: 'declarative',
+      check: {
+        kind: 'rule',
+        match: { ifPattern: J1N_FIXED_HANDOFF_PATTERN },
+        requireTools: ['create_human_task'],
+        reason: 'Reply uses the fixed J1N human-handoff sentence without calling create_human_task.',
+      },
+      effect: {
+        decision: 'escalate',
+        tool: 'create_human_task',
+        guidance: 'If you use the fixed J1N human-handoff sentence, call create_human_task in the same turn.',
       },
     },
   },

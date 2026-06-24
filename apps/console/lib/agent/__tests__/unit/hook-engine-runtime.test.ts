@@ -125,6 +125,9 @@ function mockTextAndToolUseStream(
   ])
 }
 
+const J1N_HANDOFF_RECEIPT =
+  'Hami ahile tapaiko yo samasya bisesh rupma samadhan garne sahakarmi sanga joddai chhau. Kripaya kehi ber wait garnuhos.'
+
 function staticHook(
   name: string,
   checkpoint: 'PreToolUse' | 'PostToolUse' | 'Stop',
@@ -459,6 +462,18 @@ describe('HookEngine bindings and handlers', () => {
       replyDraft: '已安排人工客服为您继续处理，请稍候。',
     })
     expect(withPreviousPersistedTask.summary).toBe('allow')
+
+    const withRomanizedNepaliHandoff = await engine.evaluate('Stop', {
+      checkpoint: 'Stop',
+      agentConfigId: 'agent_1',
+      procedureStepIds: [],
+      caseFacts: {},
+      missingFacts: [],
+      previousToolCalls: [],
+      traceSummary: [],
+      replyDraft: J1N_HANDOFF_RECEIPT,
+    })
+    expect(withRomanizedNepaliHandoff.summary).toBe('escalate')
   })
 })
 
@@ -589,7 +604,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(defaultHook).toBeDefined()
     const engine = new HookEngine('agent_1')
     engine.setHook(defaultHook!)
-    const modelReceipt = '已安排人工客服为您继续处理，请稍候。'
+    const modelReceipt = J1N_HANDOFF_RECEIPT
     const { loop, memory, events, sendEvent } = makeLoop(engine, [
       mockTextStream(modelReceipt),
     ], config({ maxStopRetries: 0 }))
