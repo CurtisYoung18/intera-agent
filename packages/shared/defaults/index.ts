@@ -142,7 +142,7 @@ export const HUMAN_HANDOFF_PROMISE_PATTERN = [
   String.raw`(?:\b(?:i|we)\s+will\s+(?:arrange|transfer|connect|escalate)\s+(?:you\s+)?(?:to|with)?\s*(?:a\s+)?(?:human|agent|specialist|representative)\b)`,
   String.raw`(?:已为您创建工单|已经为您创建工单|已安排人工|将安排人工|正在(?:为您|帮您)?人工处理|(?:为您|帮您)?人工处理(?:中|。|，|,|$)|已转人工|已经转人工|已为您转接|客服会(?:尽快)?(?:联系|回复)您|(?:人工|客服|专员)(?:会|将)(?:尽快)?(?:联系|回复)您|专员将尽快与您联系)`,
   String.raw`(?:hami\s+(?:ahile|aile)\s+tapaiko\s+yo\s+samasya\s+bisesh\s+rupma\s+samadhan\s+garne\s+sahakarmi\s+sanga\s+joddai\s+chhau)`,
-  String.raw`(?:हामी अहिले तपाईंलाई यस्तो समस्या विशेष रूपमा समाधान गर्ने सहकर्मीकोमा स्थानान्तरण गर्दैछौं)`,
+  String.raw`(?:(?:सर्व[,\s，]*)?हामी\s+अहिले\s+(?:तपाईंलाई|तपाइँलाई|तपाईंलाइ|तपाइलाई)\s+यस्तो\s+समस्या\s+विशेष\s+(?:रूपमा|रुपमा)\s+समाधान\s+गर्ने\s+सहकर्मीकोमा\s+स्थानान्तरण\s+गर्दै\s*छौं)`,
 ].join('|')
 
 export const DEFAULT_HOOKS: DefaultHookSeed[] = [

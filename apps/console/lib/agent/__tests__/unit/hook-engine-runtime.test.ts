@@ -127,6 +127,8 @@ function mockTextAndToolUseStream(
 
 const J1N_HANDOFF_RECEIPT =
   'Hami ahile tapaiko yo samasya bisesh rupma samadhan garne sahakarmi sanga joddai chhau. Kripaya kehi ber wait garnuhos.'
+const J1N_DEVANAGARI_HANDOFF_RECEIPT =
+  'सर्व, हामी अहिले तपाईंलाई यस्तो समस्या विशेष रूपमा समाधान गर्ने सहकर्मीकोमा स्थानान्तरण गर्दैछौं… 😊'
 
 function staticHook(
   name: string,
@@ -625,6 +627,26 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(streamedText).not.toContain('support ticket')
     expect(events.some((event) => event.type === 'human_task_created')).toBe(true)
     expect(events.some((event) => event.type === 'message_stop' && (event.data as { reason?: string }).reason === 'waiting_human')).toBe(true)
+    expect(memory.traces.some((trace) =>
+      trace.actionType === 'loop_decision' &&
+      trace.title === 'Hook checkpoint Stop: escalate'
+    )).toBe(true)
+  })
+
+  it('auto-creates a human task when the Devanagari fixed handoff sentence is drafted without create_human_task', async () => {
+    const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
+    expect(defaultHook).toBeDefined()
+    const engine = new HookEngine('agent_1')
+    engine.setHook(defaultHook!)
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockTextStream(J1N_DEVANAGARI_HANDOFF_RECEIPT),
+    ], config({ maxStopRetries: 0 }))
+
+    const result = await loop.run('human agent please', sendEvent)
+
+    expect(result.transition).toBe('waiting_human')
+    expect(memory.humanTasks).toHaveLength(1)
+    expect(events.some((event) => event.type === 'human_task_created')).toBe(true)
     expect(memory.traces.some((trace) =>
       trace.actionType === 'loop_decision' &&
       trace.title === 'Hook checkpoint Stop: escalate'
