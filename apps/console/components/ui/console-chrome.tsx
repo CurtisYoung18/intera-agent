@@ -9,7 +9,7 @@ export function consoleCaseStatusTone(status: string): 'resolved' | 'waiting' | 
     case 'waiting_human':
       return 'waiting'
     case 'escalated':
-      return 'escalated'
+      return 'waiting'
     case 'collecting':
     case 'investigating':
     case 'verifying':

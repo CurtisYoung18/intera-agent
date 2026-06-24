@@ -130,7 +130,7 @@ export default function HumanHandoffPage() {
       setError(null)
       try {
         const params = new URLSearchParams({
-          status: 'waiting_human',
+          handoff: 'active',
           limit: '100',
           agentId: selectedAgentId,
         })
@@ -202,16 +202,15 @@ export default function HumanHandoffPage() {
   const totalConversations = metrics?.totalConversations ?? 0
   const totalProcedureRuns = metrics?.totalProcedureRuns ?? 0
   const escalatedConversations = metrics?.escalatedConversations ?? 0
-  const escalatedProcedureRuns = metrics?.escalatedProcedureRuns ?? activeHandoffProcedureRuns
   const escalationSubcopy = isZh
     ? `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} 个对话`
     : `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} chats`
   const handoffActiveSubcopy = isZh
-    ? `${fmtNumber(activeHandoffProcedureRuns, locale)} 个 ProcedureRun 已交给人工`
-    : `${fmtNumber(activeHandoffProcedureRuns, locale)} human-owned ProcedureRuns`
-  const procedureRunSubcopy = isZh
-    ? `${fmtNumber(metrics?.activeHumanTasks ?? 0, locale)} 个未处理 HumanTask`
-    : `${fmtNumber(metrics?.activeHumanTasks ?? 0, locale)} active HumanTasks`
+    ? `${fmtNumber(activeHandoffProcedureRuns, locale)} 个 ProcedureRun / ${fmtNumber(metrics?.activeHumanTasks ?? 0, locale)} 个未处理 HumanTask`
+    : `${fmtNumber(activeHandoffProcedureRuns, locale)} ProcedureRuns / ${fmtNumber(metrics?.activeHumanTasks ?? 0, locale)} active HumanTasks`
+  const activeTaskSubcopy = isZh
+    ? `${fmtNumber(metrics?.resolvedHumanTasks ?? 0, locale)} 个 HumanTask 已处理`
+    : `${fmtNumber(metrics?.resolvedHumanTasks ?? 0, locale)} HumanTasks resolved`
   const generatedAt = metrics?.generatedAt ? fmtTimestamp(metrics.generatedAt, locale) : (isZh ? '未同步' : 'Not synced')
 
   if (loading) {
@@ -234,8 +233,8 @@ export default function HumanHandoffPage() {
             <h1 className="mt-3 text-[clamp(1.45rem,2vw,1.95rem)] font-semibold tracking-tight text-[var(--mist)]">{isZh ? '人工接管指挥台' : 'Human Handoff Console'}</h1>
             <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
               {isZh
-                ? '从总对话量、转人工占比和人工接管状态判断当前 Agent 的转接负载。'
-                : 'Track total conversations, handoff rate, and human-owned conversations for the active agent.'}
+                ? '从总对话量、转人工占比和已转接状态判断当前 Agent 的转接负载；转人工统计只认真实 HumanTask。'
+                : 'Track total conversations, escalation rate, and human-task-backed handoffs for the active agent.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -269,28 +268,28 @@ export default function HumanHandoffPage() {
             label={isZh ? '转人工占比' : 'Handoff rate'}
             value={fmtPercent(metrics?.escalationRate)}
             detail={escalationSubcopy}
-            tone="indigo"
+            tone="amber"
           />
           <KpiTile
             icon={Handshake}
-            label={isZh ? '人工接管中' : 'Human-owned'}
+            label={isZh ? '已转接对话' : 'Escalated chats'}
             value={fmtNumber(activeHandoffConversations, locale)}
             detail={handoffActiveSubcopy}
             tone="amber"
           />
           <KpiTile
             icon={Activity}
-            label={isZh ? '转人工 ProcedureRun' : 'Handoff ProcedureRuns'}
-            value={fmtNumber(escalatedProcedureRuns, locale)}
-            detail={procedureRunSubcopy}
-            tone="vermillion"
+            label={isZh ? '未处理人工任务' : 'Open HumanTasks'}
+            value={fmtNumber(metrics?.activeHumanTasks ?? 0, locale)}
+            detail={activeTaskSubcopy}
+            tone="amber"
           />
         </div>
 
         <div className="grid gap-3 lg:grid-cols-3">
           <SignalStrip
             icon={BarChart3}
-            label={isZh ? '接管 Procedure 类型' : 'Handoff procedure types'}
+            label={isZh ? '已转接 Procedure 类型' : 'Escalated procedure types'}
             value={fmtNumber(metrics?.handoffProcedureTypes ?? procedureTypes, locale)}
           />
           <SignalStrip
@@ -318,7 +317,7 @@ export default function HumanHandoffPage() {
           <AlertCircle className="h-6 w-6 text-vermillion/60" />
           <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '暂时无法读取接管列表' : 'Unable to read handoffs'}</h2>
           <p className="mt-2 max-w-md text-[13px] leading-6 text-[var(--fog)]">
-            {isZh ? '刚才没能加载人工接管列表，所以这个视图会先停在这里，而不是假装没有转人工会话。' : 'The handoff list could not load just now, so this view pauses instead of pretending there are no human-owned conversations.'}
+            {isZh ? '刚才没能加载人工接管列表，所以这个视图会先停在这里，而不是假装没有转人工会话。' : 'The handoff list could not load just now, so this view pauses instead of pretending there are no escalated conversations.'}
           </p>
           <button
             type="button"
@@ -331,9 +330,9 @@ export default function HumanHandoffPage() {
       ) : cases.length === 0 ? (
         <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-black/[0.08] bg-white/55 px-6 text-center shadow-[var(--shadow-card)]">
           <Sparkles className="h-6 w-6 text-indigo/55" />
-          <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '当前没有人工接管会话' : 'No active handoffs'}</h2>
+          <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '当前没有已转接会话' : 'No active escalations'}</h2>
           <p className="mt-2 max-w-md text-[13px] leading-6 text-[var(--fog)]">
-            {isZh ? '当前没有会话处于人工接管中。只要新的 ProcedureRun 转人工，它就会出现在这里。' : 'No conversation is currently human-owned. New handoffs will appear here as soon as a ProcedureRun is transferred to a human.'}
+            {isZh ? '当前没有会话带有未处理 HumanTask。只要新的 ProcedureRun 创建人工任务，它就会出现在这里。' : 'No conversation currently has an open HumanTask. New escalations appear here once a ProcedureRun creates a human task.'}
           </p>
           <Link
             href={withAgent('/operate/conversations')}
@@ -348,8 +347,8 @@ export default function HumanHandoffPage() {
           <section className="min-w-0 rounded-[28px] border border-black/[0.06] bg-white/68 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
               <div className="min-w-0">
-                <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '人工接管会话' : 'Human-owned Conversations'}</h2>
-                <p className="text-[11px] text-[var(--fog)]">{isZh ? '按最近接管活动排序。' : 'Sorted by latest handoff activity.'}</p>
+                <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '已转接会话' : 'Escalated conversations'}</h2>
+                <p className="text-[11px] text-[var(--fog)]">{isZh ? '按最近转人工活动排序；每条都对应真实 HumanTask。' : 'Sorted by latest escalation activity; every row has a real HumanTask.'}</p>
               </div>
               <Link href={withAgent('/operate/conversations')} className="flex-shrink-0 text-[11px] font-medium text-indigo/70 hover:text-indigo">
                 {isZh ? '全部会话' : 'All conversations'}
@@ -372,11 +371,11 @@ export default function HumanHandoffPage() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-[13px] font-semibold text-[var(--mist)]">{item.type.replace(/_/g, ' ')}</p>
-                        <p className="mt-1 truncate text-[11px] text-[var(--fog)]">{item.goal || (isZh ? '没有记录明确目标。' : 'No explicit goal recorded.')}</p>
+                        <p className="truncate font-mono text-[13px] font-semibold text-[var(--mist)]">{item.chatId || item.id}</p>
+                        <p className="mt-1 truncate text-[11px] text-[var(--fog)]">{item.type.replace(/_/g, ' ')} · {item.goal || (isZh ? '没有记录明确目标。' : 'No explicit goal recorded.')}</p>
                       </div>
                       <span className="rounded-full border border-amber/20 bg-amber/[0.08] px-2 py-1 text-[10px] font-semibold text-amber">
-                        {isZh ? '已转人工' : 'human-owned'}
+                        {isZh ? '已转接' : 'escalated'}
                       </span>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-[var(--fog)]">
@@ -384,7 +383,7 @@ export default function HumanHandoffPage() {
                       <span className="rounded-full bg-black/[0.04] px-2 py-1">{item.messageCount ?? '0'} {isZh ? '条消息' : 'msgs'}</span>
                       <span className="inline-flex items-center gap-1 rounded-full bg-black/[0.04] px-2 py-1">
                         <Clock3 className="h-3 w-3" />
-                        {fmtRelative(item.updatedAt, locale)} {isZh ? '接管中' : 'human-owned'}
+                        {fmtRelative(item.updatedAt, locale)} {isZh ? '已转接' : 'escalated'}
                       </span>
                     </div>
                   </button>
@@ -434,21 +433,21 @@ export default function HumanHandoffPage() {
 
                 <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
                   <div className="space-y-4">
-                    <Panel title={isZh ? '最新人工任务' : 'Latest human task'} description={isZh ? '接管目标，以及 Agent 交给人工处理的请求内容。' : 'Handoff target and the request the agent handed to a human operator.'}>
+                    <Panel title={isZh ? 'Handoff note / 内部备注' : 'Handoff note'} description={isZh ? '来自真实 HumanTask 的内部转人工备注，用于人工接手时快速理解上下文。' : 'Internal handoff note from the persisted HumanTask.'}>
                       {latestTask ? (
                         <div className="space-y-3">
-                          <InlineRow label={isZh ? '接管目标' : 'Target'} value={latestTask.queue || (isZh ? '未设置' : 'Not set')} />
+                          <InlineRow label={isZh ? '接管队列' : 'Queue'} value={latestTask.queue || (isZh ? '未设置' : 'Not set')} />
                           <InlineRow label={isZh ? '状态' : 'Status'} value={latestTask.status || (isZh ? '待处理' : 'pending')} />
                           <InlineRow label={isZh ? '创建时间' : 'Created'} value={fmtTimestamp(latestTask.createdAt, locale)} />
                           <div>
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '问题' : 'Question'}</p>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? 'Handoff note' : 'Handoff note'}</p>
                             <p className="mt-1 rounded-2xl border border-black/[0.06] bg-white/80 px-4 py-3 text-[13px] leading-6 text-[var(--mist)]">
-                              {latestTask.question || (isZh ? '没有保存给人工操作员的问题。' : 'No operator question stored.')}
+                              {latestTask.question || (isZh ? '没有保存 handoff note。' : 'No handoff note stored.')}
                             </p>
                           </div>
                         </div>
                       ) : (
-                        <p className="text-[13px] text-[var(--fog)]">{isZh ? '这个 ProcedureRun 没有返回任何 human task 载荷。' : 'No human task payload was returned for this ProcedureRun.'}</p>
+                        <p className="text-[13px] text-[var(--fog)]">{isZh ? '这个 ProcedureRun 没有关联到真实 HumanTask，不能作为已转接证据。' : 'No persisted HumanTask is linked to this ProcedureRun, so it should not be treated as escalated evidence.'}</p>
                       )}
                     </Panel>
 
@@ -466,19 +465,19 @@ export default function HumanHandoffPage() {
                     </Panel>
                   </div>
 
-                  <Panel title={isZh ? '接管时间线' : 'Handoff timeline'} description={isZh ? '当前转人工记录的关键时间点。' : 'Quick checkpoints for the current handoff record.'}>
+                  <Panel title={isZh ? '转接时间线' : 'Escalation timeline'} description={isZh ? '当前 HumanTask 转人工记录的关键时间点。' : 'Quick checkpoints for the current HumanTask-backed escalation.'}>
                     <div className="space-y-3">
                       <TimelineRow label={isZh ? '创建时间' : 'Created'} value={fmtTimestamp(detail.createdAt, locale)} />
-                      <TimelineRow label={isZh ? '转人工时间' : 'Handed off'} value={fmtTimestamp(latestTask?.createdAt ?? detail.updatedAt, locale)} />
-                      <TimelineRow label={isZh ? '最近接管活动' : 'Last handoff activity'} value={fmtTimestamp(detail.updatedAt, locale)} />
-                      <TimelineRow label={isZh ? '接管时长' : 'Handoff age'} value={fmtRelative(detail.updatedAt, locale)} />
+                      <TimelineRow label={isZh ? '转人工时间' : 'Escalated'} value={fmtTimestamp(latestTask?.createdAt ?? detail.updatedAt, locale)} />
+                      <TimelineRow label={isZh ? '最近转人工活动' : 'Last escalation activity'} value={fmtTimestamp(detail.updatedAt, locale)} />
+                      <TimelineRow label={isZh ? '转接时长' : 'Escalation age'} value={fmtRelative(detail.updatedAt, locale)} />
                     </div>
                   </Panel>
                 </div>
               </div>
             ) : (
               <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-black/[0.08] bg-white/55 text-[13px] text-[var(--fog)]">
-                {isZh ? '选择一个转人工 ProcedureRun，就能在这里查看接管详情。' : 'Select a human-owned ProcedureRun to inspect its handoff detail.'}
+                {isZh ? '选择一个已转接 ProcedureRun，就能在这里查看 HumanTask 和 handoff note。' : 'Select an escalated ProcedureRun to inspect its HumanTask and handoff note.'}
               </div>
             )}
           </section>

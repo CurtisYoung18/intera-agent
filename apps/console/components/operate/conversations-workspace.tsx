@@ -88,6 +88,15 @@ function fmtRelative(iso: string, locale: 'en' | 'zh'): string {
   return locale === 'zh' ? `${Math.floor(hours / 24)} 天前` : `${Math.floor(hours / 24)}d ago`
 }
 
+function isEscalatedCaseStatus(status: string | null | undefined): boolean {
+  return status === 'waiting_human' || status === 'escalated'
+}
+
+function caseStatusLabel(status: string, isZh: boolean): string {
+  if (isEscalatedCaseStatus(status)) return isZh ? '已转接' : 'Escalated'
+  return status.replace(/_/g, ' ')
+}
+
 function ConversationRow({
   session,
   agentId,
@@ -104,7 +113,7 @@ function ConversationRow({
   const { locale } = useConsoleLocale()
   const isZh = locale === 'zh'
   const latestCase = session.cases[0]
-  const waitingCount = session.cases.filter((item) => item.status === 'waiting_human').length
+  const hasEscalation = session.hasHumanTask
   const sourceTruth = summarizeConversationSourceTruth(
     session.cases.map((caseItem) => ({ source: caseItem.source, userId: session.userId })),
   )
@@ -133,10 +142,10 @@ function ConversationRow({
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-[14px] font-semibold text-[var(--mist)]">{displayUserLabel}</p>
                 <SourceTruthPill truth={sourceTruth} />
-                {session.hasHumanTask ? (
+                {hasEscalation ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-amber/20 bg-amber/[0.08] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber">
                     <Handshake className="h-3 w-3" />
-                    {isZh ? '人工任务' : 'HumanTask'}
+                    {isZh ? '已转接' : 'Escalated'}
                   </span>
                 ) : null}
               </div>
@@ -148,7 +157,7 @@ function ConversationRow({
 
           <div className="min-w-0 xl:w-[45%]">
             <div className="flex flex-wrap items-center gap-2">
-              {latestCase ? <ConsoleStatusPill status={latestCase.status}>{latestCase.status.replace(/_/g, ' ')}</ConsoleStatusPill> : null}
+              {latestCase ? <ConsoleStatusPill status={latestCase.status}>{caseStatusLabel(latestCase.status, isZh)}</ConsoleStatusPill> : null}
               {session.cases.map((caseItem) => (
                 <span
                   key={caseItem.id}
@@ -191,9 +200,9 @@ function ConversationRow({
               <span className="rounded-full border border-black/[0.05] bg-black/[0.025] px-2.5 py-1 text-[11px] text-[var(--fog)]">
                 {session.cases.length} {isZh ? '个 ProcedureRun' : `ProcedureRun${session.cases.length === 1 ? '' : 's'}`}
               </span>
-              {waitingCount > 0 ? (
+              {hasEscalation ? (
                 <span className="rounded-full border border-amber/18 bg-amber/[0.07] px-2.5 py-1 text-[11px] text-amber">
-                  {waitingCount} {isZh ? '个待人工' : 'waiting_human'}
+                  {isZh ? '已转接' : 'escalated'}
                 </span>
               ) : null}
             </div>
@@ -335,7 +344,7 @@ export default function ConversationsWorkspace() {
     )
   })
 
-  const waitingCount = sessions.filter((session) => session.hasHumanTask || session.cases.some((item) => item.status === 'waiting_human')).length
+  const escalatedCount = sessions.filter((session) => session.hasHumanTask).length
   const procedureRunCount = sessions.reduce((sum, session) => sum + session.cases.length, 0)
   const latestActivity = sessions[0]?.lastActivity ? fmtRelative(sessions[0].lastActivity, locale) : (isZh ? '暂无活动' : 'No activity')
   const hasVisibleData = sessions.length > 0 || total > 0
@@ -362,7 +371,7 @@ export default function ConversationsWorkspace() {
 
             <div className="flex flex-wrap gap-3">
               <MetricCard label={isZh ? '会话数' : 'Chats'} value={String(total)} tone="neutral" />
-              <MetricCard label={isZh ? '待接手' : 'Waiting handoff'} value={String(waitingCount)} tone="amber" />
+              <MetricCard label={isZh ? '已转接' : 'Escalated'} value={String(escalatedCount)} tone="amber" />
               <MetricCard label={isZh ? 'ProcedureRun 数' : 'ProcedureRuns'} value={String(procedureRunCount)} tone="teal" />
               <MetricCard label={isZh ? '最近活动' : 'Latest activity'} value={latestActivity} tone="indigo" />
             </div>

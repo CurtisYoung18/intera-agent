@@ -33,8 +33,7 @@ export interface HandoffMetricsSummary {
   generatedAt: string
 }
 
-const HANDOFF_STATUSES = new Set(['waiting_human', 'escalated'])
-const ACTIVE_HANDOFF_STATUSES = new Set(['waiting_human'])
+const RESOLVED_CASE_STATUSES = new Set(['resolved', 'completed', 'done', 'closed'])
 const RESOLVED_TASK_STATUSES = new Set(['resolved', 'closed', 'completed', 'done'])
 
 function toDate(value: Date | string | null | undefined): Date | null {
@@ -47,8 +46,16 @@ function isResolvedTask(status: string | null | undefined) {
   return RESOLVED_TASK_STATUSES.has(String(status ?? '').toLowerCase())
 }
 
-function hasHandoffSignal(item: HandoffMetricsCaseInput) {
-  return HANDOFF_STATUSES.has(item.status) || Boolean(item.humanTasks?.length)
+function hasAnyHumanTask(item: HandoffMetricsCaseInput) {
+  return Boolean(item.humanTasks?.length)
+}
+
+function hasActiveHumanTask(item: HandoffMetricsCaseInput) {
+  return (item.humanTasks ?? []).some((task) => !isResolvedTask(task.status) && !task.resolvedAt)
+}
+
+function hasOpenEscalation(item: HandoffMetricsCaseInput) {
+  return hasActiveHumanTask(item) && !RESOLVED_CASE_STATUSES.has(String(item.status ?? '').toLowerCase())
 }
 
 export function summarizeHandoffMetrics(
@@ -75,12 +82,12 @@ export function summarizeHandoffMetrics(
       latestActivity = updatedAt
     }
 
-    if (hasHandoffSignal(item)) {
+    if (hasAnyHumanTask(item)) {
       escalatedProcedureRuns += 1
       escalatedConversationIds.add(item.chatId)
     }
 
-    if (ACTIVE_HANDOFF_STATUSES.has(item.status)) {
+    if (hasOpenEscalation(item)) {
       activeHandoffProcedureRuns += 1
       activeHandoffConversationIds.add(item.chatId)
       handoffTypes.add(item.type)

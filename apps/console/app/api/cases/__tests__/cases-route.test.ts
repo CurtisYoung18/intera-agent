@@ -17,6 +17,11 @@ describe('cases contract schemas', () => {
       expect(result).toEqual({ status: 'investigating', limit: 20, offset: 0 })
     })
 
+    it('parses handoff filters', () => {
+      const result = CasesListInput.parse({ handoff: 'active', limit: '20', offset: '0' })
+      expect(result).toEqual({ handoff: 'active', limit: 20, offset: 0 })
+    })
+
     it('applies defaults when fields are missing', () => {
       const result = CasesListInput.parse({})
       expect(result).toEqual({ limit: 50, offset: 0 })

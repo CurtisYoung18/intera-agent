@@ -15,10 +15,23 @@ export const GET = defineRoute({
   inputSchema: CasesListInput,
   parseQuery: true,
   handler: async ({ input, repo }) => {
-    const { status, limit, offset } = input
+    const { status, handoff, limit, offset } = input
 
     const where: Record<string, unknown> = {}
     if (status) where.status = status
+    if (handoff) {
+      where.humanTasks = handoff === 'active'
+        ? {
+            some: {
+              status: { notIn: ['resolved', 'closed', 'completed', 'done'] },
+              resolvedAt: null,
+            },
+          }
+        : { some: {} }
+      if (!status && handoff === 'active') {
+        where.status = { notIn: ['resolved', 'completed', 'done', 'closed'] }
+      }
+    }
 
     const scopedRuns = await resolveRequiredAgentCaseScope(repo, input)
     where.id = { in: scopedRuns.caseIds }

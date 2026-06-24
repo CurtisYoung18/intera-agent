@@ -50,10 +50,19 @@ const h = vi.hoisted(() => {
   return { mockGetSession, agentConfigs, cases, runs }
 })
 
+function matchesValue(value: any, condition: any): boolean {
+  if (condition === undefined) return true
+  if (condition === null || typeof condition !== 'object' || Array.isArray(condition)) return value === condition
+  if (Array.isArray(condition.in)) return condition.in.includes(value)
+  if (typeof condition.startsWith === 'string') return typeof value === 'string' && value.startsWith(condition.startsWith)
+  return Object.entries(condition).every(([key, nested]) => matchesValue(value?.[key], nested))
+}
+
 function matchesWhere(row: any, where: Record<string, any> = {}) {
   if (where.orgId && row.orgId !== where.orgId) return false
   if (where.agentConfigId && row.agentConfigId !== where.agentConfigId) return false
   if (where.id?.in && !where.id.in.includes(row.id)) return false
+  if (where.chatId && !matchesValue(row.chatId, where.chatId)) return false
   return true
 }
 
@@ -73,7 +82,15 @@ vi.mock('@/lib/db/repo-for-org', () => ({
           .filter((row) => matchesWhere(row, { ...(args?.where ?? {}), orgId }))
           .sort((a, b) => b.updatedAt.toISOString().localeCompare(a.updatedAt.toISOString()))),
       },
+      externalConversation: {
+        findMany: vi.fn(async () => []),
+      },
       raw: {
+        case: {
+          findMany: vi.fn(async (args: any) => h.cases
+            .filter((row) => matchesWhere(row, args?.where ?? {}))
+            .map((row) => ({ id: row.id }))),
+        },
         procedureRun: {
           findMany: vi.fn(async (args: any) => h.runs
             .filter((row) => matchesWhere(row, args?.where ?? {}))

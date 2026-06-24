@@ -20,7 +20,17 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { runId: string }>({
 
     const [memory, humanTasks, msgCount, traceCount] = await Promise.all([
       repo.raw.chatMemory.findFirst({ where: { orgId: repo.orgId, runId: run.id } }),
-      repo.raw.humanTask.findMany({ where: { orgId: repo.orgId, runId: run.id }, orderBy: { createdAt: 'desc' } }),
+      repo.raw.humanTask.findMany({
+        where: {
+          orgId: repo.orgId,
+          caseId: run.caseId,
+          OR: [
+            { runId: run.id },
+            { runId: null },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
       repo.raw.message.count({ where: { orgId: repo.orgId, runId: run.id } }),
       repo.raw.actionTrace.count({ where: { orgId: repo.orgId, runId: run.id } }),
     ])
