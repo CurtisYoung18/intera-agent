@@ -1,6 +1,6 @@
 import type { SSEEvent } from '@intera/shared/types'
 import type { ChatMemoryManager } from './memory'
-import { makeUserMessage } from './message-builder'
+import { makeInternalRuntimeMessage } from './message-builder'
 import { buildHookHitCounts } from './turn-preflight'
 import type { HookEngine } from './hook-engine'
 import type { HookContextBuilder } from './hook-context-builder'
@@ -141,6 +141,6 @@ export class PostToolUsePhase {
   }
 }
 
-export function addHookFeedbackMessage(messages: { push: (message: ReturnType<typeof makeUserMessage>) => void }): (content: string) => void {
-  return (content) => messages.push(makeUserMessage(content))
+export function addHookFeedbackMessage(messages: { push: (message: ReturnType<typeof makeInternalRuntimeMessage>) => void }): (content: string) => void {
+  return (content) => messages.push(makeInternalRuntimeMessage(content, 'hook_feedback'))
 }

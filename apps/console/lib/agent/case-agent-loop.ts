@@ -20,6 +20,7 @@ import {
   HUMAN_TASK_CREATE_FAILED_PROGRESS,
 } from './human-task-errors'
 import { normalizeHumanHandoffNotePayload } from './human-handoff'
+import { makeInternalRuntimeMessage } from './message-builder'
 
 export interface CaseLoopServices {
   caseId: string
@@ -34,7 +35,6 @@ export interface CaseLoopServices {
   toolRouter: ToolRouter
   getMessages: () => Message[]
   addMessage: (msg: Message) => void
-  makeUserMessage: (content: string) => Message
 }
 
 export type CaseToolResult =
@@ -401,7 +401,7 @@ export class CaseAgentLoop {
       !Array.isArray(finalizedPayload) &&
       (finalizedPayload as { ok?: boolean }).ok === false
     ) {
-      this.services.addMessage(this.services.makeUserMessage('[PROCEDURE RUNTIME] Finalization was blocked. Review the latest customer messages and retry finalize_procedure using the current inputEpoch.'))
+      this.services.addMessage(makeInternalRuntimeMessage('[PROCEDURE RUNTIME] Finalization was blocked. Review the latest customer messages and retry finalize_procedure using the current inputEpoch.'))
       return { type: 'continue' }
     }
     const stopEval = await this.services.getHookEngine().evaluate(
@@ -459,7 +459,7 @@ export class CaseAgentLoop {
         timestamp: new Date().toISOString(),
       })
       if (stopEval.feedbackMessage) {
-        this.services.addMessage(this.services.makeUserMessage(stopEval.feedbackMessage))
+        this.services.addMessage(makeInternalRuntimeMessage(stopEval.feedbackMessage, 'hook_feedback'))
       }
       return { type: 'continue' }
     }

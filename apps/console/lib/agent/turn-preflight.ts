@@ -2,6 +2,7 @@ import type { CaseStatus, Message, SSEEvent } from '@intera/shared/types'
 import type { ChatMemoryManager } from './memory'
 import type { TraceWriter } from './trace'
 import type { HookEngine } from './hook-engine'
+import { makeInternalRuntimeMessage } from './message-builder'
 
 export type TurnPreflightResult =
   | { kind: 'continue' }
@@ -56,13 +57,19 @@ export class TurnPreflight {
       while ((pending = session.queue.dequeueNonBlocking())) {
         if (pending.content === '__SESSION_CLOSED__') continue
         const hasImages = pending.contentBlocks?.some((block) => block.type === 'image')
-        this.deps.addMessage({
-          id: this.createId(),
-          role: 'user',
-          content: hasImages ? pending.content : `[SYSTEM] Runtime input event (${pending.source}, epoch ${pending.inputEpoch}) arrived while you were working. Do not classify the customer's intent. Use the latest inputEpoch before advancing any active ProcedureRun. Content: ${pending.content}`,
-          contentBlocks: pending.contentBlocks,
-          createdAt: this.deps.now?.() ?? new Date(),
-        })
+        if (hasImages) {
+          this.deps.addMessage({
+            id: this.createId(),
+            role: 'user',
+            content: pending.content,
+            contentBlocks: pending.contentBlocks,
+            createdAt: this.deps.now?.() ?? new Date(),
+          })
+        } else {
+          this.deps.addMessage(makeInternalRuntimeMessage(
+            `[SYSTEM] Runtime input event (${pending.source}, epoch ${pending.inputEpoch}) arrived while you were working. Do not classify the customer's intent. Use the latest inputEpoch before advancing any active ProcedureRun. Content: ${pending.content}`,
+          ))
+        }
         sendEvent({
           type: 'withheld',
           data: 'Processing additional user input...',

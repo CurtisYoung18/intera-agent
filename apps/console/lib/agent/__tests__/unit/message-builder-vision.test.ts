@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildApiMessages, buildApiMessagesWithTranscriptHealth, makeUserMessage, normalizeContentBlocks } from '../../message-builder'
+import { buildApiMessages, buildApiMessagesWithTranscriptHealth, makeInternalRuntimeMessage, makeUserMessage, normalizeContentBlocks } from '../../message-builder'
 import {
   assistantProviderContent,
   hydrateMessageFromDb,
+  isCustomerVisibleMessage,
   serializeMessageForPersistence,
   toolResultProviderContent,
 } from '../../provider-transcript'
@@ -18,6 +19,21 @@ const memoryStrategy = {
 } as any
 
 describe('message-builder vision content', () => {
+  it('keeps runtime instructions provider-visible but customer-hidden', () => {
+    const message = makeInternalRuntimeMessage('[HOOK: Stop]\nRevise before replying.', 'hook_feedback')
+    const serialized = serializeMessageForPersistence(message, 'case-1')
+    const hydrated = hydrateMessageFromDb({ ...serialized, createdAt: message.createdAt })
+    const apiMessages = buildApiMessages([hydrated], chatMemory, memoryStrategy)
+
+    expect(hydrated.content).toBe('')
+    expect(hydrated.providerMeta).toMatchObject({ visibility: 'internal', transcriptKind: 'hook_feedback' })
+    expect(isCustomerVisibleMessage(hydrated)).toBe(false)
+    expect(apiMessages).toEqual([{
+      role: 'user',
+      content: [{ type: 'text', text: '[HOOK: Stop]\nRevise before replying.' }],
+    }])
+  })
+
   it('keeps user text when a message also has image content blocks', () => {
     const message = makeUserMessage('描述一下这张图', [{
       type: 'image',

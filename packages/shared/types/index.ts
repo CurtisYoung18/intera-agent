@@ -39,6 +39,7 @@ export type ProviderTranscriptKind =
   | 'assistant_response'
   | 'tool_result'
   | 'hook_feedback'
+  | 'runtime_instruction'
   | 'synthetic_repair'
 export type ProviderRepairReason =
   | 'missing_tool_result'

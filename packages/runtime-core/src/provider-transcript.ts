@@ -67,6 +67,7 @@ const TRANSCRIPT_KINDS: ProviderTranscriptKind[] = [
   'assistant_response',
   'tool_result',
   'hook_feedback',
+  'runtime_instruction',
   'synthetic_repair',
 ]
 const REPAIR_REASONS: ProviderRepairReason[] = [

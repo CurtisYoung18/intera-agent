@@ -1,9 +1,10 @@
 // Message construction utilities — extracted from AgentLoop.
 
-import type { Message, ContentBlock, MemoryStrategy, ProviderContentBlock } from '@intera/shared/types'
+import type { Message, ContentBlock, MemoryStrategy, ProviderContentBlock, ProviderTranscriptKind } from '@intera/shared/types'
 import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streaming-tool-executor'
 import type { ChatMemoryManager } from './memory'
 import {
+  makeProviderMeta,
   mergeTranscriptHealthMetrics,
   normalizeProviderContent,
   normalizeProviderTranscriptMessages,
@@ -92,6 +93,24 @@ export function makeUserMessage(
     role: 'user',
     content,
     contentBlocks: normalizedContentBlocks,
+    createdAt: new Date(),
+  } as Message
+}
+
+export function makeInternalRuntimeMessage(
+  content: string,
+  transcriptKind: Extract<ProviderTranscriptKind, 'hook_feedback' | 'runtime_instruction'> = 'runtime_instruction',
+): Message {
+  return {
+    id: crypto.randomUUID(),
+    role: 'user',
+    content: '',
+    providerContent: [{ type: 'text', text: content }],
+    providerMeta: makeProviderMeta({
+      providerFamily: 'anthropic',
+      visibility: 'internal',
+      transcriptKind,
+    }),
     createdAt: new Date(),
   } as Message
 }

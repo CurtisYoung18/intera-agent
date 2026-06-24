@@ -1,5 +1,5 @@
 import type { AssistantMessage, CaseStatus, Message, SSEEvent } from '@intera/shared/types'
-import { makeUserMessage } from './message-builder'
+import { makeInternalRuntimeMessage } from './message-builder'
 import type { TraceWriter } from './trace'
 
 export type NoToolTurnAction =
@@ -56,7 +56,7 @@ export class NoToolTurnHandler {
           'or (3) respond to the customer with findings and next steps. ' +
           'Do not produce empty turns — act on the data you just received.'
         const assistantPushed = this.ensureAssistantPushed(input.assistantMessage, input.assistantPushed)
-        this.deps.addMessage(makeUserMessage(procedureNudge))
+        this.deps.addMessage(makeInternalRuntimeMessage(procedureNudge))
         await this.deps.traceWriter.write('loop_decision', 'Procedure nudge: empty turn after tool results', {
           stage: this.deps.getCurrentStage(),
           nudgeCount,
@@ -113,7 +113,7 @@ function isInternalProcedureUserMessage(message: Message): boolean {
   if (message.role !== 'user') return false
 
   const transcriptKind = message.providerMeta?.transcriptKind
-  if (transcriptKind === 'tool_result' || transcriptKind === 'hook_feedback') {
+  if (transcriptKind === 'tool_result' || transcriptKind === 'hook_feedback' || transcriptKind === 'runtime_instruction') {
     return true
   }
 

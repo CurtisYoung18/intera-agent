@@ -680,7 +680,13 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(streamedText).toContain('I will ask a human specialist')
     const assistantMessages = result.messages.filter((m) => m.role === 'assistant').map((m) => String(m.content))
     expect(assistantMessages.join('\n')).not.toContain('I will refund you now.')
-    expect(result.messages.some((m) => m.role === 'user' && String(m.content).includes('[HOOK: Stop]'))).toBe(true)
+    expect(result.messages.some((m) => m.role === 'user' && String(m.content).includes('[HOOK: Stop]'))).toBe(false)
+    expect(result.messages.some((m) =>
+      m.role === 'user' &&
+      m.providerMeta?.visibility === 'internal' &&
+      m.providerMeta?.transcriptKind === 'hook_feedback' &&
+      JSON.stringify(m.providerContent).includes('[HOOK: Stop]')
+    )).toBe(true)
   })
 
   it('Stop escalate falls back to human escalation with a safe customer reply', async () => {

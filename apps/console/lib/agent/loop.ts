@@ -19,7 +19,7 @@ import { ConversationLoop } from './conversation-loop'
 import { Profiler } from './profiler'
 import { writeDebugTranscript } from './debug-logger'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
-import { makeUserMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
+import { makeUserMessage, makeInternalRuntimeMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
 import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import {
@@ -298,7 +298,6 @@ export class AgentLoop {
       toolRouter: this.toolRouter,
       getMessages: () => this.messages,
       addMessage: (msg) => this.messages.push(msg),
-      makeUserMessage: (content) => makeUserMessage(content),
     }
   }
 
@@ -487,7 +486,7 @@ export class AgentLoop {
         if (textReplyRuntime.stale) {
           discardVisibleText()
           assistantMessage.content = ''
-          this.messages.push(makeUserMessage('[PROCEDURE RUNTIME] A customer-visible reply was withheld because newer input arrived before send. Continue from the latest runtime input before any further tool use, finalization, or customer reply.'))
+          this.messages.push(makeInternalRuntimeMessage('[PROCEDURE RUNTIME] A customer-visible reply was withheld because newer input arrived before send. Continue from the latest runtime input before any further tool use, finalization, or customer reply.'))
           await this.traceWriter.write('loop_decision', 'Stale ProcedureRun text reply withheld', {
             basedOnInputEpoch: iterationBasedOnInputEpoch,
             latestInputEpoch: latestInputEpoch(this.deps.caseId),
@@ -578,7 +577,7 @@ export class AgentLoop {
             if (stopAction.kind === 'retry') {
               stopRetryCount++
               if (stopAction.feedbackMessage) {
-                this.messages.push(makeUserMessage(stopAction.feedbackMessage))
+                this.messages.push(makeInternalRuntimeMessage(stopAction.feedbackMessage, 'hook_feedback'))
               }
               stopReason = null
               continue
