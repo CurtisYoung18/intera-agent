@@ -680,7 +680,7 @@ function normalizeFormField(field: Record<string, unknown>, initialValues: Recor
       .slice(0, 50)
     : undefined
   const cleanedDefaultValue = cleanFormString(defaultValue, FORM_FIELD_LIMITS.defaultValue)
-  const inferredFromPlaceholder = cleanedDefaultValue == null && placeholder && shouldPromotePlaceholderToDefault(placeholder)
+  const inferredFromPlaceholder = cleanedDefaultValue == null && placeholder && shouldPromotePlaceholderToDefault(key, placeholder)
     ? placeholder
     : undefined
   const effectiveDefaultValue = cleanedDefaultValue ?? inferredFromPlaceholder
@@ -720,7 +720,9 @@ function looksLikeEncodedBlob(value: string): boolean {
   return encodedChars / Math.max(compact.length, 1) > 0.9
 }
 
-function shouldPromotePlaceholderToDefault(value: string): boolean {
+function shouldPromotePlaceholderToDefault(key: string, value: string): boolean {
+  if (normalizeFactKey(key) === 'member_id') return false
+
   const normalized = value.trim()
   if (!normalized) return false
   if (normalized.length > 120) return false

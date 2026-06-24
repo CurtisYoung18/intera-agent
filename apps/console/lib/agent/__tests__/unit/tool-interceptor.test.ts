@@ -511,6 +511,69 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     expect(result.toolResults[0]?.toolUse?.status).toBe('completed')
   })
 
+  it('does not promote member-id placeholders into default form values', async () => {
+    const sendEvent = vi.fn()
+
+    await interceptToolResults(
+      {
+        caseId: 'case-form-member-placeholder',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: vi.fn(async () => {}),
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'created',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext: vi.fn(async () => {}),
+      },
+      [{
+        name: 'ask_user_questions',
+        output: { ok: true },
+        latencyMs: 1,
+        toolUse: {
+          id: 'toolu_member_placeholder_form',
+          name: 'ask_user_questions',
+          status: 'completed',
+          input: {
+            title: 'Member ID Required',
+            fields: [{
+              key: 'member_id',
+              label: 'Member ID',
+              type: 'text',
+              required: true,
+              placeholder: 'JAYA123456',
+            }],
+          },
+        },
+      } as any],
+      sendEvent,
+    )
+
+    const formRequest = sendEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'form_request') as { data?: { fields?: Array<Record<string, unknown>> } } | undefined
+    const memberField = formRequest?.data?.fields?.find((field) => field.key === 'member_id')
+
+    expect(memberField).toMatchObject({
+      key: 'member_id',
+      placeholder: 'JAYA123456',
+    })
+    expect(memberField).not.toHaveProperty('defaultValue')
+  })
+
   it('sanitizes malformed form fields and uses a specific fallback title without case schema', async () => {
     const sendEvent = vi.fn()
     const noisyPlaceholder = `e.g. JAYAxxxxx${'1234abcd...'.repeat(80)}`
@@ -587,7 +650,6 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         fields: expect.arrayContaining([
           expect.objectContaining({
             key: 'member_id',
-            placeholder: 'JAYA...',
           }),
           expect.objectContaining({
             key: 'amount',
@@ -607,6 +669,12 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         ]),
       }),
     }))
+
+    const noisyFormRequest = sendEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'form_request') as { data?: { fields?: Array<Record<string, unknown>> } } | undefined
+    const noisyMemberField = noisyFormRequest?.data?.fields?.find((field) => field.key === 'member_id')
+    expect(noisyMemberField).not.toHaveProperty('defaultValue')
 
     sendEvent.mockClear()
     await interceptToolResults(
