@@ -78,7 +78,7 @@ const SEED_TOOLS = [
   },
   {
     name: 'create_human_task',
-    description: 'Create a structured task for a human operator to review, investigate, or decide. Include compact known_facts, chat_summary, and handoff_reason for channel operator notes when useful.',
+    description: 'Create a structured task for a human operator to review, investigate, or decide. Call this in the same turn whenever you tell the customer a human is taking over. Include compact known_facts, chat_summary, and handoff_reason for channel operator notes when useful.',
     inputSchema: JSON.stringify({
       type: 'object',
       properties: {
@@ -192,7 +192,7 @@ const SEED_HOOKS = [
   },
   {
     name: 'human_handoff_promise_requires_task',
-    description: 'Block model-authored human-support promises unless create_human_task has already run',
+    description: 'Auto-create human handoff when a model-authored human-support promise appears without create_human_task',
     checkpoint: 'Stop',
     handlerKind: 'declarative',
     handler: JSON.stringify({
@@ -201,11 +201,12 @@ const SEED_HOOKS = [
         kind: 'rule',
         match: { ifPattern: HUMAN_HANDOFF_PROMISE_PATTERN },
         requireTools: ['create_human_task'],
-        reason: 'Reply promises human support before create_human_task has run.',
+        reason: 'Reply promises human support without calling create_human_task.',
       },
       effect: {
-        decision: 'block',
-        guidance: 'Call create_human_task when human support is needed. Let the runtime send the customer-visible handoff receipt instead of writing the confirmation yourself.',
+        decision: 'escalate',
+        tool: 'create_human_task',
+        guidance: 'If you promise human handoff, call create_human_task in the same turn.',
       },
     }),
     severity: 'critical',

@@ -22,7 +22,7 @@ export const createHumanTaskTool: Tool<Input, Output> = {
 
   async prompt(_ctx: ToolContext) {
     return 'Create a human task for manual confirmation or processing. ' +
-      'Call this when a human must take over; do not only promise a transfer in plain text. ' +
+      'Call this in the same turn whenever you tell the customer a human is taking over; do not only promise a transfer in plain text. ' +
       'A successful persisted handoff finalizes the active ProcedureRun on every channel, ' +
       'even if the outer case or chat remains waiting_human for operator work. ' +
       'When useful, use known_facts, chat_summary, and handoff_reason to pass a concise note for the human operator. ' +

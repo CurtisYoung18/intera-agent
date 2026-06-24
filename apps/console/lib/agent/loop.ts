@@ -9,6 +9,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAgentClient } from './api/provider-config'
 import type { Message, AssistantMessage, SSEEvent, CaseSchemaConfig, ToolDefinition } from '@intera/shared/types'
+import { HUMAN_HANDOFF_PROMISE_PATTERN } from '@intera/shared/defaults'
 import { ChatMemoryManager } from './memory'
 import { HookEngine } from './hook-engine'
 import { ToolRouter } from './tools'
@@ -175,7 +176,6 @@ export class AgentLoop {
       getCurrentStage: () => this.currentStage,
     })
     this.humanTaskHandoffHandler = new HumanTaskHandoffHandler({
-      config: deps.config,
       traceWriter: this.traceWriter,
       getMessages: () => this.messages,
       addMessage: (message) => this.messages.push(message),
@@ -513,6 +513,12 @@ export class AgentLoop {
           stopEval as unknown as Record<string, unknown>,
         )
 
+        const preserveAutoHandoffReply =
+          stopEval.summary === 'escalate' &&
+          toolResults.length === 0 &&
+          hasPendingCreateHumanTask(stopEval) &&
+          matchesHumanHandoffPromise(fullText)
+
         if (stopEval.summary === 'warn' || stopEval.summary === 'allow') {
           for (const r of stopEval.results) {
             if (r.action === 'warn') this.chatMemory.recordHookHit(r.hookName)
@@ -521,6 +527,40 @@ export class AgentLoop {
           if (stopEval.feedbackMessage && stopEval.summary === 'warn') {
             pendingHookFeedback.push(stopEval.feedbackMessage)
           }
+        } else if (preserveAutoHandoffReply) {
+          for (const r of stopEval.results) {
+            if (r.action !== 'allow') this.chatMemory.recordHookHit(r.hookName)
+          }
+          const hookAutoEscalation = await hookToolCalls(
+            this.buildToolInterceptorContext(),
+            stopEval,
+            sendEvent,
+            { sendCustomerFallback: false },
+          )
+          if (hookAutoEscalation.createdHumanTask) {
+            flushVisibleText()
+            if (!assistantPushed && assistantMessage) {
+              this.messages.push(assistantMessage)
+              assistantPushed = true
+            }
+            sendEvent({
+              type: 'message_stop',
+              data: { reason: 'waiting_human', stage: 'waiting_human' },
+              timestamp: new Date().toISOString(),
+            })
+            await this.persistTurnMemory()
+            return {
+              messages: this.messages,
+              caseStatus: 'waiting_human',
+              transition: 'waiting_human',
+              currentStage: 'waiting_human',
+              reason: 'hook_auto_human_task',
+            }
+          }
+
+          stopBlockedThisIteration = true
+          discardVisibleText()
+          assistantMessage.content = ''
         } else {
           stopBlockedThisIteration = true
           discardVisibleText()
@@ -799,5 +839,18 @@ export class AgentLoop {
   loadMemory(data: Parameters<ChatMemoryManager['loadFromDb']>[0]) {
     this.chatMemory.loadFromDb(data)
     this.caseLoop?.syncStage()
+  }
+}
+
+function hasPendingCreateHumanTask(stopEval: { pendingToolCalls?: Array<{ tool: string }> }): boolean {
+  return (stopEval.pendingToolCalls ?? []).some((call) => call.tool === 'create_human_task')
+}
+
+function matchesHumanHandoffPromise(text: string): boolean {
+  if (!text.trim()) return false
+  try {
+    return new RegExp(HUMAN_HANDOFF_PROMISE_PATTERN, 'i').test(text)
+  } catch {
+    return false
   }
 }

@@ -491,7 +491,10 @@ export class HookEngine {
 
     const requireTools = getStringArray(check, 'requireTools')
     if (requireTools.length > 0) {
-      const called = new Set(context.previousToolCalls.map((call) => call.name))
+      const called = new Set([
+        ...context.previousToolCalls.map((call) => call.name),
+        ...(context.currentToolCalls ?? []).map((call) => call.name),
+      ])
       const missing = requireTools.filter((name) => !called.has(name))
       if (missing.length > 0) {
         return { violated: true, reason: configuredReason ?? `Required tools not called: ${missing.join(', ')}` }
@@ -500,7 +503,10 @@ export class HookEngine {
 
     const requireToolsAny = getStringArray(check, 'requireToolsAny')
     if (requireToolsAny.length > 0) {
-      const called = new Set(context.previousToolCalls.map((call) => call.name))
+      const called = new Set([
+        ...context.previousToolCalls.map((call) => call.name),
+        ...(context.currentToolCalls ?? []).map((call) => call.name),
+      ])
       const ok = requireToolsAny.some((name) => called.has(name))
       if (!ok) {
         return { violated: true, reason: configuredReason ?? `Must call at least one of: ${requireToolsAny.join(', ')}` }

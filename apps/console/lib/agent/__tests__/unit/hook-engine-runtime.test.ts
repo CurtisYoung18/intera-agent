@@ -393,7 +393,7 @@ describe('HookEngine bindings and handlers', () => {
     expect(currentEvidence.summary).toBe('allow')
   })
 
-  it('ships human handoff promise blocking as a visible default Stop Hook', async () => {
+  it('ships human handoff auto-escalation as a visible default Stop Hook', async () => {
     const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
     expect(defaultHook).toBeDefined()
 
@@ -410,11 +410,11 @@ describe('HookEngine bindings and handlers', () => {
       traceSummary: [],
       replyDraft: '已安排人工客服为您继续处理，请稍候。',
     })
-    expect(withoutTask.summary).toBe('block')
+    expect(withoutTask.summary).toBe('escalate')
     expect(withoutTask.results[0]).toMatchObject({
       hookName: 'human_handoff_promise_requires_task',
-      action: 'block',
-      reason: 'Reply promises human support before create_human_task has run.',
+      action: 'escalate',
+      reason: 'Reply promises human support without calling create_human_task.',
     })
 
     const withToolNameOnly = await engine.evaluate('Stop', {
@@ -443,12 +443,7 @@ describe('HookEngine bindings and handlers', () => {
       traceSummary: [],
       replyDraft: '已安排人工客服为您继续处理，请稍候。',
     })
-    expect(withCurrentPersistedTask.summary).toBe('block')
-    expect(withCurrentPersistedTask.results[0]).toMatchObject({
-      hookName: 'human_handoff_promise_requires_task',
-      action: 'block',
-      reason: 'Reply promises human support before create_human_task has run.',
-    })
+    expect(withCurrentPersistedTask.summary).toBe('allow')
 
     const withPreviousPersistedTask = await engine.evaluate('Stop', {
       checkpoint: 'Stop',
@@ -557,7 +552,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(streamedText).toContain('human specialist')
   })
 
-  it('withholds model-authored handoff receipts and sends the runtime-owned receipt after task persistence', async () => {
+  it('keeps the model-authored handoff receipt when create_human_task is called in the same turn', async () => {
     const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
     expect(defaultHook).toBeDefined()
     const engine = new HookEngine('agent_1')
@@ -580,15 +575,44 @@ describe('AgentLoop Hook checkpoints', () => {
       .filter((event) => event.type === 'text_delta')
       .map((event) => String(event.data))
       .join('')
-    expect(streamedText).not.toContain(modelReceipt)
-    expect(streamedText).toContain('support ticket')
+    expect(streamedText).toContain(modelReceipt)
     const assistantMessages = result.messages.filter((message) => message.role === 'assistant').map((message) => String(message.content))
-    expect(assistantMessages.join('\n')).not.toContain(modelReceipt)
-    expect(assistantMessages.join('\n')).toContain('support ticket')
+    expect(assistantMessages.join('\n')).toContain(modelReceipt)
     expect(memory.traces.some((trace) =>
       trace.actionType === 'loop_decision' &&
-      trace.title === 'Hook checkpoint Stop: block' &&
-      String(trace.payload ?? '').includes('Reply promises human support before create_human_task has run')
+      trace.title === 'Hook checkpoint Stop: allow'
+    )).toBe(true)
+  })
+
+  it('auto-creates a human task when the handoff receipt is drafted without create_human_task', async () => {
+    const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
+    expect(defaultHook).toBeDefined()
+    const engine = new HookEngine('agent_1')
+    engine.setHook(defaultHook!)
+    const modelReceipt = '已安排人工客服为您继续处理，请稍候。'
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockTextStream(modelReceipt),
+    ], config({ maxStopRetries: 0 }))
+
+    const result = await loop.run('human agent please', sendEvent)
+
+    expect(result.transition).toBe('waiting_human')
+    expect(result.caseStatus).toBe('waiting_human')
+    expect(memory.humanTasks).toHaveLength(1)
+    expect(memory.cases).toHaveLength(1)
+    expect(memory.cases[0].status).toBe('waiting_human')
+    expect(memory.cases[0].blocker).toBe('Waiting for general')
+    const streamedText = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).toContain(modelReceipt)
+    expect(streamedText).not.toContain('support ticket')
+    expect(events.some((event) => event.type === 'human_task_created')).toBe(true)
+    expect(events.some((event) => event.type === 'message_stop' && (event.data as { reason?: string }).reason === 'waiting_human')).toBe(true)
+    expect(memory.traces.some((trace) =>
+      trace.actionType === 'loop_decision' &&
+      trace.title === 'Hook checkpoint Stop: escalate'
     )).toBe(true)
   })
 

@@ -359,7 +359,11 @@ export async function processPendingHookToolCalls(
   ctx: ToolInterceptorContext,
   hookEval: HookEvaluationResult,
   sendEvent: (event: SSEEvent) => void,
-): Promise<void> {
+  options: {
+    sendCustomerFallback?: boolean
+  } = {},
+): Promise<{ createdHumanTask: boolean }> {
+  let createdHumanTask = false
   const escalatedResults = hookEval.results.filter((r) => r.action === 'escalate')
   const escalatedReasons = escalatedResults
     .map((r) => `${r.hookName}: ${r.reason || 'Hook escalation'}`)
@@ -382,8 +386,8 @@ export async function processPendingHookToolCalls(
           orgId: ctx.orgId,
           userId: ctx.userId,
           type: resolvedCaseType,
-          status: 'escalated',
-          blocker: `Hook escalation (${ptc.hookName}): ${ptc.reason}`,
+          status: 'waiting_human',
+          blocker: `Waiting for ${queue}`,
           chatId: ctx.chatId ?? ctx.caseId,
         })
         await ctx.persistence.saveMemory(ctx.caseId, {
@@ -404,6 +408,13 @@ export async function processPendingHookToolCalls(
           data: { taskId: task.id, queue, question, status: 'pending' },
           timestamp: new Date().toISOString(),
         })
+        sendEvent({
+          type: 'escalated',
+          data: { stage: ctx.getCurrentStage(), reason: 'human_task_created', taskId: task.id, queue },
+          timestamp: new Date().toISOString(),
+        })
+        await ctx.traceWriter.writeEscalated('human_task_created', { taskId: task.id, queue, stage: ctx.getCurrentStage() })
+        createdHumanTask = true
       } catch (err) {
         console.error('[ToolInterceptor] Failed to auto-create human task from Hook:', err)
       }
@@ -447,23 +458,25 @@ export async function processPendingHookToolCalls(
     }
   }
 
-  // Customer-facing fallback
-  sendEvent({
-    type: 'text_delta',
-    data: escalationMessageForRuntime(latestUserText(ctx.messages), ctx.config),
-    timestamp: new Date().toISOString(),
-  })
-  sendEvent({
-    type: 'escalated',
-    data: { stage: ctx.getCurrentStage(), reason: escalatedReasons },
-    timestamp: new Date().toISOString(),
-  })
-  await ctx.traceWriter.writeEscalated(
-    Array.isArray(escalatedReasons) ? escalatedReasons.join('; ') : String(escalatedReasons),
-    { stage: ctx.getCurrentStage() },
-  )
+  if (options.sendCustomerFallback !== false) {
+    sendEvent({
+      type: 'text_delta',
+      data: escalationMessageForRuntime(latestUserText(ctx.messages), ctx.config),
+      timestamp: new Date().toISOString(),
+    })
+    sendEvent({
+      type: 'escalated',
+      data: { stage: ctx.getCurrentStage(), reason: escalatedReasons },
+      timestamp: new Date().toISOString(),
+    })
+    await ctx.traceWriter.writeEscalated(
+      Array.isArray(escalatedReasons) ? escalatedReasons.join('; ') : String(escalatedReasons),
+      { stage: ctx.getCurrentStage() },
+    )
+  }
 
   ctx.setPendingEscalation(true)
+  return { createdHumanTask }
 }
 
 // ---------------------------------------------------------------------------
