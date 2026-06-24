@@ -113,6 +113,30 @@ describe('runtime-truth helpers', () => {
     expect(trace.detailText).toContain('Member ID [text, required]')
   })
 
+  it('renders form request traces as a readable rich form summary', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'form_request',
+      title: 'Form requested: Member ID Required',
+      detail: null,
+      payload: JSON.stringify({
+        caseId: 'case-1',
+        toolCallId: 'toolu_form_1',
+        title: 'Member ID Required',
+        description: 'Please enter your Jayabaji Member ID.',
+        fields: [
+          { id: 'member_id', type: 'text', label: 'Member ID', required: true, placeholder: 'JAYA123456' },
+        ],
+      }),
+    })
+
+    expect(trace.kind).toBe('form_request')
+    expect(trace.status).toBe('info')
+    expect(trace.semanticLabel).toBe('Form request')
+    expect(trace.detailText).toContain('title: Member ID Required')
+    expect(trace.detailText).toContain('toolCallId: toolu_form_1')
+    expect(trace.detailText).toContain('Member ID [text, required] - JAYA123456')
+  })
+
   it('renders form submission traces with labeled answers', () => {
     const trace = classifyOperateTrace({
       actionType: 'form_submit',
@@ -133,6 +157,34 @@ describe('runtime-truth helpers', () => {
     expect(trace.status).toBe('ok')
     expect(trace.detailText).toContain('title: Member ID Required')
     expect(trace.detailText).toContain('Member ID: JAYA117FFEB')
+  })
+
+  it('renders channel rich message traces with card details', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'channel_rich_message',
+      title: 'LiveChat rich message: card',
+      detail: null,
+      payload: JSON.stringify({
+        channel: 'livechat',
+        rendererAction: 'send_card',
+        richType: 'card',
+        sourceEventType: 'form_request',
+        card: {
+          title: 'Member ID Required',
+          subtitle: 'Please enter your Jayabaji Member ID.',
+          buttons: [{ id: 'open_form', label: 'Open form', type: 'webview' }],
+        },
+      }),
+    })
+
+    expect(trace.kind).toBe('channel_message')
+    expect(trace.status).toBe('ok')
+    expect(trace.semanticLabel).toBe('Channel rich message')
+    expect(trace.detailText).toContain('channel: livechat')
+    expect(trace.detailText).toContain('richType: card')
+    expect(trace.detailText).toContain('source: form_request')
+    expect(trace.detailText).toContain('title: Member ID Required')
+    expect(trace.detailText).toContain('buttons: Open form')
   })
 
   it('renders human handoff note fields in the trace panel', () => {

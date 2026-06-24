@@ -32,7 +32,9 @@ export interface TraceTruthInput {
 
 export type OperateTraceKind =
   | 'user_message'
+  | 'form_request'
   | 'form_submission'
+  | 'channel_message'
   | 'tool_call'
   | 'tool_result'
   | 'hook_decision'
@@ -196,7 +198,9 @@ function deriveTraceStatus(
   }
 
   if (trace.actionType === 'tool_call') return 'info'
+  if (trace.actionType === 'form_request') return 'info'
   if (trace.actionType === 'form_submit') return 'ok'
+  if (trace.actionType === 'channel_rich_message') return 'ok'
   if (trace.actionType === 'llm_request_start') return 'info'
   if (trace.actionType === 'llm_response') return 'ok'
   if (trace.actionType === 'human_task_created') return 'warn'
@@ -344,6 +348,116 @@ function formatHumanHandoffDetail(
   return parts.length > 0 ? parts.join(' · ') : trace.detail
 }
 
+function traceFieldRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object' && !Array.isArray(entry))
+    : []
+}
+
+function formatFormFieldLine(field: Record<string, unknown>): string | null {
+  const rawId = trimmedString(field.id) ?? trimmedString(field.key) ?? ''
+  const label = trimmedString(field.label) ?? rawId
+  if (!label) return null
+
+  const type = trimmedString(field.type) ?? 'text'
+  const tags = [type]
+  if (field.required === true) tags.push('required')
+  const suffix = trimmedString(field.placeholder) ?? trimmedString(field.defaultValue)
+  return suffix ? `${label} [${tags.join(', ')}] - ${suffix}` : `${label} [${tags.join(', ')}]`
+}
+
+function formatFormRequestDetail(
+  trace: TraceTruthInput,
+  payload: Record<string, unknown>,
+): string | null {
+  const lines: string[] = []
+  const title = trimmedString(payload.title)
+  const description = trimmedString(payload.description)
+  const toolCallId = trimmedString(payload.toolCallId)
+  const fields = traceFieldRecords(payload.fields)
+    .map(formatFormFieldLine)
+    .filter((line): line is string => Boolean(line))
+
+  if (title) lines.push(`title: ${title}`)
+  if (description) lines.push(`description: ${description}`)
+  if (toolCallId) lines.push(`toolCallId: ${toolCallId}`)
+  if (fields.length > 0) {
+    lines.push('fields:')
+    lines.push(...fields.map((line) => `- ${line}`))
+  }
+
+  return lines.length > 0 ? lines.join('\n') : trace.detail
+}
+
+function formatCardLines(card: Record<string, unknown>, prefix = ''): string[] {
+  const lines: string[] = []
+  const title = trimmedString(card.title)
+  const subtitle = trimmedString(card.subtitle)
+  const buttons = traceFieldRecords(card.buttons)
+    .map((button) => trimmedString(button.label) ?? trimmedString(button.text) ?? trimmedString(button.id))
+    .filter((label): label is string => Boolean(label))
+  if (title) lines.push(`${prefix}title: ${title}`)
+  if (subtitle) lines.push(`${prefix}subtitle: ${subtitle}`)
+  if (buttons.length > 0) lines.push(`${prefix}buttons: ${buttons.join(', ')}`)
+  return lines
+}
+
+function formatChannelRichMessageDetail(
+  trace: TraceTruthInput,
+  payload: Record<string, unknown>,
+): string | null {
+  const lines: string[] = []
+  const richType = trimmedString(payload.richType) ?? trimmedString(payload.rendererAction)
+  const sourceEventType = trimmedString(payload.sourceEventType)
+  const channel = trimmedString(payload.channel)
+  if (channel) lines.push(`channel: ${channel}`)
+  if (richType) lines.push(`richType: ${richType}`)
+  if (sourceEventType) lines.push(`source: ${sourceEventType}`)
+
+  const card = payload.card && typeof payload.card === 'object' && !Array.isArray(payload.card)
+    ? (payload.card as Record<string, unknown>)
+    : null
+  if (card) lines.push(...formatCardLines(card))
+
+  const cards = traceFieldRecords(payload.cards)
+  if (cards.length > 0) {
+    lines.push(`cards: ${cards.length}`)
+    for (const [index, entry] of cards.slice(0, 5).entries()) {
+      const title = trimmedString(entry.title) ?? '(untitled)'
+      const subtitle = trimmedString(entry.subtitle)
+      lines.push(`- ${index + 1}. ${subtitle ? `${title} - ${subtitle}` : title}`)
+    }
+    if (cards.length > 5) lines.push(`- ... ${cards.length - 5} more`)
+  }
+
+  const options = traceFieldRecords(payload.options)
+    .map((option) => trimmedString(option.label) ?? trimmedString(option.id))
+    .filter((label): label is string => Boolean(label))
+  if (options.length > 0) lines.push(`options: ${options.join(', ')}`)
+
+  const widgetPayload = payload.widgetPayload && typeof payload.widgetPayload === 'object' && !Array.isArray(payload.widgetPayload)
+    ? (payload.widgetPayload as Record<string, unknown>)
+    : null
+  if (widgetPayload) {
+    const widgetKind = trimmedString(widgetPayload.kind) ?? trimmedString(payload.widgetKind)
+    if (widgetKind) lines.push(`widget: ${widgetKind}`)
+    const widgetFields = traceFieldRecords(widgetPayload.fields)
+      .map(formatFormFieldLine)
+      .filter((line): line is string => Boolean(line))
+    if (widgetFields.length > 0) {
+      lines.push('widget fields:')
+      lines.push(...widgetFields.map((line) => `- ${line}`))
+    }
+  }
+
+  const imageUrl = trimmedString(payload.imageUrl)
+  if (imageUrl) lines.push(`image: ${imageUrl}`)
+  const caption = trimmedString(payload.caption)
+  if (caption) lines.push(`caption: ${caption}`)
+
+  return lines.length > 0 ? lines.join('\n') : trace.detail
+}
+
 function detailTextForTrace(
   trace: TraceTruthInput,
   payload: Record<string, unknown> | null,
@@ -404,6 +518,10 @@ function detailTextForTrace(
     return null
   }
 
+  if (trace.actionType === 'form_request') {
+    return formatFormRequestDetail(trace, payload)
+  }
+
   if (trace.actionType === 'form_submit') {
     const answers = payload.answers && typeof payload.answers === 'object' && !Array.isArray(payload.answers)
       ? (payload.answers as Record<string, unknown>)
@@ -432,6 +550,10 @@ function detailTextForTrace(
       }
     }
     return lines.length > 0 ? lines.join('\n') : trace.detail
+  }
+
+  if (trace.actionType === 'channel_rich_message') {
+    return formatChannelRichMessageDetail(trace, payload)
   }
 
   if (trace.actionType === 'human_task_created' || trace.actionType === 'human_task_resolved') {
@@ -678,6 +800,20 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
     }
   }
 
+  if (trace.actionType === 'form_request') {
+    return {
+      kind: 'form_request',
+      status,
+      semanticLabel: 'Form request',
+      title: trace.title || 'Form requested',
+      detailText: detailTextForTrace(trace, payload),
+      payload,
+      executionLabel,
+      executionNote,
+      isExportedReviewStage: false,
+    }
+  }
+
   if (trace.actionType === 'form_submit') {
     return {
       kind: 'form_submission',
@@ -688,6 +824,18 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
       payload,
       executionLabel,
       executionNote,
+      isExportedReviewStage: false,
+    }
+  }
+
+  if (trace.actionType === 'channel_rich_message') {
+    return {
+      kind: 'channel_message',
+      status,
+      semanticLabel: 'Channel rich message',
+      title: trace.title || 'Channel rich message',
+      detailText: detailTextForTrace(trace, payload),
+      payload,
       isExportedReviewStage: false,
     }
   }

@@ -43,8 +43,8 @@ describe('ACCENTS', () => {
     expect(ACCENTS.llm_request_start.stroke).toBe('#5b8af7')
   })
 
-  it('has all 13 accent entries from case-trace-view', () => {
-    expect(Object.keys(ACCENTS)).toHaveLength(13)
+  it('has all 16 accent entries from case-trace-view', () => {
+    expect(Object.keys(ACCENTS)).toHaveLength(16)
   })
 
   it('each accent has stroke, fill, and icon', () => {
@@ -63,6 +63,9 @@ describe('ACCENTS', () => {
       hook_hit: '#e64539',
       tool_call: '#d4912e',
       tool_result: '#2ea04a',
+      form_request: '#5b8af7',
+      form_submit: '#2ea04a',
+      channel_rich_message: '#8b6ff5',
       human_task_created: '#d4912e',
       human_task_resolved: '#2ea04a',
       final_resolution: '#2ea04a',
@@ -84,6 +87,9 @@ describe('ACCENTS', () => {
       hook_hit: 'rgba(230, 69, 57, 0.08)',
       tool_call: 'rgba(212, 145, 46, 0.10)',
       tool_result: 'rgba(46, 160, 74, 0.08)',
+      form_request: 'rgba(91, 138, 247, 0.08)',
+      form_submit: 'rgba(46, 160, 74, 0.08)',
+      channel_rich_message: 'rgba(139, 111, 245, 0.07)',
       human_task_created: 'rgba(212, 145, 46, 0.12)',
       human_task_resolved: 'rgba(46, 160, 74, 0.10)',
       final_resolution: 'rgba(46, 160, 74, 0.10)',

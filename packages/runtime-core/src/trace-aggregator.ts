@@ -104,7 +104,7 @@ const BOOKKEEPING: ReadonlySet<string> = new Set([
   'case_created', 'fact_extracted', 'cron_tick',
   'human_task_created', 'human_task_resolved', 'final_resolution',
   'incoming_chat', 'chat_deactivated',
-  'case_merged',
+  'case_merged', 'channel_rich_message',
 ])
 
 const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; source: TraceSource }>> = {
@@ -112,6 +112,8 @@ const STAGE_MAP: Partial<Record<ActionType | 'kb_search', { stage: TraceStage; s
   kb_search: { stage: 'Knowledge retrieval', source: 'knowledge' },
   tool_call: { stage: 'Tools', source: 'tools' },
   tool_result: { stage: 'Tools', source: 'tools' },
+  form_request: { stage: 'Tools', source: 'tools' },
+  form_submit: { stage: 'Tools', source: 'tools' },
   llm_request_start: { stage: 'Model generation', source: 'agent' },
   llm_response: { stage: 'Model generation', source: 'agent' },
 }

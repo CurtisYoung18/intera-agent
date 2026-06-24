@@ -28,6 +28,15 @@ const mockFetch = vi.fn()
 const mockDownloadAndEncode = vi.fn()
 const mockIsLikelyImageAttachment = vi.fn()
 const mockResolveRenderableImageUrls = vi.fn()
+const mockActionTraceCreate = vi.hoisted(() => vi.fn())
+
+vi.mock('@intera/shared/prisma', () => ({
+  prisma: {
+    actionTrace: {
+      create: (...args: unknown[]) => mockActionTraceCreate(...args),
+    },
+  },
+}))
 
 vi.mock('../../session-store', () => ({
   getSession: (...args: unknown[]) => mockGetSession(...args),
@@ -123,6 +132,7 @@ describe('livechat bridge', () => {
     mockDownloadAndEncode.mockResolvedValue({ contentType: 'image/png', data: 'base64-image' })
     mockIsLikelyImageAttachment.mockReturnValue(false)
     mockResolveRenderableImageUrls.mockResolvedValue([])
+    mockActionTraceCreate.mockResolvedValue({})
     mockFetch.mockResolvedValue(makeSseResponse([]))
     vi.stubGlobal('fetch', mockFetch)
   })
@@ -344,6 +354,16 @@ describe('livechat bridge', () => {
       undefined,
     )
     expect(mockSendCard).toHaveBeenCalled()
+    expect(mockActionTraceCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        caseId: 'case-1',
+        orgId: 'org-1',
+        chatId: 'chat-1',
+        actionType: 'channel_rich_message',
+        title: 'LiveChat rich message: card',
+        payload: expect.stringContaining('"sourceEventType":"form_request"'),
+      }),
+    })
   })
 
   it('sends renderable guide images from form request text before the form card', async () => {

@@ -447,6 +447,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
 
   it('repairs an empty ask_user_questions tool call into a renderable required-facts form', async () => {
     const sendEvent = vi.fn()
+    const traceWrite = vi.fn(async () => {})
     const result = await interceptToolResults(
       {
         caseId: 'case-form',
@@ -469,7 +470,7 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         } as any,
         persistence: {} as any,
         traceWriter: {
-          write: vi.fn(async () => {}),
+          write: traceWrite,
         } as any,
         toolRouter: {} as any,
         getCaseLoop: () => null,
@@ -508,6 +509,20 @@ describe('tool-interceptor start_procedure truth alignment', () => {
         })],
       }),
     }))
+    expect(traceWrite).toHaveBeenCalledWith(
+      'form_request',
+      'Form requested: Member ID Required',
+      expect.objectContaining({
+        caseId: 'case-form',
+        toolCallId: 'toolu_empty_form',
+        title: 'Member ID Required',
+        fields: [expect.objectContaining({
+          key: 'member_id',
+          label: 'Member ID',
+          type: 'text',
+        })],
+      }),
+    )
     expect(result.toolResults[0]?.toolUse?.status).toBe('completed')
   })
 

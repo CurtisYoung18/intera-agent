@@ -1,7 +1,8 @@
 // apps/chat/lib/livechat/bridge.ts
 // Orchestrates: LiveChat webhook → /api/messages SSE → LiveChat API calls.
 
-import type { LiveChatConfig, IncomingEvent, ContentBlock, LiveChatFailureReason } from './types'
+import { prisma } from '@intera/shared/prisma'
+import type { LiveChatConfig, IncomingEvent, ContentBlock, LiveChatFailureReason, BridgeAction } from './types'
 import { getSession, upsertSession, updateSessionState, appendTextBuffer, flushTextBuffer, closeSession, rotateSessionCase, type BridgeSessionRow } from './session-store'
 import { LiveChatRenderer } from '@/channels/livechat/renderer'
 import { confirmProcedureHumanHandoff } from '@/lib/agent/session-store'
@@ -464,6 +465,79 @@ async function readResponsePreview(response: Response): Promise<string> {
   }
 }
 
+function richTracePayloadForAction(action: BridgeAction, sourceEvent: SSEEvent): Record<string, unknown> | null {
+  const base = {
+    channel: 'livechat',
+    rendererAction: action.type,
+    sourceEventType: sourceEvent.type,
+    sourceTimestamp: sourceEvent.timestamp,
+  }
+
+  switch (action.type) {
+    case 'send_widget_payload':
+      return {
+        ...base,
+        richType: 'widget_payload',
+        widgetKind: action.payload.kind,
+        widgetPayload: action.payload,
+      }
+    case 'send_quick_replies':
+      return {
+        ...base,
+        richType: 'quick_replies',
+        text: action.text,
+        options: action.options,
+      }
+    case 'send_card':
+      return {
+        ...base,
+        richType: 'card',
+        card: action.card,
+      }
+    case 'send_carousel':
+      return {
+        ...base,
+        richType: 'carousel',
+        cardCount: action.cards.length,
+        cards: action.cards,
+      }
+    case 'send_image':
+      return {
+        ...base,
+        richType: 'image',
+        imageUrl: action.url,
+        caption: action.caption,
+      }
+    default:
+      return null
+  }
+}
+
+async function writeChannelRichMessageTrace(
+  session: BridgeSessionRow,
+  action: BridgeAction,
+  sourceEvent: SSEEvent,
+): Promise<void> {
+  const payload = richTracePayloadForAction(action, sourceEvent)
+  if (!payload) return
+
+  const richType = typeof payload.richType === 'string' ? payload.richType : action.type
+  try {
+    await prisma.actionTrace.create({
+      data: {
+        caseId: session.caseId,
+        orgId: session.orgId,
+        chatId: session.chatId,
+        actionType: 'channel_rich_message',
+        title: `LiveChat rich message: ${richType}`,
+        payload: JSON.stringify(payload),
+      },
+    })
+  } catch (err) {
+    console.error('[Bridge] Failed to write channel rich message trace:', err)
+  }
+}
+
 function canResumeTransferredSession(event: IncomingEvent): boolean {
   return event.type === 'message' ||
     event.type === 'attachment' ||
@@ -717,21 +791,26 @@ export async function handleIncomingEvent(
           switch (action.type) {
             case 'send_widget_payload':
               await sendWidgetPayload(chatId, action.payload, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await writeChannelRichMessageTrace(session, action, sseEvent)
               break
             case 'send_text':
               await sendTextMessage(chatId, action.text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
               break
             case 'send_quick_replies':
               await sendQuickReplies(chatId, action.text, action.options, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await writeChannelRichMessageTrace(session, action, sseEvent)
               break
             case 'send_card':
               await sendCard(chatId, action.card, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await writeChannelRichMessageTrace(session, action, sseEvent)
               break
             case 'send_carousel':
               await sendCarousel(chatId, action.cards, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await writeChannelRichMessageTrace(session, action, sseEvent)
               break
             case 'send_image':
               await sendImage(chatId, action.url, action.caption, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)
+              await writeChannelRichMessageTrace(session, action, sseEvent)
               break
             case 'send_system_message':
               await sendSystemMessage(chatId, action.text, config.botAccessToken, config.licenseId, p.region, p.authType, p.accountId)

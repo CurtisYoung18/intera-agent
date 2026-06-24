@@ -328,15 +328,26 @@ async function handleRequestUserInput(
     toolStatus: result.toolUse?.status ?? 'unknown',
   })
 
+  const formRequest = {
+    caseId: ctx.caseId,
+    toolCallId: result.toolUse?.id || crypto.randomUUID(),
+    title: payload.title,
+    description: payload.description,
+    fields: payload.fields,
+  }
+  await ctx.traceWriter.write(
+    'form_request',
+    payload.title.trim() ? `Form requested: ${payload.title.trim()}` : 'Form requested',
+    {
+      ...formRequest,
+      repaired: payload.repaired,
+      toolStatus: result.toolUse?.status ?? 'unknown',
+    },
+  )
+
   sendEvent({
     type: 'form_request',
-    data: {
-      caseId: ctx.caseId,
-      toolCallId: result.toolUse?.id || crypto.randomUUID(),
-      title: payload.title,
-      description: payload.description,
-      fields: payload.fields,
-    },
+    data: formRequest,
     timestamp: new Date().toISOString(),
   })
 
