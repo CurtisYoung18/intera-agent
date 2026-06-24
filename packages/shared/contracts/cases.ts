@@ -11,6 +11,7 @@ import { z } from 'zod'
 export const CasesListInput = z.object({
   status: z.string().optional(),
   handoff: z.enum(['active', 'any']).optional(),
+  groupBy: z.enum(['chat']).optional(),
   agentId: z.string().optional(),
   agentConfigId: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),

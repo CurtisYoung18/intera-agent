@@ -18,8 +18,8 @@ describe('cases contract schemas', () => {
     })
 
     it('parses handoff filters', () => {
-      const result = CasesListInput.parse({ handoff: 'active', limit: '20', offset: '0' })
-      expect(result).toEqual({ handoff: 'active', limit: 20, offset: 0 })
+      const result = CasesListInput.parse({ handoff: 'active', groupBy: 'chat', limit: '20', offset: '0' })
+      expect(result).toEqual({ handoff: 'active', groupBy: 'chat', limit: 20, offset: 0 })
     })
 
     it('applies defaults when fields are missing', () => {

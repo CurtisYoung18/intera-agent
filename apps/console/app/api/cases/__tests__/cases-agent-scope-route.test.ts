@@ -78,6 +78,23 @@ const h = vi.hoisted(() => {
       _count: { messages: 4, traces: 2 },
     },
     {
+      id: 'case-a-escalated-duplicate-chat',
+      orgId: 'default',
+      userId: 'user-a',
+      chatId: 'chat-a-3',
+      type: 'j1n_deposit_status',
+      status: 'escalated',
+      source: 'live',
+      goal: 'Same chat second handoff',
+      blocker: null,
+      createdAt: baseDate,
+      updatedAt: new Date('2026-06-16T00:06:00.000Z'),
+      resolvedAt: null,
+      memory: { summary: 'same chat second handoff', toolsCalled: '[]' },
+      humanTasks: [{ id: 'task-a-escalated-duplicate', status: 'pending', resolvedAt: null }],
+      _count: { messages: 7, traces: 3 },
+    },
+    {
       id: 'case-a-fake-waiting',
       orgId: 'default',
       userId: 'user-a',
@@ -100,6 +117,7 @@ const h = vi.hoisted(() => {
     { id: 'run-b-waiting', orgId: 'default', caseId: 'case-b-waiting', agentConfigId: 'agent-b', updatedAt: new Date('2026-06-16T00:02:00.000Z') },
     { id: 'run-a-resolved', orgId: 'default', caseId: 'case-a-resolved', agentConfigId: 'agent-a', updatedAt: new Date('2026-06-16T00:01:00.000Z') },
     { id: 'run-a-escalated', orgId: 'default', caseId: 'case-a-escalated', agentConfigId: 'agent-a', updatedAt: new Date('2026-06-16T00:04:00.000Z') },
+    { id: 'run-a-escalated-duplicate', orgId: 'default', caseId: 'case-a-escalated-duplicate-chat', agentConfigId: 'agent-a', updatedAt: new Date('2026-06-16T00:06:00.000Z') },
     { id: 'run-a-fake-waiting', orgId: 'default', caseId: 'case-a-fake-waiting', agentConfigId: 'agent-a', updatedAt: new Date('2026-06-16T00:05:00.000Z') },
   ]
   return { mockGetSession, agentConfigs, cases, runs }
@@ -211,9 +229,19 @@ describe('/api/cases agent scoping', () => {
     const body = await res.json()
 
     expect(body.ok).toBe(true)
-    expect(body.data.total).toBe(2)
-    expect(body.data.cases.map((item: any) => item.id)).toEqual(['run-a-escalated', 'run-a-waiting'])
+    expect(body.data.total).toBe(3)
+    expect(body.data.cases.map((item: any) => item.id)).toEqual(['run-a-escalated-duplicate', 'run-a-escalated', 'run-a-waiting'])
     expect(body.data.cases.some((item: any) => item.id === 'run-a-fake-waiting')).toBe(false)
+  })
+
+  it('can group active handoffs by chat for conversation-level pagination', async () => {
+    const res = await GET(makeRequest('agent-a', 'handoff=active&groupBy=chat&limit=100'))
+    const body = await res.json()
+
+    expect(body.ok).toBe(true)
+    expect(body.data.total).toBe(2)
+    expect(body.data.cases.map((item: any) => item.id)).toEqual(['run-a-escalated-duplicate', 'run-a-waiting'])
+    expect(body.data.cases.map((item: any) => item.chatId)).toEqual(['chat-a-3', 'chat-a'])
   })
 
   it('switches to a different result set for another agent', async () => {

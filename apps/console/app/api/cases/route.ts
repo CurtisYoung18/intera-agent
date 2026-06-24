@@ -15,7 +15,7 @@ export const GET = defineRoute({
   inputSchema: CasesListInput,
   parseQuery: true,
   handler: async ({ input, repo }) => {
-    const { status, handoff, limit, offset } = input
+    const { status, handoff, groupBy, limit, offset } = input
 
     const where: Record<string, unknown> = {}
     if (status) where.status = status
@@ -36,20 +36,36 @@ export const GET = defineRoute({
     const scopedRuns = await resolveRequiredAgentCaseScope(repo, input)
     where.id = { in: scopedRuns.caseIds }
 
-    const [cases, total] = await Promise.all([
-      repo.case.findMany({
-        where,
-        orderBy: { updatedAt: 'desc' as const },
-        take: limit,
-        skip: offset,
-        include: {
-          memory: true,
-          humanTasks: { take: 5, orderBy: { createdAt: 'desc' as const } },
-          _count: { select: { messages: true, traces: true } },
-        },
-      }),
-      repo.case.count({ where }),
-    ])
+    const include = {
+      memory: true,
+      humanTasks: { take: 5, orderBy: { createdAt: 'desc' as const } },
+      _count: { select: { messages: true, traces: true } },
+    }
+    const allCases = groupBy === 'chat'
+      ? await repo.case.findMany({
+          where,
+          orderBy: { updatedAt: 'desc' as const },
+          include,
+        })
+      : null
+    const uniqueChatCases = allCases
+      ? allCases.filter((caseRow, index, rows) => rows.findIndex((candidate) => candidate.chatId === caseRow.chatId) === index)
+      : null
+    const [cases, total] = uniqueChatCases
+      ? [
+          uniqueChatCases.slice(offset, offset + limit),
+          uniqueChatCases.length,
+        ]
+      : await Promise.all([
+          repo.case.findMany({
+            where,
+            orderBy: { updatedAt: 'desc' as const },
+            take: limit,
+            skip: offset,
+            include,
+          }),
+          repo.case.count({ where }),
+        ])
     const caseIds = new Set(cases.map((caseRow) => caseRow.id))
     const activeRuns = scopedRuns.runs.filter((run) => caseIds.has(run.caseId))
     const runByCase = new Map<string, string>()

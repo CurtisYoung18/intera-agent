@@ -145,6 +145,7 @@ export default function HumanHandoffPage() {
       try {
         const params = new URLSearchParams({
           handoff: 'active',
+          groupBy: 'chat',
           limit: String(HANDOFF_PAGE_SIZE),
           offset: String(page * HANDOFF_PAGE_SIZE),
           agentId: selectedAgentId,
