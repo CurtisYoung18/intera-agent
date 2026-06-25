@@ -52,9 +52,10 @@ describe('computeConversationMetrics', () => {
     const metrics = computeConversationMetrics(traces)
 
     expect(metrics.llmCalls).toBe(1)
-    expect(metrics.inputTokens).toBe(100)
+    expect(metrics.inputTokens).toBe(140)
     expect(metrics.outputTokens).toBe(20)
     expect(metrics.cacheReadTokens).toBe(40)
+    expect(metrics.totalTokens).toBe(160)
     expect(metrics.turnWallMs).toBe(5540)
     expect(metrics.toolPhaseMs).toBe(3)
   })
@@ -81,6 +82,32 @@ describe('computeConversationMetrics', () => {
     const metrics = computeConversationMetrics(traces)
 
     expect(metrics.llmCalls).toBe(1)
+    expect(metrics.inputTokens).toBe(5482)
+    expect(metrics.outputTokens).toBe(71)
+    expect(metrics.cacheReadTokens).toBe(3200)
+    expect(metrics.cacheWriteTokens).toBe(1280)
+    expect(metrics.totalTokens).toBe(5553)
+  })
+
+  it('does not double-count cache details when input_tokens already includes cached prompt tokens', () => {
+    const metrics = computeConversationMetrics([
+      {
+        actionType: 'llm_response',
+        title: 'LLM response: end_turn',
+        createdAt: '2026-06-11T12:00:00.000Z',
+        payload: JSON.stringify({
+          usage: {
+            input_tokens: 5482,
+            output_tokens: 71,
+            input_tokens_details: {
+              cached_tokens: 3200,
+              cache_write_tokens: 1280,
+            },
+          },
+        }),
+      },
+    ])
+
     expect(metrics.inputTokens).toBe(5482)
     expect(metrics.outputTokens).toBe(71)
     expect(metrics.cacheReadTokens).toBe(3200)

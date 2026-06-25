@@ -14,6 +14,8 @@ import { getRuntimeSourceTruth, summarizeToolPairing } from '@/lib/operate/runti
 import { useAgentContext } from '@/lib/agent/agent-context'
 import {
   hasRecognizedTokenUsage,
+  cacheHitRateFromParts,
+  promptTokenTotalFromParts,
   readCacheReadTokens,
   readCacheWriteTokens,
   readInputTokens,
@@ -319,7 +321,7 @@ export default function ProcedureRunDetailWorkspace({
     // The per-iteration table shows full detail for each iteration.
     const warmInput = metrics.iterMetrics
       .filter(im => im.inputTokens > 0 && im.cacheReadTokens > 0)
-      .reduce((s, im) => s + im.inputTokens + im.cacheReadTokens, 0)
+      .reduce((s, im) => s + promptTokenTotalFromParts(im.inputTokens, im.cacheReadTokens), 0)
     const warmCache = metrics.iterMetrics
       .filter(im => im.inputTokens > 0 && im.cacheReadTokens > 0)
       .reduce((s, im) => s + im.cacheReadTokens, 0)
@@ -327,7 +329,7 @@ export default function ProcedureRunDetailWorkspace({
       const warmRate = ((warmCache / warmInput) * 100).toFixed(0)
       return t('caseDetail.cacheHitRateWarm', { rate: warmRate })
     }
-    return t('caseDetail.cacheHitRate', { rate: ((metrics.cacheReadTokens / Math.max(metrics.inputTokens + metrics.cacheReadTokens, 1)) * 100).toFixed(0) })
+    return t('caseDetail.cacheHitRate', { rate: (cacheHitRateFromParts(metrics.inputTokens, metrics.cacheReadTokens, metrics.cacheWriteTokens) * 100).toFixed(0) })
   })()) : undefined} />
             <Stat label={t('caseDetail.cacheWrite')} value={metrics.cacheWriteTokens.toLocaleString()} />
             <Stat label={t('caseDetail.avgTokensPerCall')} value={metrics.llmCalls > 0 ? (metrics.totalTokens / metrics.llmCalls).toFixed(0) : '0'} />
@@ -364,7 +366,7 @@ export default function ProcedureRunDetailWorkspace({
                     <td className="py-2 pr-3 text-right tabular-nums">{im.inputTokens.toLocaleString()}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.outputTokens.toLocaleString()}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.cacheReadTokens > 0 ? im.cacheReadTokens.toLocaleString() : '-'}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{im.cacheReadTokens > 0 ? `${((im.cacheReadTokens / Math.max(im.inputTokens + im.cacheReadTokens, 1)) * 100).toFixed(0)}%` : '-'}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{im.cacheReadTokens > 0 ? `${(cacheHitRateFromParts(im.inputTokens, im.cacheReadTokens) * 100).toFixed(0)}%` : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.llmWallMs > 0 ? fmtMs(im.llmWallMs) : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.toolsWallMs > 0 ? fmtMs(im.toolsWallMs) : '-'}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{im.toolCount}</td>

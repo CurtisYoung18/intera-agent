@@ -8,6 +8,7 @@ import {
 import RenderHintCard from '@/components/chat/render-hint-card'
 import CopyButton from '@/components/ui/copy-button'
 import { OrganicLoader } from '@/components/config-pilot/ai-motion'
+import { cacheHitRateFromParts, promptTokenTotalFromParts } from '@/lib/agent/usage-accounting'
 import type {
   PlaygroundTraceEvent,
   PlaygroundTraceStep,
@@ -92,12 +93,12 @@ function TraceHeader({ onCollapse }: { onCollapse: () => void }) {
 
 function promptTokenTotal(usage?: PlaygroundTraceStep['usage']): number {
   if (!usage) return 0
-  return (usage.inputTokens || 0) + (usage.cacheReadTokens || 0) + (usage.cacheWriteTokens || 0)
+  return promptTokenTotalFromParts(usage.inputTokens, usage.cacheReadTokens, usage.cacheWriteTokens)
 }
 
 function SessionMetricsGrid({ metrics, tb }: { metrics: TraceSidebarProps['sessionMetrics']; tb: (k: string) => string }) {
   const { totalInput, totalCacheRead, totalCacheWrite, totalOutput, totalTools, llmCalls, totalMs } = metrics
-  const totalPrompt = totalInput + totalCacheRead + totalCacheWrite
+  const totalPrompt = promptTokenTotalFromParts(totalInput, totalCacheRead, totalCacheWrite)
   const totalTokens = totalPrompt + totalOutput
 
   const fmtTokens = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n)
@@ -568,8 +569,8 @@ function TurnSection({
     cacheRead = modelStep.usage.cacheReadTokens || 0
     cacheWrite = modelStep.usage.cacheWriteTokens || 0
   }
-  const turnPrompt = turnInput + cacheRead + cacheWrite
-  const cachePct = turnPrompt > 0 ? Math.round(cacheRead / turnPrompt * 100) : 0
+  const turnPrompt = promptTokenTotalFromParts(turnInput, cacheRead, cacheWrite)
+  const cachePct = Math.round(cacheHitRateFromParts(turnInput, cacheRead, cacheWrite) * 100)
   const toolSteps = steps.filter((s) => s.stage === 'Tools' || s.stage === 'Knowledge retrieval')
   const toolCount = toolSteps.reduce((sum, s) => sum + (s.detail?.length || 0), 0)
   const hasLiveTools = isLatest && isResponding && liveTools.length > 0
