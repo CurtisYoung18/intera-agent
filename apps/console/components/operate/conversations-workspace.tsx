@@ -23,6 +23,7 @@ import { apiClient } from '@/lib/api/client'
 import { useAgentContext } from '@/lib/agent/agent-context'
 import { summarizeConversationSourceTruth } from '@/lib/operate/runtime-truth'
 import type { ChatsListResponse, ChatDeleteResponse, ChatMatchedMessage } from '@intera/shared/contracts/chats'
+import type { HandoffMetricsResponse } from '@intera/shared/contracts/handoff'
 
 interface CaseSummary {
   id: string
@@ -261,6 +262,7 @@ export default function ConversationsWorkspace() {
   const { selectedAgentId, loading: agentLoading, loadError: agentLoadError } = useAgentContext()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [total, setTotal] = useState(0)
+  const [globalEscalatedCount, setGlobalEscalatedCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -293,9 +295,14 @@ export default function ConversationsWorkspace() {
     try {
       const params = new URLSearchParams({ limit: '200', agentId: selectedAgentId })
       if (debouncedSearch.length >= 2) params.set('q', debouncedSearch)
-      const result = await apiClient<ChatsListResponse>(`/api/chats?${params.toString()}`)
+      const metricsParams = new URLSearchParams({ agentId: selectedAgentId })
+      const [result, metricsResult] = await Promise.all([
+        apiClient<ChatsListResponse>(`/api/chats?${params.toString()}`),
+        apiClient<HandoffMetricsResponse>(`/api/operate/handoff/metrics?${metricsParams.toString()}`),
+      ])
       setSessions(result.data.sessions)
       setTotal(result.data.total)
+      setGlobalEscalatedCount(metricsResult.data.metrics.escalatedConversations)
       setQueryMeta(result.data.query)
       setLoadError(null)
       hasLoadedRef.current = true
@@ -344,7 +351,8 @@ export default function ConversationsWorkspace() {
     )
   })
 
-  const escalatedCount = sessions.filter((session) => session.hasHumanTask).length
+  const loadedEscalatedCount = sessions.filter((session) => session.hasHumanTask).length
+  const escalatedCount = globalEscalatedCount ?? loadedEscalatedCount
   const procedureRunCount = sessions.reduce((sum, session) => sum + session.cases.length, 0)
   const latestActivity = sessions[0]?.lastActivity ? fmtRelative(sessions[0].lastActivity, locale) : (isZh ? '暂无活动' : 'No activity')
   const hasVisibleData = sessions.length > 0 || total > 0

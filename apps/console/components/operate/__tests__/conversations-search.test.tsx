@@ -65,6 +65,28 @@ beforeEach(() => {
   h.searchParams = new URLSearchParams()
   h.routerPush.mockReset()
   h.apiClient.mockImplementation(async (url: string) => {
+    if (url.includes('/api/operate/handoff/metrics')) {
+      return {
+        ok: true,
+        data: {
+          metrics: {
+            totalConversations: 1097,
+            totalProcedureRuns: 1377,
+            totalMessages: 0,
+            escalatedConversations: 345,
+            escalatedProcedureRuns: 0,
+            escalationRate: 0.314,
+            activeHandoffConversations: 345,
+            activeHandoffProcedureRuns: 0,
+            activeHumanTasks: 0,
+            resolvedHumanTasks: 0,
+            handoffProcedureTypes: 0,
+            latestActivityAt: null,
+            generatedAt: '2026-06-25T00:00:00.000Z',
+          },
+        },
+      }
+    }
     if (url.includes('/api/chats/chat-new/traces')) {
       return { ok: true, data: { traces: [] } }
     }
@@ -134,7 +156,9 @@ describe('conversation content search UI', () => {
 
     await waitFor(() => {
       expect(h.apiClient).toHaveBeenCalledWith('/api/chats?limit=200&agentId=agent-a')
+      expect(h.apiClient).toHaveBeenCalledWith('/api/operate/handoff/metrics?agentId=agent-a')
     })
+    expect(screen.getByText('345')).toBeTruthy()
 
     fireEvent.change(screen.getByPlaceholderText('Search user, chat, Procedure, or message content'), {
       target: { value: 'deposit' },
