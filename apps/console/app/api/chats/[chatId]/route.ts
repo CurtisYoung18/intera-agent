@@ -30,7 +30,20 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agent
     where: { chatId, ...caseIdFilterForScope(scope) },
     orderBy: { updatedAt: 'desc' as const },
     include: {
-      humanTasks: { select: { id: true }, take: 1 },
+      humanTasks: {
+        select: {
+          id: true,
+          caseId: true,
+          runId: true,
+          queue: true,
+          status: true,
+          question: true,
+          notes: true,
+          createdAt: true,
+          resolvedAt: true,
+        },
+        orderBy: { createdAt: 'desc' as const },
+      },
       _count: { select: { messages: true } },
     },
   })
@@ -45,6 +58,20 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agent
   for (const run of activeRuns) {
     if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
   }
+  const handoffTasks = cases
+    .flatMap((c) => c.humanTasks.map((task) => ({
+      id: task.id,
+      caseId: task.caseId,
+      runId: task.runId ?? runByCase.get(c.id) ?? null,
+      procedureType: c.type,
+      queue: task.queue,
+      status: task.status,
+      question: task.question,
+      notes: task.notes,
+      createdAt: task.createdAt.toISOString(),
+      resolvedAt: task.resolvedAt?.toISOString() ?? null,
+    })))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   const session: ChatSession & { externalChatId?: string } = {
     chatId,
@@ -67,6 +94,7 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agent
       cases[0]?.updatedAt.toISOString() ?? new Date(0).toISOString(),
     ),
     hasHumanTask: cases.some((c) => c.humanTasks.length > 0),
+    handoffTasks,
   }
 
   return {

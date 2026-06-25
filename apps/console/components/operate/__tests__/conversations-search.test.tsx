@@ -179,4 +179,60 @@ describe('conversation content search UI', () => {
       window.requestAnimationFrame = originalRaf
     }
   })
+
+  it('renders HumanTask transfer notes as internal cards in the conversation', async () => {
+    h.apiClient.mockImplementation(async (url: string) => {
+      if (url.includes('/api/chats/chat-new/traces')) {
+        return { ok: true, data: { traces: [] } }
+      }
+      if (url.includes('/api/chats/chat-new/messages')) {
+        return {
+          ok: true,
+          data: {
+            messages: [{
+              id: 'msg-deposit-user',
+              role: 'user',
+              content: 'My deposit is still missing after UTR JAYA117FFEB.',
+              createdAt: '2026-06-16T00:03:20.000Z',
+              runId: 'run-new',
+              procedureType: 'deposit_not_credited',
+              procedureStatus: 'active',
+            }],
+          },
+        }
+      }
+      if (url.includes('/api/chats/chat-new')) {
+        return {
+          ok: true,
+          data: {
+            session: chatSession({
+              hasHumanTask: true,
+              handoffTasks: [{
+                id: 'task-new',
+                caseId: 'case-new',
+                runId: 'run-new',
+                procedureType: 'deposit_not_credited',
+                queue: 'payment_ops',
+                status: 'pending',
+                question: 'Please review this deposit issue before taking over.',
+                notes: null,
+                createdAt: '2026-06-16T00:03:25.000Z',
+                resolvedAt: null,
+              }],
+            }),
+            requestedChatId: 'chat-new',
+            resolvedChatId: 'chat-new',
+          },
+        }
+      }
+      throw new Error(`Unexpected apiClient call: ${url}`)
+    })
+
+    render(<ConversationDetailWorkspace chatId="chat-new" />)
+
+    expect(await screen.findByText('Human handoff note')).toBeTruthy()
+    expect(screen.getByText('Please review this deposit issue before taking over.')).toBeTruthy()
+    expect(screen.getByText('payment_ops')).toBeTruthy()
+    expect(screen.getAllByText('deposit not credited').length).toBeGreaterThan(0)
+  })
 })

@@ -33,7 +33,17 @@ const h = vi.hoisted(() => {
       goal: 'Agent B chat',
       createdAt: new Date('2026-06-16T00:00:00.000Z'),
       updatedAt: new Date('2026-06-16T00:02:00.000Z'),
-      humanTasks: [{ id: 'task-b' }],
+      humanTasks: [{
+        id: 'task-b',
+        caseId: 'case-b',
+        runId: null,
+        queue: 'payment_ops',
+        status: 'pending',
+        question: 'Please review this withdrawal handoff before taking over.',
+        notes: null,
+        createdAt: new Date('2026-06-16T00:02:30.000Z'),
+        resolvedAt: null,
+      }],
       _count: { messages: 3 },
     },
   ]
@@ -146,6 +156,18 @@ describe('/api/chats/[chatId] agent scoping', () => {
       runId: 'run-b',
       goal: 'Agent B chat',
     })
+    expect(body.data.session.handoffTasks).toEqual([
+      expect.objectContaining({
+        id: 'task-b',
+        caseId: 'case-b',
+        runId: 'run-b',
+        procedureType: 'withdrawal_password_reset',
+        queue: 'payment_ops',
+        status: 'pending',
+        question: 'Please review this withdrawal handoff before taking over.',
+        createdAt: '2026-06-16T00:02:30.000Z',
+      }),
+    ])
   })
 
   it('rejects an agent outside the active org', async () => {

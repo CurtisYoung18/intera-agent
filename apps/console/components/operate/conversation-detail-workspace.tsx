@@ -12,6 +12,7 @@ import {
   Clock,
   Zap,
   Cpu,
+  Handshake,
 } from 'lucide-react'
 import OrganicLoader from '@intera/shared/ui/organic-loader'
 import ExportButton from '@/components/ui/export-button'
@@ -42,6 +43,19 @@ interface CaseSummary {
   _count?: { messages: number }
 }
 
+interface HandoffTask {
+  id: string
+  caseId: string
+  runId?: string | null
+  procedureType?: string
+  queue: string
+  status: string
+  question: string
+  notes?: string | null
+  createdAt: string
+  resolvedAt?: string | null
+}
+
 function normalizeTraceActionType(actionType: string): string {
   return actionType
 }
@@ -49,6 +63,7 @@ function normalizeTraceActionType(actionType: string): string {
 interface ChatSession {
   chatId: string; userId: string; cases: CaseSummary[]
   messageCount: number; lastActivity: string; hasHumanTask: boolean
+  handoffTasks?: HandoffTask[]
   externalChatId?: string | null
 }
 
@@ -74,6 +89,16 @@ function statusLabel(status: string, isZh: boolean): string {
 
 function fmtTime(iso: string, locale: 'en' | 'zh'): string {
   return new Date(iso).toLocaleTimeString(locale === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function fmtDateTime(iso: string | null | undefined, locale: 'en' | 'zh'): string {
+  if (!iso) return locale === 'zh' ? '未记录' : 'Not recorded'
+  return new Date(iso).toLocaleString(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function fmtMs(ms: number): string {
@@ -168,6 +193,54 @@ function MessageRow({
         </div>
         <span className="text-[10px] text-[var(--fog)]/60">{fmtTime(msg.createdAt, locale)}</span>
       </div>
+    </div>
+  )
+}
+
+function HandoffNoteRow({ task, locale }: { task: HandoffTask; locale: 'en' | 'zh' }) {
+  const isZh = locale === 'zh'
+  const note = task.question?.trim() || task.notes?.trim() || (isZh ? '没有保存转人工备注。' : 'No handoff note was stored.')
+  const status = task.status || 'pending'
+  return (
+    <div className="scroll-mt-32 rounded-[22px] border border-amber/[0.24] bg-amber/[0.08] px-4 py-3 shadow-[var(--shadow-card)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber/[0.14] text-amber">
+            <Handshake className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold text-[var(--mist)]">{isZh ? '人工转接备注' : 'Human handoff note'}</p>
+            <p className="mt-0.5 text-[11px] leading-5 text-[var(--fog)]">
+              {isZh ? '来自真实 HumanTask，用于人工同事快速接手。' : 'Persisted from the HumanTask so operators can pick up context quickly.'}
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex w-fit items-center rounded-full border border-amber/[0.25] bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-amber">
+          {status.replace(/_/g, ' ')}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <InlineMeta label={isZh ? '接管队列' : 'Queue'} value={task.queue || (isZh ? '未设置' : 'Not set')} />
+        <InlineMeta label={isZh ? '流程' : 'Procedure'} value={task.procedureType?.replace(/_/g, ' ') || (isZh ? '未记录' : 'Not recorded')} />
+        <InlineMeta label={isZh ? '创建时间' : 'Created'} value={fmtDateTime(task.createdAt, locale)} />
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-black/[0.05] bg-white/[0.72] px-4 py-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--fog)]">{isZh ? '转接说明' : 'Transfer note'}</p>
+        <div className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-6 text-[var(--mist)]">
+          <MessageContent content={note} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InlineMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-black/[0.04] bg-white/[0.55] px-3 py-2">
+      <p className="text-[10px] text-[var(--fog)]">{label}</p>
+      <p className="mt-0.5 truncate text-[12px] font-semibold text-[var(--mist)]">{value}</p>
     </div>
   )
 }
@@ -337,17 +410,38 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
     if (messages.length > 0) setMatchMissing(true)
   }, [loading, matchedMessageId, messages])
 
-  type Row = { type: 'msg'; msg: MsgItem } | { type: 'case_banner'; c: CaseSummary }
+  type Row = { type: 'msg'; msg: MsgItem } | { type: 'case_banner'; c: CaseSummary } | { type: 'handoff_note'; task: HandoffTask }
   const rows: Row[] = []
-  let lastRunId = ''
-  for (const msg of messages) {
-    const runId = msg.runId ?? ''
-    if (runId !== lastRunId) {
-      const c = session?.cases.find((x) => x.runId === runId)
+  const timelineItems = [
+    ...messages.map((msg) => ({
+      kind: 'msg' as const,
+      createdAt: msg.createdAt,
+      runId: msg.runId ?? null,
+      msg,
+    })),
+    ...(session?.handoffTasks ?? []).map((task) => ({
+      kind: 'handoff_note' as const,
+      createdAt: task.createdAt,
+      runId: task.runId ?? null,
+      caseId: task.caseId,
+      task,
+    })),
+  ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  let lastContextKey = ''
+  for (const item of timelineItems) {
+    const contextKey = item.runId ?? ('caseId' in item ? item.caseId : '')
+    if (contextKey && contextKey !== lastContextKey) {
+      const c = session?.cases.find((x) => x.runId === item.runId || x.id === contextKey)
       if (c) rows.push({ type: 'case_banner', c })
-      lastRunId = runId
+      lastContextKey = contextKey
+    } else if (!contextKey) {
+      lastContextKey = ''
     }
-    rows.push({ type: 'msg', msg })
+    if (item.kind === 'handoff_note') {
+      rows.push({ type: 'handoff_note', task: item.task })
+    } else {
+      rows.push({ type: 'msg', msg: item.msg })
+    }
   }
 
   async function handleDelete() {
@@ -659,6 +753,9 @@ export default function ConversationDetailWorkspace({ chatId }: { chatId: string
                     <div className="h-px flex-1 bg-black/[0.06]" />
                   </div>
                 )
+              }
+              if (row.type === 'handoff_note') {
+                return <HandoffNoteRow key={`handoff-note-${row.task.id}`} task={row.task} locale={locale} />
               }
               return (
                 <MessageRow

@@ -42,6 +42,20 @@ export const CaseSummaryInChatSchema = z.object({
 })
 export type CaseSummaryInChat = z.infer<typeof CaseSummaryInChatSchema>
 
+export const ChatHandoffTaskSchema = z.object({
+  id: z.string(),
+  caseId: z.string(),
+  runId: z.string().nullable().optional(),
+  procedureType: z.string().optional(),
+  queue: z.string(),
+  status: z.string(),
+  question: z.string(),
+  notes: z.string().nullable().optional(),
+  createdAt: z.string(),
+  resolvedAt: z.string().nullable().optional(),
+})
+export type ChatHandoffTask = z.infer<typeof ChatHandoffTaskSchema>
+
 export const ChatMatchedMessageSchema = z.object({
   messageId: z.string(),
   caseId: z.string(),
@@ -60,6 +74,7 @@ export const ChatSessionSchema = z.object({
   messageCount: z.number().int(),
   lastActivity: z.string(),
   hasHumanTask: z.boolean(),
+  handoffTasks: z.array(ChatHandoffTaskSchema).optional(),
   matchedMessages: z.array(ChatMatchedMessageSchema).optional(),
 })
 export type ChatSession = z.infer<typeof ChatSessionSchema>
