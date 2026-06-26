@@ -68,6 +68,10 @@ export const ChatMatchedMessageSchema = z.object({
 export type ChatMatchedMessage = z.infer<typeof ChatMatchedMessageSchema>
 
 export const ChatSessionSchema = z.object({
+  segmentId: z.string(),
+  segmentIndex: z.number().int().nonnegative(),
+  segmentStartAt: z.string(),
+  segmentEndAt: z.string(),
   chatId: z.string(),
   userId: z.string(),
   cases: z.array(CaseSummaryInChatSchema),

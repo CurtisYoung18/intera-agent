@@ -33,6 +33,17 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
             resolvedAt: true,
           },
         },
+        messages: {
+          select: {
+            id: true,
+            caseId: true,
+            role: true,
+            createdAt: true,
+            providerContent: true,
+            providerMeta: true,
+          },
+          orderBy: { createdAt: 'asc' as const },
+        },
         _count: { select: { messages: true } },
       },
     })

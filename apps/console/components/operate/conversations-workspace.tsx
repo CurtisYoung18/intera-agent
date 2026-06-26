@@ -37,6 +37,10 @@ interface CaseSummary {
 }
 
 interface ChatSession {
+  segmentId: string
+  segmentIndex: number
+  segmentStartAt: string
+  segmentEndAt: string
   chatId: string
   userId: string
   cases: CaseSummary[]
@@ -127,6 +131,7 @@ function ConversationRow({
   if (firstMatch?.messageId && searchQuery.trim()) hrefParams.set('q', searchQuery.trim())
   const hrefSuffix = hrefParams.toString() ? `?${hrefParams.toString()}` : ''
   const href = `/operate/conversations/${encodeURIComponent(session.chatId)}${hrefSuffix}`
+  const segmentLabel = isZh ? `会话段 ${session.segmentIndex + 1}` : `Segment ${session.segmentIndex + 1}`
 
   return (
     <div className="group relative min-w-0">
@@ -151,7 +156,7 @@ function ConversationRow({
                 ) : null}
               </div>
               <p className="mt-1 truncate font-mono text-[11px] text-[var(--fog)]">
-                {sourceTruth.kind === 'synthetic_review' ? (isZh ? '评审会话' : 'Review chat') : (isZh ? '会话' : 'Chat')} {session.chatId}
+                {sourceTruth.kind === 'synthetic_review' ? (isZh ? '评审会话' : 'Review chat') : segmentLabel} · {session.chatId}
               </p>
             </div>
           </div>
@@ -231,8 +236,8 @@ function ConversationRow({
         }}
         disabled={deleting}
         className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-[14px] border border-transparent bg-white/72 text-[var(--vermillion)]/55 opacity-100 shadow-[0_10px_24px_rgba(21,23,25,0.04)] transition-all hover:border-[var(--vermillion)]/18 hover:bg-[var(--vermillion)]/[0.08] hover:text-[var(--vermillion)] disabled:pointer-events-none disabled:opacity-40 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-        aria-label={isZh ? '删除会话' : 'Delete chat session'}
-        title={isZh ? '删除会话' : 'Delete chat session'}
+        aria-label={isZh ? '删除外部会话' : 'Delete external chat'}
+        title={isZh ? '删除外部会话' : 'Delete external chat'}
       >
         {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
       </button>
@@ -263,6 +268,7 @@ export default function ConversationsWorkspace() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [total, setTotal] = useState(0)
   const [globalEscalatedCount, setGlobalEscalatedCount] = useState<number | null>(null)
+  const [globalProcedureRunCount, setGlobalProcedureRunCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -284,6 +290,8 @@ export default function ConversationsWorkspace() {
     if (!selectedAgentId) {
       setSessions([])
       setTotal(0)
+      setGlobalEscalatedCount(null)
+      setGlobalProcedureRunCount(null)
       setLoadError(agentLoadError || (isZh ? '没有可用 Agent' : 'No agent available'))
       setLoading(false)
       return
@@ -303,6 +311,7 @@ export default function ConversationsWorkspace() {
       setSessions(result.data.sessions)
       setTotal(result.data.total)
       setGlobalEscalatedCount(metricsResult.data.metrics.escalatedConversations)
+      setGlobalProcedureRunCount(metricsResult.data.metrics.totalProcedureRuns)
       setQueryMeta(result.data.query)
       setLoadError(null)
       hasLoadedRef.current = true
@@ -310,8 +319,10 @@ export default function ConversationsWorkspace() {
       if (showLoading && !hasLoadedRef.current) {
         setSessions([])
         setTotal(0)
+        setGlobalEscalatedCount(null)
+        setGlobalProcedureRunCount(null)
       }
-      setLoadError(isZh ? '加载会话失败' : 'Failed to load conversations')
+      setLoadError(isZh ? '加载会话段失败' : 'Failed to load conversation segments')
     } finally {
       if (showLoading) setLoading(false)
       setSearching(false)
@@ -326,13 +337,16 @@ export default function ConversationsWorkspace() {
 
   const handleDelete = useCallback(async (chatId: string) => {
     const label = `${chatId.slice(0, 16)}…`
-    if (!confirm(isZh ? `删除会话 ${label} 以及所有关联的 ProcedureRun？\n这个操作无法撤销。` : `Delete chat session ${label} and all linked ProcedureRuns?\nThis cannot be undone.`)) return
+    if (!confirm(isZh ? `删除外部会话 ${label}、它的所有会话段以及关联 ProcedureRun？\n这个操作无法撤销。` : `Delete external chat ${label}, all of its segments, and linked ProcedureRuns?\nThis cannot be undone.`)) return
     setDeletingId(chatId)
     try {
       const query = selectedAgentId ? `?agentId=${encodeURIComponent(selectedAgentId)}` : ''
       await apiClient<ChatDeleteResponse>(`/api/chats/${encodeURIComponent(chatId)}${query}`, { method: 'DELETE' })
-      setSessions((prev) => prev.filter((item) => item.chatId !== chatId))
-      setTotal((prev) => prev - 1)
+      setSessions((prev) => {
+        const next = prev.filter((item) => item.chatId !== chatId)
+        setTotal((current) => Math.max(0, current - (prev.length - next.length)))
+        return next
+      })
     } catch {
       alert(isZh ? '删除失败，网络异常' : 'Failed to delete — network error')
     } finally {
@@ -353,7 +367,7 @@ export default function ConversationsWorkspace() {
 
   const loadedEscalatedCount = sessions.filter((session) => session.hasHumanTask).length
   const escalatedCount = globalEscalatedCount ?? loadedEscalatedCount
-  const procedureRunCount = sessions.reduce((sum, session) => sum + session.cases.length, 0)
+  const procedureRunCount = globalProcedureRunCount ?? sessions.reduce((sum, session) => sum + session.cases.length, 0)
   const latestActivity = sessions[0]?.lastActivity ? fmtRelative(sessions[0].lastActivity, locale) : (isZh ? '暂无活动' : 'No activity')
   const hasVisibleData = sessions.length > 0 || total > 0
 
@@ -372,13 +386,13 @@ export default function ConversationsWorkspace() {
               </h1>
               <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
                 {isZh
-                  ? '浏览实时会话，找到需要关注的 ProcedureRun，并深入查看对话记录、用户、Trace 或记忆详情，同时保持平稳的运营视角。'
-                  : 'Scan live Chats, find the ProcedureRuns that need attention, and move into transcript, User, Trace, or Memory detail without losing the calm operating context.'}
+                  ? '按 60 分钟静默切分实时会话段，找到需要关注的 ProcedureRun，并深入查看对话记录、用户、Trace 或记忆详情。'
+                  : 'Browse live conversation segments split by 60 minutes of silence, find ProcedureRuns that need attention, and inspect transcript, user, trace, or memory detail.'}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <MetricCard label={isZh ? '会话数' : 'Chats'} value={String(total)} tone="neutral" />
+              <MetricCard label={isZh ? '会话段' : 'Segments'} value={String(total)} tone="neutral" />
               <MetricCard label={isZh ? '已转接' : 'Escalated'} value={String(escalatedCount)} tone="amber" />
               <MetricCard label={isZh ? 'ProcedureRun 数' : 'ProcedureRuns'} value={String(procedureRunCount)} tone="teal" />
               <MetricCard label={isZh ? '最近活动' : 'Latest activity'} value={latestActivity} tone="indigo" />
@@ -391,7 +405,7 @@ export default function ConversationsWorkspace() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={isZh ? '按用户、会话、Procedure 或聊天内容搜索' : 'Search user, chat, Procedure, or message content'}
+                placeholder={isZh ? '按用户、会话段、Procedure 或聊天内容搜索' : 'Search user, segment, Procedure, or message content'}
                 className="glass-input-console h-11 rounded-[16px] bg-white/86 pl-11 text-[13px] placeholder:text-[var(--fog)]/55"
               />
               {searching ? (
@@ -402,7 +416,7 @@ export default function ConversationsWorkspace() {
             {sessions.length > 0 ? (
               <ExportButton
                 filename="conversations-list"
-                label={isZh ? '导出当前可见会话为 JSON' : 'Export visible conversations as JSON'}
+                label={isZh ? '导出当前可见会话段为 JSON' : 'Export visible segments as JSON'}
                 getData={() => ({
                   _version: 'intera_console_conversations_export_v1',
                   exportedAt: new Date().toISOString(),
@@ -431,9 +445,9 @@ export default function ConversationsWorkspace() {
       ) : loadError && !hasVisibleData ? (
         <section className="mx-auto w-full max-w-xl rounded-[28px] border border-dashed border-vermillion/18 bg-white/[0.6] px-6 py-16 text-center shadow-[var(--shadow-card)]">
           <AlertCircle className="mx-auto h-8 w-8 text-vermillion/60" />
-          <h2 className="mt-4 text-[16px] font-semibold text-[var(--mist)]">{isZh ? '暂时无法加载会话' : 'Unable to load conversations'}</h2>
+          <h2 className="mt-4 text-[16px] font-semibold text-[var(--mist)]">{isZh ? '暂时无法加载会话段' : 'Unable to load segments'}</h2>
           <p className="mt-2 text-[13px] leading-6 text-[var(--fog)]">
-            {isZh ? '刚才会话收件箱没能读取实时 chat 数据。等本地 session 和数据源可用后再重试。' : 'The conversation inbox could not read live chat data just now. Retry after the local session and data source are available.'}
+            {isZh ? '刚才会话段收件箱没能读取实时 chat 数据。等本地 session 和数据源可用后再重试。' : 'The segment inbox could not read live chat data just now. Retry after the local session and data source are available.'}
           </p>
           <button
             type="button"
@@ -447,11 +461,11 @@ export default function ConversationsWorkspace() {
         <div className="mx-auto w-full max-w-xl rounded-[28px] border border-dashed border-black/[0.08] bg-white/[0.56] px-6 py-16 text-center shadow-[var(--shadow-card)]">
           <EmptyState
             icon={MessageSquare}
-            title={search ? (isZh ? '没有匹配的会话' : 'No matching conversations') : (isZh ? '还没有会话' : 'No conversations yet')}
+            title={search ? (isZh ? '没有匹配的会话段' : 'No matching segments') : (isZh ? '还没有会话段' : 'No segments yet')}
             description={
               search
                 ? (isZh ? '没有在当前 Agent 的可见聊天内容中找到关键词。也可以试试用户、会话 ID 或 Procedure 类型。' : 'No visible message content matched in the current Agent. You can also try a user, chat ID, or Procedure type.')
-                : (isZh ? '一旦 Console 开始收到实时 chat 活动，会话就会出现在这里。' : 'Conversations will appear here once the Console starts receiving live chat activity.')
+                : (isZh ? '一旦 Console 开始收到实时 chat 活动，会话段就会出现在这里。' : 'Segments will appear here once the Console starts receiving live chat activity.')
             }
           />
         </div>
@@ -459,7 +473,7 @@ export default function ConversationsWorkspace() {
         <section className="space-y-3">
           {filtered.map((session) => (
             <ConversationRow
-              key={session.chatId}
+              key={session.segmentId}
               session={session}
               agentId={selectedAgentId}
               searchQuery={debouncedSearch}
@@ -474,8 +488,8 @@ export default function ConversationsWorkspace() {
         <div className="inline-flex items-center gap-2 self-start rounded-full border border-black/[0.05] bg-white/[0.68] px-3 py-1.5 text-[12px] text-[var(--fog)] shadow-[var(--shadow-card)]">
           <AlertCircle className="h-3.5 w-3.5" />
           {isServerSearch
-            ? (isZh ? `显示 ${filtered.length} / ${total} 个命中会话。` : `Showing ${filtered.length} of ${total} matching conversations.`)
-            : (isZh ? `显示 ${filtered.length} / ${total} 个会话。` : `Showing ${filtered.length} of ${total} conversations.`)}
+            ? (isZh ? `显示 ${filtered.length} / ${total} 个命中会话段。` : `Showing ${filtered.length} of ${total} matching segments.`)
+            : (isZh ? `显示 ${filtered.length} / ${total} 个会话段。` : `Showing ${filtered.length} of ${total} segments.`)}
         </div>
       ) : null}
     </div>

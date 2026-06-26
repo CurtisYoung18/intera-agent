@@ -72,8 +72,20 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agent
       resolvedAt: task.resolvedAt?.toISOString() ?? null,
     })))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const lastActivity = cases.reduce(
+    (latest: string, c) => (c.updatedAt.toISOString() > latest ? c.updatedAt.toISOString() : latest),
+    cases[0]?.updatedAt.toISOString() ?? new Date(0).toISOString(),
+  )
+  const firstActivity = cases.reduce(
+    (earliest: string, c) => (c.createdAt.toISOString() < earliest ? c.createdAt.toISOString() : earliest),
+    cases[0]?.createdAt.toISOString() ?? lastActivity,
+  )
 
   const session: ChatSession & { externalChatId?: string } = {
+    segmentId: `${chatId}::detail`,
+    segmentIndex: 0,
+    segmentStartAt: firstActivity,
+    segmentEndAt: lastActivity,
     chatId,
     userId: cases[0]?.userId ?? '',
     externalChatId: alias.externalChatId,
@@ -89,10 +101,7 @@ async function buildChatSession(repo: RepoForOrg, requestedChatId: string, agent
       _count: c._count as { messages: number },
     })),
     messageCount: cases.reduce((sum: number, c) => sum + c._count.messages, 0),
-    lastActivity: cases.reduce(
-      (latest: string, c) => (c.updatedAt.toISOString() > latest ? c.updatedAt.toISOString() : latest),
-      cases[0]?.updatedAt.toISOString() ?? new Date(0).toISOString(),
-    ),
+    lastActivity,
     hasHumanTask: cases.some((c) => c.humanTasks.length > 0),
     handoffTasks,
   }

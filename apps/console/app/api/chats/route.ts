@@ -12,6 +12,7 @@ import { ChatsListInput, type ChatMatchedMessage, type ChatSession, type ChatsLi
 import { hydrateMessageFromDb, isCustomerVisibleMessage } from '@/lib/agent/provider-transcript'
 import { Prisma } from '@prisma/client'
 import { caseIdFilterForScope, resolveRequiredAgentCaseScope, type AgentCaseScope } from './_agent-scope'
+import { isTimeInsideSegment, splitCasesIntoConversationSegments, type SegmentMessageInput } from '@/lib/operate/conversation-segments'
 
 type ChatCaseRow = {
   id: string
@@ -23,7 +24,8 @@ type ChatCaseRow = {
   goal: string | null
   createdAt: Date
   updatedAt: Date
-  humanTasks: Array<{ id: string }>
+  humanTasks: Array<{ id: string; createdAt?: Date | string | null }>
+  messages?: SegmentMessageInput[]
   _count: { messages: number }
 }
 
@@ -298,42 +300,44 @@ function buildChatSessions(
     if (!runByCase.has(run.caseId)) runByCase.set(run.caseId, run.id)
   }
 
-  const sessionMap = new Map<string, ChatSession>()
+  return splitCasesIntoConversationSegments(cases).map((segment) => {
+    const segmentMatches = (matchesByChatId?.get(segment.chatId) ?? [])
+      .filter((match) => isTimeInsideSegment(match.createdAt, segment))
+    const firstCase = segment.cases[0]
+    const session: ChatSession = {
+      segmentId: segment.segmentId,
+      segmentIndex: segment.segmentIndex,
+      segmentStartAt: segment.segmentStartAt,
+      segmentEndAt: segment.segmentEndAt,
+      chatId: segment.chatId,
+      userId: firstCase?.userId ?? '',
+      cases: [],
+      messageCount: segment.messageCount,
+      lastActivity: segment.lastActivity,
+      hasHumanTask: false,
+      ...(segmentMatches.length > 0 ? { matchedMessages: segmentMatches } : {}),
+    }
 
-  for (const c of cases) {
-    const key = c.chatId
-    if (!sessionMap.has(key)) {
-      sessionMap.set(key, {
-        chatId: key,
-        userId: c.userId,
-        cases: [],
-        messageCount: 0,
-        lastActivity: c.updatedAt.toISOString(),
-        hasHumanTask: false,
-        ...(matchesByChatId?.has(key) ? { matchedMessages: matchesByChatId.get(key) } : {}),
+    for (const c of segment.cases) {
+      const runId = runByCase.get(c.id) ?? null
+      session.cases.push({
+        id: runId ?? c.id,
+        runId,
+        type: c.type,
+        status: c.status,
+        source: c.source,
+        goal: c.goal,
+        createdAt: c.createdAt.toISOString(),
+        updatedAt: c.updatedAt.toISOString(),
+        _count: { messages: segment.messageCountByCaseId.get(c.id) ?? c._count.messages },
       })
+      if (c.humanTasks.some((task) => isTimeInsideSegment(task.createdAt, segment))) {
+        session.hasHumanTask = true
+      }
     }
-    const session = sessionMap.get(key)!
-    const runId = runByCase.get(c.id) ?? null
-    session.cases.push({
-      id: runId ?? c.id,
-      runId,
-      type: c.type,
-      status: c.status,
-      source: c.source,
-      goal: c.goal,
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
-      _count: c._count,
-    })
-    session.messageCount += c._count.messages
-    if (c.humanTasks.length > 0) session.hasHumanTask = true
-    if (c.updatedAt.toISOString() > session.lastActivity) {
-      session.lastActivity = c.updatedAt.toISOString()
-    }
-  }
 
-  return Array.from(sessionMap.values())
+    return session
+  })
 }
 
 export const GET = defineRoute({
@@ -361,12 +365,25 @@ export const GET = defineRoute({
         where: { ...caseIdFilterForScope(scope), chatId: { in: matchedChatIds } },
         orderBy: { updatedAt: 'desc' as const },
         include: {
-          humanTasks: { select: { id: true }, take: 1 },
+          humanTasks: {
+            select: { id: true, createdAt: true },
+            orderBy: { createdAt: 'asc' as const },
+          },
+          messages: {
+            select: { id: true, caseId: true, role: true, createdAt: true, providerContent: true, providerMeta: true },
+            orderBy: { createdAt: 'asc' as const },
+          },
           _count: { select: { messages: true } },
         },
       })
 
-      const sorted = buildChatSessions(cases, scope, search.matchesByChatId).sort((a, b) => {
+      const sorted = buildChatSessions(cases, scope, search.matchesByChatId)
+        .filter((session) => {
+          if (metadata.matchedChatIds.has(session.chatId)) return true
+          if (!search.matchesByChatId.has(session.chatId)) return true
+          return Boolean(session.matchedMessages?.length)
+        })
+        .sort((a, b) => {
         const aSort = search.sortByChatId.get(a.chatId) ?? { maxRank: 0, latestMatchAt: a.lastActivity }
         const bSort = search.sortByChatId.get(b.chatId) ?? { maxRank: 0, latestMatchAt: b.lastActivity }
         const aRank = Math.max(aSort.maxRank, metadataScore(a, metadata.matchedChatIds, normalizedQuery))
@@ -390,7 +407,14 @@ export const GET = defineRoute({
       where: caseIdFilterForScope(scope),
       orderBy: { updatedAt: 'desc' as const },
       include: {
-        humanTasks: { select: { id: true }, take: 1 },
+        humanTasks: {
+          select: { id: true, createdAt: true },
+          orderBy: { createdAt: 'asc' as const },
+        },
+        messages: {
+          select: { id: true, caseId: true, role: true, createdAt: true, providerContent: true, providerMeta: true },
+          orderBy: { createdAt: 'asc' as const },
+        },
         _count: { select: { messages: true } },
       },
     })

@@ -46,7 +46,7 @@ const h = vi.hoisted(() => {
       goal: 'Middle chat',
       createdAt: new Date('2026-06-16T00:00:00.000Z'),
       updatedAt: new Date('2026-06-16T00:02:00.000Z'),
-      humanTasks: [{ id: 'task-middle' }],
+      humanTasks: [{ id: 'task-middle', createdAt: new Date('2026-06-16T00:02:30.000Z') }],
       _count: { messages: 2 },
     },
     {
@@ -347,6 +347,10 @@ describe('chats contract schemas', () => {
   describe('ChatSessionSchema', () => {
     it('validates a proper session object', () => {
       const session = {
+        segmentId: 'c1::seg_1',
+        segmentIndex: 0,
+        segmentStartAt: '2026-01-01T00:00:00.000Z',
+        segmentEndAt: '2026-01-02T00:00:00.000Z',
         chatId: 'chat-1', userId: 'u1',
         cases: [{ id: 'case-1', type: 'deposit', status: 'resolved', goal: null, source: 'live', createdAt: '2026-01-01', updatedAt: '2026-01-02', _count: { messages: 5 } }],
         messageCount: 5, lastActivity: '2026-01-02T00:00:00.000Z', hasHumanTask: false,
@@ -364,6 +368,10 @@ describe('chats contract schemas', () => {
       const data = {
         sessions: [{
           chatId: 'c1',
+          segmentId: 'c1::seg_1',
+          segmentIndex: 0,
+          segmentStartAt: '2026-01-01T00:00:00.000Z',
+          segmentEndAt: '2026-01-01T00:00:00.000Z',
           userId: 'u1',
           cases: [],
           messageCount: 0,

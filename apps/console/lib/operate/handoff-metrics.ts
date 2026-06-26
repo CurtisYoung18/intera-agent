@@ -1,3 +1,5 @@
+import { isTimeInsideSegment, splitCasesIntoConversationSegments, type SegmentMessageInput } from './conversation-segments'
+
 export interface HandoffMetricsTaskInput {
   status?: string | null
   createdAt?: Date | string | null
@@ -12,6 +14,7 @@ export interface HandoffMetricsCaseInput {
   createdAt: Date | string
   updatedAt: Date | string
   humanTasks?: HandoffMetricsTaskInput[]
+  messages?: SegmentMessageInput[]
   _count?: {
     messages?: number
   } | null
@@ -62,7 +65,8 @@ export function summarizeHandoffMetrics(
   cases: HandoffMetricsCaseInput[],
   now = new Date(),
 ): HandoffMetricsSummary {
-  const conversationIds = new Set<string>()
+  const segments = splitCasesIntoConversationSegments(cases)
+  const conversationIds = new Set(segments.map((segment) => segment.segmentId))
   const escalatedConversationIds = new Set<string>()
   const activeHandoffConversationIds = new Set<string>()
   const handoffTypes = new Set<string>()
@@ -74,7 +78,6 @@ export function summarizeHandoffMetrics(
   let latestActivity: Date | null = null
 
   for (const item of cases) {
-    conversationIds.add(item.chatId)
     totalMessages += item._count?.messages ?? 0
 
     const updatedAt = toDate(item.updatedAt)
@@ -84,12 +87,10 @@ export function summarizeHandoffMetrics(
 
     if (hasAnyHumanTask(item)) {
       escalatedProcedureRuns += 1
-      escalatedConversationIds.add(item.chatId)
     }
 
     if (hasOpenEscalation(item)) {
       activeHandoffProcedureRuns += 1
-      activeHandoffConversationIds.add(item.chatId)
       handoffTypes.add(item.type)
     }
 
@@ -100,6 +101,19 @@ export function summarizeHandoffMetrics(
         activeHumanTasks += 1
       }
     }
+  }
+
+  for (const segment of segments) {
+    const segmentHasTask = segment.cases.some((item) => (
+      (item.humanTasks ?? []).some((task) => isTimeInsideSegment(task.createdAt, segment))
+    ))
+    if (segmentHasTask) escalatedConversationIds.add(segment.segmentId)
+
+    const segmentHasOpenTask = segment.cases.some((item) => (
+      hasOpenEscalation(item) &&
+      (item.humanTasks ?? []).some((task) => isTimeInsideSegment(task.createdAt, segment))
+    ))
+    if (segmentHasOpenTask) activeHandoffConversationIds.add(segment.segmentId)
   }
 
   return {

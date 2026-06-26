@@ -229,8 +229,8 @@ export default function HumanHandoffPage() {
   const runTodos = hasMeaningfulText(detail?.memory?.todos) ? detail?.memory?.todos?.trim() ?? null : null
   const hasRunNotes = Boolean(runSummary || runTodos)
   const escalationSubcopy = isZh
-    ? `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} 个对话`
-    : `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} chats`
+    ? `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} 个会话段`
+    : `${fmtNumber(escalatedConversations, locale)} / ${fmtNumber(totalConversations, locale)} segments`
   const generatedAt = metrics?.generatedAt ? fmtTimestamp(metrics.generatedAt, locale) : (isZh ? '未同步' : 'Not synced')
 
   if (loading) {
@@ -253,8 +253,8 @@ export default function HumanHandoffPage() {
             <h1 className="mt-3 text-[clamp(1.45rem,2vw,1.95rem)] font-semibold tracking-tight text-[var(--mist)]">{isZh ? '人工接管指挥台' : 'Human Handoff Console'}</h1>
             <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--fog)]">
               {isZh
-                ? '从总对话量、转人工占比和已转接状态判断当前 Agent 的转接负载；转人工统计只认真实 HumanTask。'
-                : 'Track total conversations, escalation rate, and human-task-backed handoffs for the active agent.'}
+                ? '按 60 分钟静默切分会话段，从转人工占比和已转接状态判断当前 Agent 的转接负载；转人工统计只认真实 HumanTask。'
+                : 'Track 60-minute conversation segments, escalation rate, and human-task-backed handoffs for the active agent.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -278,7 +278,7 @@ export default function HumanHandoffPage() {
         <div className="grid gap-3 md:grid-cols-2">
           <KpiTile
             icon={MessageSquare}
-            label={isZh ? 'Agent 总对话' : 'Agent chats'}
+            label={isZh ? 'Agent 总会话段' : 'Agent segments'}
             value={fmtNumber(totalConversations, locale)}
             detail={isZh ? `${fmtNumber(totalProcedureRuns, locale)} 次流程运行` : `${fmtNumber(totalProcedureRuns, locale)} ProcedureRuns`}
             tone="neutral"
@@ -336,9 +336,9 @@ export default function HumanHandoffPage() {
       ) : cases.length === 0 ? (
         <div className="flex min-h-[320px] flex-col items-center justify-center rounded-[28px] border border-dashed border-black/[0.08] bg-white/55 px-6 text-center shadow-[var(--shadow-card)]">
           <Sparkles className="h-6 w-6 text-indigo/55" />
-          <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '当前没有已转接会话' : 'No active escalations'}</h2>
+          <h2 className="mt-4 text-[15px] font-semibold text-[var(--mist)]">{isZh ? '当前没有已转接会话段' : 'No active escalations'}</h2>
           <p className="mt-2 max-w-md text-[13px] leading-6 text-[var(--fog)]">
-            {isZh ? '当前没有会话带有未处理人工任务。只要新的流程运行创建人工任务，它就会出现在这里。' : 'No conversation currently has an open HumanTask. New escalations appear here once a ProcedureRun creates a human task.'}
+            {isZh ? '当前没有会话段带有未处理人工任务。只要新的流程运行创建人工任务，它就会出现在这里。' : 'No conversation segment currently has an open HumanTask. New escalations appear here once a ProcedureRun creates a human task.'}
           </p>
           <Link
             href={withAgent('/operate/conversations')}
@@ -353,11 +353,11 @@ export default function HumanHandoffPage() {
           <section className="min-w-0 rounded-[28px] border border-black/[0.06] bg-white/68 p-4 shadow-[var(--shadow-card)] backdrop-blur-xl">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
               <div className="min-w-0">
-                <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '已转接会话' : 'Escalated conversations'}</h2>
+                <h2 className="text-[14px] font-semibold text-[var(--mist)]">{isZh ? '已转接会话段' : 'Escalated segments'}</h2>
                 <p className="text-[11px] text-[var(--fog)]">{isZh ? '按最近转人工活动排序；每条都对应真实人工任务。' : 'Sorted by latest escalation activity; every row has a real HumanTask.'}</p>
               </div>
               <Link href={withAgent('/operate/conversations')} className="flex-shrink-0 text-[11px] font-medium text-indigo/70 hover:text-indigo">
-                {isZh ? '全部会话' : 'All conversations'}
+                {isZh ? '全部会话段' : 'All segments'}
               </Link>
             </div>
 
