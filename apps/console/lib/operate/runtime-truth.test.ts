@@ -229,4 +229,17 @@ describe('runtime-truth helpers', () => {
     expect(summary.toolResults).toBe(1)
     expect(summary.tone).toBe('warning')
   })
+
+  it('describes result-only tool traces without leading with zero calls', () => {
+    const summary = summarizeToolPairing([
+      { actionType: 'tool_result', title: 'Tool result: search', detail: null, payload: null },
+      { actionType: 'tool_result', title: 'Tool result: lookup', detail: null, payload: null },
+    ])
+
+    expect(summary.toolCalls).toBe(0)
+    expect(summary.toolResults).toBe(2)
+    expect(summary.label).toBe('2 tool result events (tool_call records unavailable)')
+    expect(summary.labelZh).toBe('2 个工具结果事件（缺少对应 tool_call 记录）')
+    expect(summary.label).not.toContain('0 tool calls')
+  })
 })

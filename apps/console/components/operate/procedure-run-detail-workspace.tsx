@@ -386,7 +386,7 @@ export default function ProcedureRunDetailWorkspace({
               ? 'border-amber/18 bg-amber/[0.06] text-amber'
               : 'border-black/[0.05] bg-white/50 text-[var(--fog)]'
           }`}>
-            {toolPairing.label}
+            {locale === 'zh' ? toolPairing.labelZh : toolPairing.label}
           </p>
           <h3 className="text-[13px] font-bold text-[var(--mist)] mb-3">{t('caseDetail.toolCalls', { n: metrics.toolCalls.length })}</h3>
           <div className="space-y-2">
@@ -459,7 +459,7 @@ function ToolCallCard({
   t: (key: string, vars?: Record<string, unknown>) => string
   locale: 'zh' | 'en'
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="rounded-lg border border-black/[0.04] bg-white/40 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)}

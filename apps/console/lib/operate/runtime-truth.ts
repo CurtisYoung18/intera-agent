@@ -67,6 +67,7 @@ export interface ToolPairingSummary {
   toolCalls: number
   toolResults: number
   label: string
+  labelZh: string
   tone: 'neutral' | 'warning'
 }
 
@@ -739,6 +740,7 @@ export function summarizeToolPairing(traces: TraceTruthInput[]): ToolPairingSumm
       toolCalls,
       toolResults,
       label: 'No tool events recorded yet',
+      labelZh: '暂无工具事件',
       tone: 'neutral',
     }
   }
@@ -748,6 +750,7 @@ export function summarizeToolPairing(traces: TraceTruthInput[]): ToolPairingSumm
       toolCalls,
       toolResults,
       label: `${toolCalls} tool calls matched to ${toolResults} results`,
+      labelZh: `${toolCalls} 次工具调用已匹配 ${toolResults} 个结果`,
       tone: 'neutral',
     }
   }
@@ -758,6 +761,7 @@ export function summarizeToolPairing(traces: TraceTruthInput[]): ToolPairingSumm
       toolCalls,
       toolResults,
       label: `${toolCalls} tool calls, ${toolResults} results, ${gap} still pending or missing`,
+      labelZh: `${toolCalls} 次工具调用，${toolResults} 个结果，${gap} 个仍在等待或缺失`,
       tone: 'warning',
     }
   }
@@ -766,7 +770,12 @@ export function summarizeToolPairing(traces: TraceTruthInput[]): ToolPairingSumm
   return {
     toolCalls,
     toolResults,
-    label: `${toolCalls} tool calls, ${toolResults} results, ${extra} result-only events`,
+    label: toolCalls === 0
+      ? `${toolResults} tool result events (tool_call records unavailable)`
+      : `${toolResults} tool result events, ${toolCalls} tool calls, ${extra} without call records`,
+    labelZh: toolCalls === 0
+      ? `${toolResults} 个工具结果事件（缺少对应 tool_call 记录）`
+      : `${toolResults} 个工具结果事件，${toolCalls} 次工具调用，${extra} 个缺少对应 tool_call 记录`,
     tone: 'warning',
   }
 }

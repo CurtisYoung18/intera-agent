@@ -748,7 +748,7 @@ function IterationGroupCard({
   renderTraceCard: (trace: TraceRow) => ReactNode
   t: TranslateFn
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const showPhaseBreakdown = llmWallMs != null && toolsWallMs != null && (llmWallMs > 0 || toolsWallMs > 0)
 
   return (

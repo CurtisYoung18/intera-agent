@@ -414,7 +414,7 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
               ? 'border-amber/18 bg-amber/[0.06] text-amber'
               : 'border-black/[0.05] bg-white/50 text-[var(--fog)]'
           }`}>
-            {toolPairing.label}
+            {locale === 'zh' ? toolPairing.labelZh : toolPairing.label}
           </p>
           <h2 className="mb-3 text-[13px] font-bold text-[var(--mist)]">
             {isZh ? `工具调用 (${analysis.toolCalls.length})` : `Tool calls (${analysis.toolCalls.length})`}
@@ -487,7 +487,7 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
 }
 
 function ToolCallCard({ toolCall, locale }: { toolCall: ToolCall; locale: 'zh' | 'en' }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="overflow-hidden rounded-lg border border-black/[0.04] bg-white/40">
       <button
