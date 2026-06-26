@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { CASE_COMPACT_PROMPT } from '../case-compact-prompt'
 import { PROFILE_COMPACT_PROMPT } from '../profile-compact-prompt'
+import { SEGMENT_COMPACT_PROMPT } from '../segment-compact-prompt'
 import type { Message, MemoryStrategy } from '@intera/shared/types'
 
 // Mock the API dependencies so compactConversation doesn't actually make
@@ -101,6 +102,18 @@ describe('compactConversation routing', () => {
     expect(systemArg).toBe(PROFILE_COMPACT_PROMPT)
   })
 
+  it('uses SEGMENT_COMPACT_PROMPT when purpose is "segment"', async () => {
+    const { compactConversation } = await import('../compact')
+    const messages = makeMessages(10)
+    const strategy = makeStrategy()
+
+    await compactConversation(messages, strategy, { purpose: 'segment' })
+
+    const systemArg = mockCreate.mock.calls[0][0].system
+    expect(systemArg).toBe(SEGMENT_COMPACT_PROMPT)
+    expect(systemArg).toMatch(/do not predict or recommend the next action/i)
+  })
+
   it('defaults to CASE_COMPACT_PROMPT when no purpose is given', async () => {
     const { compactConversation } = await import('../compact')
     const messages = makeMessages(10)
@@ -196,6 +209,22 @@ describe('compactConversation routing', () => {
 
     const systemArg = mockCreate.mock.calls[0][0].system
     expect(systemArg).toBe(customPrompt)
+  })
+
+  it('case compact prompt handles topic drift without recommending a next step', () => {
+    expect(CASE_COMPACT_PROMPT).toMatch(/case drifted across multiple topics/i)
+    expect(CASE_COMPACT_PROMPT).toMatch(/Do NOT recommend a next action/i)
+    expect(CASE_COMPACT_PROMPT).toMatch(/submitted forms, request cards, quick-reply choices, image evidence, and HumanTask handoff notes/i)
+    expect(CASE_COMPACT_PROMPT).toMatch(/Do not list every tool call/i)
+    expect(CASE_COMPACT_PROMPT).not.toMatch(/List every tool call made/i)
+  })
+
+  it('segment compact prompt preserves handoff and rich-message facts without a recommendation section', () => {
+    expect(SEGMENT_COMPACT_PROMPT).toMatch(/Durable Customer Facts/i)
+    expect(SEGMENT_COMPACT_PROMPT).toMatch(/Topic Ledger/i)
+    expect(SEGMENT_COMPACT_PROMPT).toMatch(/Human Handoff/i)
+    expect(SEGMENT_COMPACT_PROMPT).toMatch(/submitted forms, request cards, quick-reply choices/i)
+    expect(SEGMENT_COMPACT_PROMPT).not.toMatch(/Recommended Next Step/i)
   })
 
   it('uses profileModel when purpose is "profile" and profileModel is set', async () => {

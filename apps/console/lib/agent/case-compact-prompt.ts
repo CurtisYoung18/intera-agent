@@ -6,30 +6,34 @@
 // was used for intra-case compaction (performCompaction). This prompt
 // explicitly FORBIDS portrait framing and focuses on task-critical state.
 
-export const CASE_COMPACT_PROMPT = `Summarize this conversation as a working-state snapshot. Focus exclusively on what the agent needs to resume this specific case — do NOT describe the user as a person.
+export const CASE_COMPACT_PROMPT = `Summarize this conversation as a working-state snapshot. Focus exclusively on what the agent needs to stay oriented inside this specific case — do NOT describe the user as a person.
 
 Output in this order:
 
-1. Context Map: Every business fact the agent has verified or the user has confirmed during this conversation. One fact per line. Include identifiers, amounts, dates, statuses — the operational data the agent relies on to make decisions.
+1. Current Focus: The latest customer-visible issue or question in this case. If the case drifted across multiple topics, say that explicitly and identify the current topic.
 
-2. Tools Run: List every tool call made in this conversation, with the tool name and a one-line summary of what it returned. Include errors and empty results — they are decision-relevant. Do not copy raw tool_use/tool_result protocol text or raw JSON payloads.
+2. Context Map: Every business fact the agent has verified or the user has confirmed during this conversation. One fact per line. Include identifiers, amounts, dates, statuses, payment channel, account/KYC state, promotion/turnover state, and screenshot/form facts when they are decision-relevant.
 
-3. Open Items: Any unresolved questions, missing information, pending verifications, or tasks the agent still needs to complete. Be specific about what is missing and why it matters.
+3. Topic Ledger: For each topic actually discussed in this case, write the topic, customer claim/request, verified facts, and state: answered, unresolved, escalated, unclear, or waiting_human.
 
-4. Recent Messages: The last few customer-visible user and assistant messages, verbatim or near-verbatim. These capture the current turn of the conversation and the customer's latest intent. Never include internal tool transcript blocks here.
+4. Verified System Results: Include only decision-relevant tool/procedure outcomes. Prefer the latest status, timestamp, amount, account/payment/promotion/KYC result, important errors, or "not found" conflicts. Do not list every tool call just because it happened.
 
-5. Next Step: One short, actionable recommendation for what the agent should do next in this specific case.
+5. Open Items: Any unresolved questions, missing information, pending verifications, human handoff state, or conflict between customer evidence and system results. Be specific about what is still unknown and why it matters.
+
+6. Latest Visible Context: The last meaningful customer message and last meaningful assistant message if it affects continuity. Never include blank messages or internal tool transcript blocks.
 
 CRITICAL RULES:
 - This is a CASE summary, NOT a user portrait. Do NOT describe "who the user is", their preferences, their history, their personality, or their communication style. That belongs in the profile system — never in a case compaction.
 - Do NOT include a "portrait" section. Do NOT describe the user's identity traits, habits, or long-term patterns.
-- If the token budget is tight, prioritize sections 1-3 (context map, tools run, open items) over sections 4-5.
+- Do NOT recommend a next action. Record the current focus, verified facts, unresolved state, and latest visible context.
+- If the token budget is tight, prioritize sections 1-5 over section 6.
 - Keep tool information as human-readable outcomes. Never include raw provider transcript markers such as [assistant tool_use ...] or [user tool_result ...].
+- Rich messages matter: include submitted forms, request cards, quick-reply choices, image evidence, and HumanTask handoff notes when they affect the case.
 
 COMPRESSION RULES:
 - Facts older than 7 days: one-line summary only.
 - Facts older than 30 days: merge into a single aggregate line.
-- Recent messages: never compress. Every utterance matters.
+- Recent messages: keep only meaningful customer-visible turns. Do not preserve empty assistant turns or repeated acknowledgements.
 - Duplicate facts: keep the most recent value.
 - Tool results: summarize by outcome, not full payload.
 

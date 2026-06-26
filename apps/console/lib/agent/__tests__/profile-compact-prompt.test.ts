@@ -40,7 +40,8 @@ describe('PROFILE_COMPACT_PROMPT', () => {
     expect(PROFILE_COMPACT_PROMPT).toMatch(/raw JSON/i)
     expect(PROFILE_COMPACT_PROMPT).toMatch(/internal notes/i)
     expect(PROFILE_COMPACT_PROMPT).toMatch(/Do not store one-off transaction records/i)
-    expect(PROFILE_COMPACT_PROMPT).toMatch(/current chat\/case memory/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/current chat\/case\/segment memory/i)
+    expect(PROFILE_COMPACT_PROMPT).toMatch(/Do not promote placeholders, examples, or screenshot-only guesses/i)
   })
 
   it('requires customer messages to be summarized rather than copied verbatim', () => {

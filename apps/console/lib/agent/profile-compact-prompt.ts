@@ -8,25 +8,22 @@
 // via sectionHeader() from the same PROFILE_SECTIONS const that the parser reads.
 
 import { PROFILE_SECTIONS, sectionHeader, type ProfileSection } from '@intera/shared/memory/contract'
-import { DEFAULT_MEMORY_MODEL } from '@intera/shared/memory/contract'
 
 // Build the sections block by iterating the canonical PROFILE_SECTIONS array.
 // This guarantees the prompt and parser always agree on section names and order.
 const sectionsBlock = PROFILE_SECTIONS.map((s: ProfileSection, i: number) => {
   const header = sectionHeader(s)
   const descriptions: Record<ProfileSection, string> = {
-    Identity: 'Stable facts about this person only — identifiers, roles, durable account status, or other attributes that persist across sessions. Put these FIRST.',
+    Identity: 'Stable facts about this person only — confirmed identifiers, durable account/KYC state, or other attributes that persist across sessions. Put confirmed member_id first when present.',
     Contact: 'Confirmed contact information or durable communication channels only.',
-    Preferences: 'Recurring preferences such as language, tone, format, contact style, or repeated support needs. Accumulate these across sessions.',
-    Activity: 'User-visible recent support topics and outcomes only. Keep at most a few concise lines; do not preserve every utterance.',
-    History: 'Long-term patterns, recurring issues, escalation frequency, and relationship notes. Aggregate across sessions.',
+    Preferences: 'Recurring preferences such as language, tone, format, contact style, or repeated support needs. Do not infer a preference from a single accidental phrasing.',
+    Activity: 'User-visible recent support topics and outcomes only. Keep at most a few concise lines; group repeated deposit/withdrawal/promotion/account topics instead of preserving every turn.',
+    History: 'Long-term patterns, recurring issues, escalation frequency, and relationship notes. Aggregate across sessions without copying one-off transaction evidence.',
   }
   return `${i + 1}. ${header}: ${descriptions[s]}`
 }).join('\n\n')
 
-const sectionList = PROFILE_SECTIONS.map((s: ProfileSection) => `## ${s}`).join(', ')
-
-export const PROFILE_COMPACT_PROMPT = `Summarize this conversation as a user portrait. Structure it so that the most stable, reusable facts come first, and transient case details come last.
+export const PROFILE_COMPACT_PROMPT = `Summarize this conversation as a durable customer profile. Structure it so that stable, reusable facts come first, and transient case details are either aggregated or omitted.
 
 Output using the EXACT section headers shown below. The parser expects these precise headers — do NOT reword, reorder, or omit any section.
 
@@ -44,7 +41,9 @@ COMPRESSION RULES:
 - Duplicate facts: keep the most recent value.
 - If the token budget is tight, prioritize Identity, Contact, and Preferences over Activity and History.
 - Never include tool names, tool calls, tool results, raw JSON, internal notes, hook feedback, trace IDs, run IDs, case IDs, task IDs, or model/runtime details.
-- Do not store one-off transaction records, receipt/screenshot filenames, temporary status checks, or dispute evidence in the cross-chat profile. Those belong in the current chat/case memory.
+- Do not store one-off transaction records, receipt/screenshot filenames, temporary status checks, dispute evidence, form submission payloads, or HumanTask handoff notes in the cross-chat profile. Those belong in the current chat/case/segment memory.
+- Do not store temporary ProcedureRun state, current blockers, latest customer intent, or "waiting_human" as profile facts unless they describe a durable support pattern across multiple sessions.
+- Store member_id only when it is explicitly confirmed by the customer, a structured form answer, or a verified system result. Do not promote placeholders, examples, or screenshot-only guesses into Identity.
 - If a recent conversation produced no durable user fact, leave the relevant section empty instead of inventing a profile item.
 
 Respond with TEXT ONLY — no tool calls, no analysis tags, no thinking blocks. Output just the ${PROFILE_SECTIONS.length} sections with the exact headers above.`

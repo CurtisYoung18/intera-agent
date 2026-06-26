@@ -23,6 +23,7 @@ export interface BuildModePromptInput {
   /** Prompt context data (passed through to buildPromptContext) */
   sessionBinding?: PromptContext['session_binding']
   availableTools?: PromptContext['available_tools']
+  continuityContext?: string | null
 }
 
 export interface BuildModePromptOutput {
@@ -85,6 +86,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
   let prompt = resolvePrompt(baseRaw, baseCtx)
   prompt = stripPlaceholders(prompt)
   prompt = ensureBlocks(prompt, {
+    continuity: input.continuityContext?.trim() ?? '',
     responseFocus: buildResponseFocusBlock(),
     tools: resolvePrompt('{{available_tools}}', baseCtx),
     caseTypes: resolvePrompt('{{case_types}}', baseCtx),

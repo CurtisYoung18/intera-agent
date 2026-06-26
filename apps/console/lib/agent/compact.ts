@@ -16,6 +16,7 @@ import { withRetry, CannotRetryError } from './api/with-retry'
 import { getProviderConfig, createAgentClient } from './api/provider-config'
 import { CASE_COMPACT_PROMPT } from './case-compact-prompt'
 import { PROFILE_COMPACT_PROMPT } from './profile-compact-prompt'
+import { SEGMENT_COMPACT_PROMPT } from './segment-compact-prompt'
 import { providerTranscriptCompactText, selectProviderMessageWindow } from './provider-transcript'
 import { sanitizeCaseMemorySummary } from './case-memory-sanitizer'
 
@@ -54,7 +55,7 @@ export interface CompactConversationResult {
 export async function compactConversation(
   messages: Message[],
   strategy: MemoryStrategy,
-  opts?: { purpose?: 'case' | 'profile' },
+  opts?: { purpose?: 'case' | 'profile' | 'segment' },
 ): Promise<CompactConversationResult> {
   const purpose = opts?.purpose ?? 'case'
   const model =
@@ -68,7 +69,11 @@ export async function compactConversation(
   }
 
   const defaultPrompt =
-    purpose === 'profile' ? PROFILE_COMPACT_PROMPT : CASE_COMPACT_PROMPT
+    purpose === 'profile'
+      ? PROFILE_COMPACT_PROMPT
+      : purpose === 'segment'
+        ? SEGMENT_COMPACT_PROMPT
+        : CASE_COMPACT_PROMPT
   const systemPrompt = strategy.compactPrompt || defaultPrompt
 
   const apiMessages = messages

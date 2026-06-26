@@ -27,6 +27,7 @@ vi.mock('@/lib/agent/prompt-resolver', async () => {
 })
 
 import { buildModePrompt } from '../buildModePrompt'
+import { buildConversationContinuityContext } from '../conversation-continuity'
 
 describe('buildModePrompt — deterministic injection (Phase 1)', () => {
   const baseInput = {
@@ -68,6 +69,27 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     expect(result.prompt).toContain('## Available Procedures')
     expect(result.prompt).toContain('## Current User')
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
+  })
+
+  it('injects optional conversation continuity context without forcing member id behavior', async () => {
+    const continuityContext = buildConversationContinuityContext({
+      knownFacts: {
+        member_id: 'JAYA1126511',
+        withdrawal_status: 'pending',
+      },
+      previousSegmentDigest: 'Customer previously asked about a delayed withdrawal.',
+    })
+
+    const result = await buildModePrompt({
+      ...baseInput,
+      coreSystemPrompt: 'You are a helpful assistant.',
+      continuityContext,
+    })
+
+    expect(result.prompt).toContain('## Conversation Continuity Context')
+    expect(result.prompt).toContain('- member_id: JAYA1126511')
+    expect(result.prompt).toContain('Customer previously asked about a delayed withdrawal.')
+    expect(result.prompt).not.toMatch(/do not ask|don't ask|do not repeat|don't repeat|不要.*问|不要.*重复/i)
   })
 
   // ── No double-injection: blocks appear exactly once ──
