@@ -10,10 +10,10 @@ let searchParams = new URLSearchParams()
 
 const labels: Record<string, string> = {
   'pilotLab.tabs.aria': 'Pilot Lab tabs',
-  'pilotLab.tabs.pilot': 'Pilot',
-  'pilotLab.tabs.pilotDesc': 'Draft changes and Scenario receipts',
+  'pilotLab.tabs.pilot': 'Draft Review',
+  'pilotLab.tabs.pilotDesc': 'Third-party proposals and regressions',
   'pilotLab.tabs.playground': 'Playground',
-  'pilotLab.tabs.playgroundDesc': 'Manual dry-run and trace debug',
+  'pilotLab.tabs.playgroundDesc': 'Default simulator and trace debug',
 }
 
 vi.mock('@/lib/api/client', () => ({
@@ -544,7 +544,7 @@ function textIncludes(text: string) {
 
 async function submitChatPrompt(text = 'Create a deposit handoff Scenario') {
   await act(async () => {
-    fireEvent.change(screen.getByLabelText('Message U-Pilot'), { target: { value: text } })
+    fireEvent.change(screen.getByLabelText('Message Draft Review'), { target: { value: text } })
   })
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
@@ -552,7 +552,7 @@ async function submitChatPrompt(text = 'Create a deposit handoff Scenario') {
 }
 
 beforeEach(() => {
-  searchParams = new URLSearchParams()
+  searchParams = new URLSearchParams('tab=pilot')
   mockApiClient.mockReset()
   vi.spyOn(window, 'confirm').mockReturnValue(true)
   setupApi()
@@ -563,13 +563,22 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('PilotLabPage U-Pilot cockpit', () => {
-  it('renders the initial chat cockpit around current draft context', async () => {
+describe('PilotLabPage Draft Review cockpit', () => {
+  it('renders Playground by default', async () => {
+    searchParams = new URLSearchParams()
     await renderPage()
 
-    expect(screen.getByRole('link', { name: /Pilot/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.getByTestId('native-playground')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Playground/ }).getAttribute('aria-current')).toBe('page')
+    expect(screen.queryByLabelText('Message Draft Review')).toBeNull()
+  }, 10000)
+
+  it('renders the draft review cockpit around current draft context', async () => {
+    await renderPage()
+
+    expect(screen.getByRole('link', { name: /Draft Review/ }).getAttribute('aria-current')).toBe('page')
     expect(screen.getByRole('link', { name: /Playground/ })).toBeTruthy()
-    expect(screen.getByLabelText('Message U-Pilot')).toBeTruthy()
+    expect(screen.getByLabelText('Message Draft Review')).toBeTruthy()
     expect(await screen.findAllByText('Current context')).toBeTruthy()
     expect(mockApiClient.mock.calls[0][0]).toBe('/api/admin/config-pilot/context?agentConfigId=agent-1')
   }, 10000)
@@ -579,7 +588,7 @@ describe('PilotLabPage U-Pilot cockpit', () => {
 
     const tabs = within(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).getAllByRole('link')
     expect(tabs[0]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1')
-    expect(tabs[1]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1&tab=playground')
+    expect(tabs[1]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1&tab=pilot')
   }, 10000)
 
   it('shows durable Pilot session artifacts and manual compact state', async () => {
@@ -619,7 +628,7 @@ describe('PilotLabPage U-Pilot cockpit', () => {
   }, 10000)
 
   it('renders playground as a compact workspace without compatibility chrome', async () => {
-    searchParams = new URLSearchParams('tab=playground')
+    searchParams = new URLSearchParams()
     await renderPage()
 
     expect(screen.getByTestId('native-playground')).toBeTruthy()
@@ -628,10 +637,10 @@ describe('PilotLabPage U-Pilot cockpit', () => {
     expect(screen.getByRole('link', { name: /Playground/ }).getAttribute('aria-current')).toBe('page')
     const tabs = within(screen.getByRole('navigation', { name: 'Pilot Lab tabs' })).getAllByRole('link')
     expect(tabs[0]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1')
-    expect(tabs[1]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1&tab=playground')
+    expect(tabs[1]?.getAttribute('href')).toBe('/build/pilot-lab?agentId=agent-1&tab=pilot')
     expect(screen.queryByText('Playground compatibility surface')).toBeNull()
     expect(screen.queryByText(/Compatibility route only/i)).toBeNull()
-    expect(screen.queryByText('U-Pilot Chat Cockpit')).toBeNull()
+    expect(screen.queryByText('Draft Review Chat Cockpit')).toBeNull()
   }, 10000)
 
   it('shows the initial streaming Pilot greeting after context loads', async () => {
@@ -642,7 +651,7 @@ describe('PilotLabPage U-Pilot cockpit', () => {
 
   it('shows a proposal diff after chat propose, while apply stays disabled before accept', async () => {
     await renderPage()
-    await screen.findByLabelText('Message U-Pilot')
+    await screen.findByLabelText('Message Draft Review')
 
     await submitChatPrompt()
     expect(await screen.findByText('Deposit handoff Scenario')).toBeTruthy()

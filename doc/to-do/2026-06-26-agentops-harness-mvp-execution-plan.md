@@ -34,6 +34,7 @@
 | 2026-06-26 | Epicurus (`019f036f-3cd8-7070-92fe-0c03785dd68a`) | AgentOps draft proposal intake | worker | completed / reviewed | added `POST /api/agentops/agents/[agentId]/proposals`; coordinator tightened persisted reason metadata validation |
 | 2026-06-26 | Curie (`019f036f-9678-75c2-88a6-0be1e452a645`) | AgentOps local replay receipt | worker | completed / reviewed | added `POST /api/agentops/agents/[agentId]/replay`; coordinator made production runtime replay unconditionally forbidden |
 | 2026-06-26 | Coordinator | Full local Harness Op smoke expansion | integration | completed | extended `smoke:agentops` to cover proposal, stale proposal, replay pass, replay blocked, fake draft, and leak scan |
+| 2026-06-29 | Coordinator | AgentOps local multi-turn simulation and Codex ops package | integration | completed / reviewed | added local-only `POST /api/agentops/agents/[agentId]/simulations`, CLI `agentops:local simulate`, intera-ops templates, and Pilot Lab default-to-Playground UX |
 
 ### Integration Review - 2026-06-26
 
@@ -154,6 +155,39 @@ Proposal/replay review decisions:
 - Replay accepts only `mode: 'local_dry_run'`, is owner/admin and agent-scoped, and returns receipts only.
 - Replay is unconditionally disabled when `NODE_ENV=production`; no env override may re-enable it.
 - Debug Trace Pack remains deferred. Do not implement a route stub that appears secure before scoped debug auth and durable audit exist.
+
+### AgentOps Simulation MVP - 2026-06-29
+
+Accepted direction:
+
+- Codex/intera-ops should be able to diagnose controlled Agents such as J1B through multi-turn local simulation before drafting proposals.
+- J1N remains commercial production traffic and must not be used for exploratory simulation.
+- Intera Console remains the review/approval surface; Codex skill and chat own diagnosis, simulation scripts, draft proposal requests, and regression reports.
+
+Implementation boundary:
+
+- New `agentops.simulation-receipt.v1` contract accepts only `mode: local_runtime` and `toolPolicy: mocked`.
+- The route runs the real local Playground `AgentLoop` for user turn scripts or named Scenarios, with operational Tools intercepted in Playground dry-run mode.
+- Simulation may call the configured model provider and writes local Playground evidence, but it must not run in production, append Scenario receipts, mark validation, publish, activate, deploy, or mutate active Agent config.
+- CLI entrypoint: `npm run agentops:local -- simulate --agent <agentId> --turn "..." --turn "..."`.
+
+UI direction:
+
+- `/build/pilot-lab` defaults to Playground as the primary simulator/debug surface.
+- The former Pilot tab is renamed `Draft Review` and is treated as a review surface for third-party Agent proposals, diffs, receipts, and regression evidence.
+- `/build/agentops-review` redirects to the Draft Review view for stable handoff links from Codex reports.
+
+Verification:
+
+- `npx vitest run apps/console/lib/agentops/__tests__/simulation.test.ts packages/shared/contracts/__tests__/agentops-simulation-contract.test.ts 'apps/console/app/api/agentops/agents/[agentId]/simulations/__tests__/route.test.ts'`
+- `npx tsc --noEmit -p apps/console/tsconfig.json --pretty false`
+- `npm run check:migration-prefixes`
+- `npm run check:isolation-seam`
+- `npm run check:runtime-core-boundary`
+- `npm run build:console`
+- `git diff --check`
+
+Known test harness caveat: `npx vitest run apps/console/app/build/pilot-lab/page.test.tsx` still fails with the existing React invalid-hook jsdom issue recorded earlier in this plan; the route-level UI change is covered by build output and updated expectations but still needs the broader React test-harness fix to execute locally.
 
 ### Review Gates
 

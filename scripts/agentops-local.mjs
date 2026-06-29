@@ -70,6 +70,7 @@ function usage() {
   return `Usage:
   npm run agentops:local -- metrics --agent <agentId> [--window 1h] [--from ISO] [--to ISO] [--timezone Asia/Shanghai] [--metric key]...
   npm run agentops:local -- forensic-pack --agent <agentId> --chat <chatId> [--translate zh]
+  npm run agentops:local -- simulate --agent <agentId> [--draft <agentId>] (--scenario <name> | --turn <text> [--turn <text>...])
   npm run smoke:agentops
 
 Environment:
@@ -84,7 +85,7 @@ function parseArgs(argv) {
   }
 
   const [command, ...rest] = argv
-  const options = { metric: [] }
+  const options = { metric: [], turn: [] }
 
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index]
@@ -102,6 +103,8 @@ function parseArgs(argv) {
 
     if (key === 'metric') {
       options.metric.push(value)
+    } else if (key === 'turn') {
+      options.turn.push(value)
     } else {
       options[key] = value
     }
@@ -452,6 +455,44 @@ async function runForensicPack(options) {
     { headers: cookieHeaders(session.cookie) },
   )
   const data = await requireOkData('forensic-pack', result)
+  console.log(JSON.stringify(data, null, 2))
+}
+
+async function runSimulation(options) {
+  if (!options.agent) throw new CliError('simulate requires --agent <agentId>')
+  if (!options.scenario && options.turn.length === 0) {
+    throw new CliError('simulate requires either --scenario <name> or at least one --turn <text>')
+  }
+  if (options.scenario && options.turn.length > 0) {
+    throw new CliError('simulate accepts either --scenario or --turn, not both')
+  }
+
+  const baseUrl = resolveBaseUrl(options)
+  const session = await login(baseUrl)
+  const body = {
+    mode: 'local_runtime',
+    toolPolicy: 'mocked',
+    ...(options.draft ? { draftAgentConfigId: options.draft } : {}),
+    source: options.scenario
+      ? { type: 'scenario', name: options.scenario }
+      : {
+          type: 'turn_script',
+          name: options.name,
+          turns: options.turn.map((content) => ({ role: 'user', content })),
+        },
+    options: {
+      emitThinking: String(options['emit-thinking'] ?? 'false').toLowerCase() === 'true',
+    },
+  }
+  const result = await fetchJson(
+    buildUrl(baseUrl, `/api/agentops/agents/${encodeURIComponent(options.agent)}/simulations`),
+    {
+      method: 'POST',
+      headers: jsonCookieHeaders(session.cookie),
+      body: JSON.stringify(body),
+    },
+  )
+  const data = await requireOkData('simulation', result)
   console.log(JSON.stringify(data, null, 2))
 }
 
@@ -1519,6 +1560,10 @@ async function main() {
   }
   if (command === 'forensic-pack') {
     await runForensicPack(options)
+    return
+  }
+  if (command === 'simulate') {
+    await runSimulation(options)
     return
   }
   if (command === 'smoke') {

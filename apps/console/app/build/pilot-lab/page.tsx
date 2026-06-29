@@ -91,8 +91,8 @@ interface ScenarioEditorState {
 type ProposalPhase = 'idle' | 'proposing' | 'proposal' | 'diff' | 'accepted' | 'applying' | 'applied'
 
 const PILOT_GREETING = {
-  en: 'I have read the current draft. Ask me to create a flow, modify a prompt, add a Hook, run a Scenario, or check release risk.',
-  zh: '我已读取当前 draft。你可以让我创建流程、修改 prompt、添加 hook、运行 scenario，或检查发布前风险。',
+  en: 'I have read the current draft. Use this view to review third-party Agent proposals, inspect diffs, run Scenario receipts, and prepare release evidence.',
+  zh: '我已读取当前 draft。这个视图用于审查三方 Agent 提案、检查 diff、运行 Scenario 回执，并准备发布证据。',
 } as const
 const DEFAULT_PROMPT = {
   en: 'Create a repeatable deposit handoff Scenario with tool evidence, Hook escalation, human transfer, and forbidden compensation wording.',
@@ -262,8 +262,8 @@ export default function PilotLabPage() {
         pilotStatusLoader: 'Pilot 状态加载器',
         refresh: '刷新',
         generatingProposal: 'ConfigPilot 正在生成 typed patch proposal。draft 还没有被修改。',
-        messagePilot: '给 U-Pilot 发消息',
-        composerPlaceholder: '让 U-Pilot 创建流程、修改 prompt、添加 Hook、运行 Scenario，或检查发布风险…',
+        messagePilot: '给 Draft Review 发消息',
+        composerPlaceholder: '粘贴 Codex/intera-ops 证据，或要求生成 typed proposal、修复回执、检查发布风险…',
         sendMessage: '发送消息',
         loadContextMessage: '我现在还读不到当前 draft 上下文。请刷新，或切换到另一个 Agent 版本。',
         draftedProposalMessage: (title: string) => `我已经起草好 typed proposal：${title}。先查看右侧 diff，再决定是否接受。`,
@@ -295,13 +295,13 @@ export default function PilotLabPage() {
         pilotStatusLoader: 'Pilot status loader',
         refresh: 'Refresh',
         generatingProposal: 'ConfigPilot is generating a typed patch proposal. The draft is not changed yet.',
-        messagePilot: 'Message U-Pilot',
-        composerPlaceholder: 'Ask U-Pilot to create a flow, modify a prompt, add a Hook, run a Scenario, or check release risk...',
+        messagePilot: 'Message Draft Review',
+        composerPlaceholder: 'Paste Codex/intera-ops evidence, or ask for a typed proposal, receipt fix, or release-risk check...',
         sendMessage: 'Send message',
         loadContextMessage: 'I could not read the current draft context. Refresh or select another Agent version.',
         draftedProposalMessage: (title: string) => `I drafted a typed proposal: ${title}. Review the right panel diff before accepting.`,
       }
-  const activeTab = searchParams.get('tab') === 'playground' ? 'playground' : 'pilot'
+  const activeTab = searchParams.get('tab') === 'pilot' ? 'pilot' : 'playground'
   const agentConfigId = useSelectedAgentId()
   const chatEndRef = useRef<HTMLDivElement | null>(null)
   const [context, setContext] = useState<ConfigPilotContextResponse | null>(null)
@@ -929,14 +929,14 @@ function PilotLabTabs({
   const buildHref = (tab: 'pilot' | 'playground') => {
     const query = new URLSearchParams()
     if (agentConfigId) query.set('agentId', agentConfigId)
-    if (tab === 'playground') query.set('tab', 'playground')
+    if (tab === 'pilot') query.set('tab', 'pilot')
     const queryString = query.toString()
     return queryString ? `/build/pilot-lab?${queryString}` : '/build/pilot-lab'
   }
 
   const tabs = [
-    { id: 'pilot' as const, href: buildHref('pilot'), label: t('pilotLab.tabs.pilot'), description: t('pilotLab.tabs.pilotDesc') },
     { id: 'playground' as const, href: buildHref('playground'), label: t('pilotLab.tabs.playground'), description: t('pilotLab.tabs.playgroundDesc') },
+    { id: 'pilot' as const, href: buildHref('pilot'), label: t('pilotLab.tabs.pilot'), description: t('pilotLab.tabs.pilotDesc') },
   ]
 
   return (
