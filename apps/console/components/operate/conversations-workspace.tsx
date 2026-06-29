@@ -304,14 +304,18 @@ export default function ConversationsWorkspace() {
       const params = new URLSearchParams({ limit: '200', agentId: selectedAgentId })
       if (debouncedSearch.length >= 2) params.set('q', debouncedSearch)
       const metricsParams = new URLSearchParams({ agentId: selectedAgentId })
-      const [result, metricsResult] = await Promise.all([
-        apiClient<ChatsListResponse>(`/api/chats?${params.toString()}`),
-        apiClient<HandoffMetricsResponse>(`/api/operate/handoff/metrics?${metricsParams.toString()}`),
-      ])
+      void apiClient<HandoffMetricsResponse>(`/api/operate/handoff/metrics?${metricsParams.toString()}`)
+        .then((metricsResult) => {
+          setGlobalEscalatedCount(metricsResult.data.metrics.escalatedConversations)
+          setGlobalProcedureRunCount(metricsResult.data.metrics.totalProcedureRuns)
+        })
+        .catch(() => {
+          setGlobalEscalatedCount(null)
+          setGlobalProcedureRunCount(null)
+        })
+      const result = await apiClient<ChatsListResponse>(`/api/chats?${params.toString()}`)
       setSessions(result.data.sessions)
       setTotal(result.data.total)
-      setGlobalEscalatedCount(metricsResult.data.metrics.escalatedConversations)
-      setGlobalProcedureRunCount(metricsResult.data.metrics.totalProcedureRuns)
       setQueryMeta(result.data.query)
       setLoadError(null)
       hasLoadedRef.current = true

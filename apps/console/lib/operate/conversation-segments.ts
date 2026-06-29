@@ -5,6 +5,7 @@ export interface SegmentMessageInput {
   caseId?: string
   role?: string | null
   createdAt: Date | string
+  isInternal?: boolean
   providerContent?: unknown
   providerMeta?: unknown
 }
@@ -57,6 +58,7 @@ function hasToolResultProviderBlock(providerContent: unknown): boolean {
 }
 
 function isInternalMessage(message: SegmentMessageInput): boolean {
+  if (message.isInternal === true) return true
   const meta = message.providerMeta && typeof message.providerMeta === 'object'
     ? message.providerMeta as { visibility?: unknown; transcriptKind?: unknown }
     : null

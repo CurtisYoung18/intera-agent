@@ -3,6 +3,7 @@ import { defineRoute } from '@/lib/api/define-route'
 import { summarizeHandoffMetrics } from '@/lib/operate/handoff-metrics'
 import { apiOk } from '@intera/shared/contracts/envelope'
 import { resolveRequiredAgentCaseScope } from '@/app/api/_agent-scope'
+import { attachSegmentMessageActivity, loadSegmentMessageActivityByCaseId } from '@/lib/operate/segment-message-activity'
 
 const querySchema = z.object({
   agentId: z.string().optional(),
@@ -16,7 +17,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
   handler: async ({ input, repo }) => {
     const scope = await resolveRequiredAgentCaseScope(repo, input)
 
-    const cases = await repo.case.findMany({
+    const caseRows = await repo.case.findMany({
       where: { id: { in: scope.caseIds } },
       orderBy: { updatedAt: 'desc' as const },
       select: {
@@ -33,20 +34,11 @@ export const GET = defineRoute<z.infer<typeof querySchema>>({
             resolvedAt: true,
           },
         },
-        messages: {
-          select: {
-            id: true,
-            caseId: true,
-            role: true,
-            createdAt: true,
-            providerContent: true,
-            providerMeta: true,
-          },
-          orderBy: { createdAt: 'asc' as const },
-        },
         _count: { select: { messages: true } },
       },
     })
+    const messagesByCaseId = await loadSegmentMessageActivityByCaseId(repo, caseRows.map((caseRow) => caseRow.id))
+    const cases = attachSegmentMessageActivity(caseRows, messagesByCaseId)
 
     return apiOk({ metrics: summarizeHandoffMetrics(cases) })
   },

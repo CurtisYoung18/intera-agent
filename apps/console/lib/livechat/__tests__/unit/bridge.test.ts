@@ -117,6 +117,7 @@ function makeSseResponse(events: SSEEvent[]): Response {
 describe('livechat bridge', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    delete process.env.LIVECHAT_MAX_INTERNAL_MESSAGE_BODY_BYTES
     mockGetSession.mockResolvedValue(makeSession())
     mockFlushTextBuffer.mockResolvedValue('')
     mockUpdateSessionState.mockResolvedValue(undefined)
@@ -698,6 +699,47 @@ describe('livechat bridge', () => {
       sessionCasePinned: true,
       disableCaseRouting: true,
     })
+  })
+
+  it('downgrades oversized LiveChat image attachments before calling the runtime', async () => {
+    process.env.LIVECHAT_MAX_INTERNAL_MESSAGE_BODY_BYTES = '700'
+    mockIsLikelyImageAttachment.mockReturnValueOnce(true)
+    mockDownloadAndEncode.mockResolvedValueOnce({
+      contentType: 'image/png',
+      data: 'x'.repeat(1200),
+    })
+    mockFetch.mockResolvedValueOnce(makeSseResponse([
+      { type: 'message_stop', data: { reason: 'end_turn' }, timestamp: '2026-06-17T10:00:01.000Z' },
+    ]))
+
+    await handleIncomingEvent(
+      'chat-1',
+      'org-1',
+      'user-1',
+      {
+        type: 'attachment',
+        attachment: {
+          url: 'https://files.livechatinc.com/large-receipt',
+          contentType: 'image/png',
+          filename: 'large-receipt.png',
+        },
+      } satisfies IncomingEvent,
+      makeConfig(),
+      'agent-1',
+    )
+
+    const [, fetchInit] = mockFetch.mock.calls[0]!
+    const body = JSON.parse(String(fetchInit.body))
+    expect(body).toMatchObject({
+      chatId: 'chat-1',
+      caseId: 'case-1',
+      message: '[Image received but too large for inline analysis] large-receipt.png',
+      sessionCasePinned: true,
+      disableCaseRouting: true,
+    })
+    expect(body).not.toHaveProperty('contentBlocks')
+    expect(Buffer.byteLength(String(fetchInit.body))).toBeLessThan(700)
+    expect(mockEnqueueRetry).not.toHaveBeenCalled()
   })
 
   it('queues a retry when /api/messages rejects a bridge request', async () => {

@@ -13,6 +13,7 @@ import { hydrateMessageFromDb, isCustomerVisibleMessage } from '@/lib/agent/prov
 import { Prisma } from '@prisma/client'
 import { caseIdFilterForScope, resolveRequiredAgentCaseScope, type AgentCaseScope } from './_agent-scope'
 import { isTimeInsideSegment, splitCasesIntoConversationSegments, type SegmentMessageInput } from '@/lib/operate/conversation-segments'
+import { attachSegmentMessageActivity, loadSegmentMessageActivityByCaseId } from '@/lib/operate/segment-message-activity'
 
 type ChatCaseRow = {
   id: string
@@ -274,6 +275,39 @@ async function searchChatMetadata(
   }
 }
 
+async function loadCasesWithSegmentActivity(
+  repo: Parameters<typeof loadSegmentMessageActivityByCaseId>[0] & {
+    case: {
+      findMany: (args: {
+        where: Record<string, unknown>
+        orderBy: { updatedAt: 'desc' }
+        include: {
+          humanTasks: {
+            select: { id: true; createdAt: true }
+            orderBy: { createdAt: 'asc' }
+          }
+          _count: { select: { messages: true } }
+        }
+      }) => Promise<ChatCaseRow[]>
+    }
+  },
+  where: Record<string, unknown>,
+): Promise<ChatCaseRow[]> {
+  const cases = await repo.case.findMany({
+    where,
+    orderBy: { updatedAt: 'desc' as const },
+    include: {
+      humanTasks: {
+        select: { id: true, createdAt: true },
+        orderBy: { createdAt: 'asc' as const },
+      },
+      _count: { select: { messages: true } },
+    },
+  })
+  const messagesByCaseId = await loadSegmentMessageActivityByCaseId(repo, cases.map((caseRow) => caseRow.id))
+  return attachSegmentMessageActivity(cases, messagesByCaseId)
+}
+
 function metadataScore(session: ChatSession, metadataMatchedChatIds: Set<string>, normalizedQuery: string): number {
   const exactValues = [
     session.chatId,
@@ -361,21 +395,7 @@ export const GET = defineRoute({
         })
       }
 
-      const cases = await repo.case.findMany({
-        where: { ...caseIdFilterForScope(scope), chatId: { in: matchedChatIds } },
-        orderBy: { updatedAt: 'desc' as const },
-        include: {
-          humanTasks: {
-            select: { id: true, createdAt: true },
-            orderBy: { createdAt: 'asc' as const },
-          },
-          messages: {
-            select: { id: true, caseId: true, role: true, createdAt: true, providerContent: true, providerMeta: true },
-            orderBy: { createdAt: 'asc' as const },
-          },
-          _count: { select: { messages: true } },
-        },
-      })
+      const cases = await loadCasesWithSegmentActivity(repo, { ...caseIdFilterForScope(scope), chatId: { in: matchedChatIds } })
 
       const sorted = buildChatSessions(cases, scope, search.matchesByChatId)
         .filter((session) => {
@@ -403,21 +423,7 @@ export const GET = defineRoute({
       })
     }
 
-    const cases = await repo.case.findMany({
-      where: caseIdFilterForScope(scope),
-      orderBy: { updatedAt: 'desc' as const },
-      include: {
-        humanTasks: {
-          select: { id: true, createdAt: true },
-          orderBy: { createdAt: 'asc' as const },
-        },
-        messages: {
-          select: { id: true, caseId: true, role: true, createdAt: true, providerContent: true, providerMeta: true },
-          orderBy: { createdAt: 'asc' as const },
-        },
-        _count: { select: { messages: true } },
-      },
-    })
+    const cases = await loadCasesWithSegmentActivity(repo, caseIdFilterForScope(scope))
 
     // Sort sessions by lastActivity descending, then paginate.
     const sorted = buildChatSessions(cases, scope).sort((a, b) =>

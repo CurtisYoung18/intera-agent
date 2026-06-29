@@ -52,6 +52,7 @@ type HandoffSnapshot = {
 
 const INTERNAL_HANDOFF_FACT_KEY_RE = /(?:^|_)(?:automated_)?(?:tool|tools|hook|hooks|procedure|procedure_id|case_type|case_id|run_id|task_id|queue|runtime|model)(?:_|$)/i
 const INTERNAL_HANDOFF_VALUE_RE = /\b(?:kb_search|start_procedure|create_human_task|ask_user_questions|read_chat_memory|read_user_profile|finalize_procedure|remember|check_latest_|turnover_|reset_withdrawal_pin|get_account_status|get_id_verification_details|get_transaction_history|get_bet_history|get_recommend_games)\b/i
+const DEFAULT_MAX_INTERNAL_MESSAGE_BODY_BYTES = 6 * 1024 * 1024
 
 const HANDOFF_FACT_LABELS: Record<string, string> = {
   member_id: 'Member ID',
@@ -79,6 +80,12 @@ const HANDOFF_FACT_LABELS: Record<string, string> = {
   screenshot: 'Screenshot/receipt',
   receipt: 'Screenshot/receipt',
   status: 'Status',
+}
+
+function resolveMaxInternalMessageBodyBytes(): number {
+  const raw = Number(process.env.LIVECHAT_MAX_INTERNAL_MESSAGE_BODY_BYTES)
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw)
+  return DEFAULT_MAX_INTERNAL_MESSAGE_BODY_BYTES
 }
 
 /** Extract optional LiveChat API params from config for transparent pass-through. */
@@ -681,6 +688,14 @@ export async function handleIncomingEvent(
     (body as Record<string, unknown>).contentBlocks = contentBlocks
   }
 
+  let requestBody = JSON.stringify(body)
+  if (contentBlocks && Buffer.byteLength(requestBody) > resolveMaxInternalMessageBodyBytes()) {
+    delete (body as Record<string, unknown>).contentBlocks
+    ;(body as Record<string, unknown>).message =
+      `[Image received but too large for inline analysis] ${event.type === 'attachment' ? event.attachment.filename : 'attachment'}`
+    requestBody = JSON.stringify(body)
+  }
+
   let response: Response
   try {
     const headers: Record<string, string> = {
@@ -693,7 +708,7 @@ export async function handleIncomingEvent(
     response = await fetch(getInternalMessagesUrl(), {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: requestBody,
     })
   } catch (err) {
     console.error('[Bridge] Failed to call /api/messages:', err)
