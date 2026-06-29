@@ -1239,6 +1239,46 @@ export async function persistConfigPilotProposal(
   return serializeProposal(record)
 }
 
+export async function recordAgentOpsProposalMetadata(
+  repo: RepoForOrg,
+  session: RouteSession,
+  input: {
+    sessionId: string
+    proposalId: string
+    agentConfigId: string
+    schemaVersion: string
+    externalAgent: Record<string, unknown>
+    evidenceRefs: string[]
+    reason: string
+  },
+) {
+  await repo.raw.pilotMessage.create({
+    data: {
+      orgId: repo.orgId,
+      sessionId: input.sessionId,
+      role: 'system',
+      kind: 'trace',
+      content: 'AgentOps proposal intake metadata recorded.',
+      createdByUserId: session.userId ?? null,
+      structuredPayload: {
+        source: input.schemaVersion,
+        proposalId: input.proposalId,
+        agentConfigId: input.agentConfigId,
+        externalAgent: input.externalAgent,
+        evidenceRefs: input.evidenceRefs,
+        reason: input.reason,
+      } as any,
+    },
+  })
+  await writePilotAudit(repo, session, 'agentops.proposal.create', `pilot_proposal:${input.proposalId}`, undefined, {
+    agentConfigId: input.agentConfigId,
+    source: input.schemaVersion,
+    externalAgent: input.externalAgent,
+    evidenceRefs: input.evidenceRefs,
+    reason: input.reason,
+  })
+}
+
 export async function acceptPilotProposal(repo: RepoForOrg, session: RouteSession, proposalId: string, reason?: string) {
   const existing = await repo.raw.pilotProposal.findFirst({
     where: { id: proposalId, orgId: repo.orgId },

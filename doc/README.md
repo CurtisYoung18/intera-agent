@@ -1,6 +1,6 @@
 # Intera Documentation Map
 
-**Last updated:** 2026-06-15
+**Last updated:** 2026-06-26
 **Purpose:** keep the docs lean and usable for a solo build heading into first-tenant delivery. Only live reference, the current plan, known issues, and one archive — everything else is retired.
 
 ## Read order
@@ -9,7 +9,7 @@
 2. [`handoffs/HARD_BUGS.md`](./handoffs/HARD_BUGS.md) — open landmines live in the tree.
 3. [`handoffs/DELIVERY_UNCERTAINTY_LOG.md`](./handoffs/DELIVERY_UNCERTAINTY_LOG.md) — open decisions, temporary defaults, and owner-review items.
 4. [`strategy/2026-06-08-long-term-architecture-review.md`](./strategy/2026-06-08-long-term-architecture-review.md) — diagnosis of why the project plateaued and the sequence out.
-5. Active plans/specs: [`to-do/2026-06-12-consolidation-m1-m7-execution-plan.md`](./to-do/2026-06-12-consolidation-m1-m7-execution-plan.md), [`spec/2026-06-12-architecture-consolidation-modules-spec.md`](./spec/2026-06-12-architecture-consolidation-modules-spec.md), [`spec/2026-06-12-ui-refactor-spec.md`](./spec/2026-06-12-ui-refactor-spec.md).
+5. Active plans/specs: [`to-do/2026-06-26-agentops-harness-mvp-execution-plan.md`](./to-do/2026-06-26-agentops-harness-mvp-execution-plan.md), [`to-do/2026-06-12-consolidation-m1-m7-execution-plan.md`](./to-do/2026-06-12-consolidation-m1-m7-execution-plan.md), [`spec/2026-06-12-architecture-consolidation-modules-spec.md`](./spec/2026-06-12-architecture-consolidation-modules-spec.md), [`spec/2026-06-12-ui-refactor-spec.md`](./spec/2026-06-12-ui-refactor-spec.md).
 
 ## Current vocabulary
 
@@ -25,7 +25,11 @@ Use these names in new docs, APIs, UI, traces, and package manifests:
 | `HookBinding` | Activation link from Hook to agent, Procedure type, ProcedureStep, or Tool. |
 | `.intera-agent.json` | Portable Agent Template Package for delivery reuse. |
 | `Scenario` | Delivery validation case and receipt source. |
-| `ConfigPilot` | Conversational configuration assistant that writes only through typed APIs. |
+| `ConfigPilot` | Protocol, review UI, and optional light assistant that writes only through typed APIs. |
+| `AgentOps Control Plane` | Agent-scoped API/CLI/MCP/evidence/proposal/replay/review layer for humans and external harness agents. |
+| `intera-ops` | Planned CLI/MCP surface for Codex/Claude Code-style agents to inspect, propose, and replay through scoped tokens. |
+| `Forensic Pack` | Read-only incident bundle for transcript, trace, Tool/Hook/KB evidence, metrics, SaaS links, and config refs. |
+| `Debug Trace Pack` | High-permission provider/debug evidence bundle with redaction, audit, and retention controls. |
 | `Quiet Agent Studio` | First-launch UI theme: unified light-first product shell with focused light workspaces. |
 
 UI copy may render `Procedure` as "Playbook" through i18n dictionary values only. Do not introduce new `playbook` code identifiers, route names, schema fields, runtime event names, package keys, or trace keys.
@@ -36,7 +40,8 @@ Legacy names may appear in archived plans and the original philosophy reference:
 
 - Logged-in default route is `/build/pilot-lab`, with `Pilot` and `Playground` tabs in the same workspace.
 - `Release` owns version history, publish/rollback flow, and package import/export actions.
-- `ConfigPilot` is a Pilot Lab workspace, not a global drawer.
+- `ConfigPilot` is a Pilot Lab workspace and review UI over the AgentOps Control Plane, not a global drawer or internal Codex-class agent.
+- External harness agents should eventually use `intera-ops` / MCP / AgentOps APIs for scoped reads, typed draft proposals, forensic/debug packs, metrics, and replay receipts.
 - Legacy `/admin/*` and `/ops/*` paths are compatibility redirects/wrappers only; current docs teach the Build / Operate / Settings IA.
 
 ## Directory guide

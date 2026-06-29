@@ -14,6 +14,11 @@ export interface AgentCaseScope {
   runIds: string[]
 }
 
+interface ExternalConversationScopeRow {
+  internalCaseId: string | null
+  metadata: unknown
+}
+
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => typeof value === 'string' && value.length > 0))]
 }
@@ -25,6 +30,12 @@ function isLegacyRunAgentConfig(agentConfigId: string | null | undefined): boole
 
 function isPlaygroundChatForAgent(chatId: string, agentConfigId: string): boolean {
   return chatId.startsWith(`pg_${agentConfigId}_`)
+}
+
+function metadataAgentConfigId(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const value = (metadata as Record<string, unknown>).agentConfigId
+  return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
 export function selectedAgentFromInput(input: { agentId?: string | null; agentConfigId?: string | null }): string | undefined {
@@ -95,6 +106,10 @@ export async function resolveAgentCaseScopeForChat(
     where: { orgId: repo.orgId, caseId: { in: chatCaseIds } },
     select: { caseId: true, agentConfigId: true },
   })
+  const externalConversationsForChat = await repo.externalConversation.findMany({
+    where: { internalCaseId: { in: chatCaseIds } },
+    select: { internalCaseId: true, metadata: true },
+  }) as ExternalConversationScopeRow[]
   const casesWithRuns = new Set(runsForChat.map((run: { caseId: string }) => run.caseId))
   const runsByCase = new Map<string, Array<{ caseId: string; agentConfigId: string | null }>>()
   for (const run of runsForChat) {
@@ -102,7 +117,20 @@ export async function resolveAgentCaseScopeForChat(
     bucket.push(run)
     runsByCase.set(run.caseId, bucket)
   }
-  const unscopedCaseIds = chatCaseIds.filter((caseId: string) => !casesWithRuns.has(caseId))
+  const metadataAgentIdsByCase = new Map<string, string[]>()
+  for (const row of externalConversationsForChat) {
+    if (!row.internalCaseId) continue
+    const metadataAgentId = metadataAgentConfigId(row.metadata)
+    if (!metadataAgentId) continue
+    const bucket = metadataAgentIdsByCase.get(row.internalCaseId) ?? []
+    bucket.push(metadataAgentId)
+    metadataAgentIdsByCase.set(row.internalCaseId, bucket)
+  }
+  const unscopedCaseIds = chatCaseIds.filter((caseId: string) => {
+    if (casesWithRuns.has(caseId)) return false
+    const metadataAgentIds = metadataAgentIdsByCase.get(caseId) ?? []
+    return metadataAgentIds.length > 0 && metadataAgentIds.every((metadataAgentId) => metadataAgentId === agentConfigId)
+  })
   const legacyPlaygroundCaseIds = isPlaygroundChatForAgent(chatId, agentConfigId)
     ? chatCaseIds.filter((caseId: string) => {
         const runs = runsByCase.get(caseId) ?? []

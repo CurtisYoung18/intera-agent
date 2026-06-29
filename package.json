@@ -11,6 +11,8 @@
     "start:runtime": "npm run start -w apps/runtime",
     "test:runtime": "npm run test -w apps/runtime",
     "build:console": "npm run build -w apps/console",
+    "agentops:local": "node scripts/agentops-local.mjs",
+    "smoke:agentops": "node scripts/agentops-local.mjs smoke",
     "smoke:console": "node scripts/smoke-console-auth.mjs",
     "ci:receipts": "node scripts/ci-receipts.mjs",
     "db:generate": "npm run db:generate -w packages/shared",

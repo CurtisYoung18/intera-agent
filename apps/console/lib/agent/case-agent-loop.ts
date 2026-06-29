@@ -187,6 +187,14 @@ export class CaseAgentLoop {
     }
 
     const { caseId, orgId, userId, chatId } = this.services
+    const resolvedChatId = chatId ?? caseId
+    const activeRun = getActiveProcedureRun(caseId)
+    const runId = activeRun?.agentConfigId === this.services.agentConfigId ? activeRun.runId : undefined
+    const attributionUpdate = {
+      orgId,
+      chatId: resolvedChatId,
+      ...(runId ? { runId } : {}),
+    }
     let taskId: string | null = null
 
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -207,17 +215,23 @@ export class CaseAgentLoop {
             type: this.caseSchema.type || 'general',
             status: 'waiting_human',
             blocker: `Waiting for ${queue}`,
-            chatId: chatId ?? caseId,
+            chatId: resolvedChatId,
           },
         })
 
         this.services.chatMemory.setCaseStatus('waiting_human')
         this.syncStage()
 
+        const chatMemoryFields = this.services.chatMemory.getDbFields()
         await prisma.chatMemory.upsert({
           where: { caseId },
-          update: { ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
-          create: { caseId, ...this.services.chatMemory.getDbFields(), humanTaskStatus: 'pending' },
+          update: { ...attributionUpdate, ...chatMemoryFields, humanTaskStatus: 'pending' },
+          create: {
+            caseId,
+            ...attributionUpdate,
+            ...chatMemoryFields,
+            humanTaskStatus: 'pending',
+          },
         })
 
         const fields = taskFields && taskFields.length > 0 ? JSON.stringify(taskFields) : null
@@ -229,11 +243,12 @@ export class CaseAgentLoop {
         const task = existingTask?.id
           ? await prisma.humanTask.update({
               where: { id: existingTask.id },
-              data: { queue, question, fields },
+              data: { ...attributionUpdate, queue, question, fields },
             })
           : await prisma.humanTask.create({
               data: {
                 caseId,
+                ...attributionUpdate,
                 queue,
                 question,
                 fields,

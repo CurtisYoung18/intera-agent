@@ -1,6 +1,6 @@
 # Intera Harness Architecture
 
-**Last updated:** 2026-06-16
+**Last updated:** 2026-06-26
 **Status:** CURRENT source of truth for product architecture and domain language
 **Audience:** founder, architect, delivery lead, and AI coding teams
 **Related plan:** [`../archive/shipped/2026-06-08-foundation-reset-domain-model.md`](../archive/shipped/2026-06-08-foundation-reset-domain-model.md)
@@ -12,7 +12,9 @@ This document replaces the older mixed Harness/Procedure notes as the current ar
 
 ## 0. Product Thesis
 
-Intera is a customer-service AgentOps platform.
+Intera is an agent-native customer-service AgentOps platform.
+
+The product should not become "a SaaS with a powerful embedded coding agent." Intera's durable advantage is the control plane around real customer-service agents: scoped production evidence, typed configuration mutations, reviewable diffs, replay/scenario receipts, rollback, audit, and SaaS visibility. External harness agents such as Codex, Claude Code, Cursor Agent, or Devin can act as operators through that control plane; Intera remains the permission, evidence, validation, and review system.
 
 The Console should let a delivery person build, adapt, validate, deploy, and maintain a customer-service AI Agent for a real enterprise account. The first commercial slice is not a generic chatbot builder. It is a practical delivery chain for one customer:
 
@@ -24,10 +26,13 @@ Selected-Agent UI routes must carry the selected Agent in the URL, currently as 
 
 ```text
 Import starter template
-  -> adapt Agent with UI + ConfigPilot
+  -> adapt Agent with UI, ConfigPilot review UI, or intera-ops
   -> configure Procedure types, Procedures, Tools, Hooks, Human Transfer
   -> validate in Scenario Lab
   -> activate for LiveChat / API channel
+  -> inspect production evidence through AgentOps APIs
+  -> propose draft patches with external agents or ConfigPilot
+  -> replay incidents against draft versions
   -> export a customer-customized .intera-agent.json package
 ```
 
@@ -57,7 +62,12 @@ High-risk business actions can exist as Tool/Hook concepts, but should be gated 
 | `Hook` | Hard control layer for PreToolUse, PostToolUse, and Stop checkpoints. |
 | `HookBinding` | Activation relationship from a Hook to an agent, Procedure type, ProcedureStep, or Tool. |
 | `Scenario` | Test case and acceptance receipt used by Scenario Lab. |
-| `ConfigPilot` | Conversational configuration assistant. It writes only through typed admin/scenario/trace APIs. |
+| `ConfigPilot` | Protocol, review UI, and optional light assistant over typed admin/scenario/trace APIs. |
+| `AgentOps Control Plane` | Typed APIs, CLI/MCP entry points, evidence packs, proposal lifecycle, receipts, audit, and Console review UI for operating Agents. |
+| `intera-ops` | Planned CLI/MCP surface for external harness agents. It uses short-lived scoped tokens and never receives raw DB or shell access. |
+| `Forensic Pack` | Read-only incident bundle for a chat/run: transcript, SaaS links, timeline, Tool/Hook/KB evidence, metrics, and config refs. |
+| `Debug Trace Pack` | High-permission debug bundle with provider calls, prompt/tool schema snapshots, Tool args/results, retrieval raw evidence, timing, token, and cost details. |
+| `Replay Runner` | Validation runner that replays a chat, scenario, or provider-call breakpoint against active or draft configuration and emits receipts. |
 | `.intera-agent.json` | Portable Agent Template Package for internal delivery reuse and future marketplace support. |
 
 Current code names should match these terms wherever the Foundation Reset touches files.
@@ -512,32 +522,58 @@ Do not emit new `skill_*` trace events after the reset. Historical traces may ha
 
 ---
 
-## 8. ConfigPilot
+## 8. AgentOps Control Plane And ConfigPilot
 
-ConfigPilot is the conversational configuration assistant inside Console / Scenario Lab.
+ConfigPilot should be refactored from "embedded super agent" into the first UI surface over an AgentOps Control Plane. The control plane is the product; the chat assistant is only one optional client.
 
-It can:
+```text
+Codex / Claude Code / Cursor Agent / Devin
+  -> intera-ops skill / AGENTS.md / OpenAPI / MCP schema
+  -> intera-ops CLI or MCP server
+  -> short-lived scoped token
+  -> Intera AgentOps API
+  -> agent-scoped control plane
+  -> Forensic Pack / Debug Trace Pack / Metrics / Config Snapshot
+  -> Typed Patch Proposal / Draft Apply / Scenario Runner / Replay Runner
+  -> Receipt Store + Console Diff UI
+```
 
-- inspect current Agent configuration
-- explain Procedure, Tool, Hook, Human Transfer, and trace behavior
-- generate Procedure drafts from natural language or failed scenarios
-- propose Brain/model/prompt/memory changes through typed patches
-- generate HTTP Tool drafts from Swagger / OpenAPI fragments
-- create Static Fixtures from example responses
-- create and bind declarative/code/HTTP Hooks
-- run one-off scenarios and saved regression suites
-- explain Scenario failures and propose the smallest config change
-- export a validated `.intera-agent.json` package
+### 8.1 ConfigPilot Protocol
 
-It cannot:
+The protocol defines what humans and external agents can safely do. It is typed, versioned, documented, audited, and agent-scoped.
 
-- open a server shell
-- read or write server files
-- write DB rows directly
-- bypass typed admin/scenario/trace APIs
-- publish, activate, deploy, roll back, or bypass Scenario validation
+Read operations:
 
-The ConfigPilot model prompt, model selector, context builder, structured proposal parser, and apply service live on the backend. The React workbench is only the review/accept UI.
+- `list_orgs`, `list_agents`
+- `get_agent_config`
+- `get_chat_forensic_pack`
+- `get_debug_trace_pack`
+- `query_agent_metrics`
+- `get_saas_link`
+
+Proposal operations:
+
+- `propose_tool_patch`
+- `propose_prompt_patch`
+- `propose_hook_patch`
+- `propose_procedure_patch`
+- `propose_scenario_patch`
+
+Validation operations:
+
+- `run_scenario`
+- `replay_chat`
+- `replay_provider_call`
+- `compare_active_vs_draft`
+
+Apply operations:
+
+- `create_draft_patch`
+- `attach_evidence_refs`
+- `mark_validation_changed`
+- `create_reverse_patch`
+
+Existing ConfigPilot patch surfaces (`brain`, `procedures`, `tools`, `hooks`, `hookBindings`, `knowledge`, `integrations`, `scenarios`) should become the write protocol for `intera-ops`. Do not create a second mutation language for external agents.
 
 Mutation contract:
 
@@ -546,11 +582,203 @@ proposal
   -> structured diff
   -> user confirmation
   -> typed API save
-  -> Scenario receipt
-  -> rollback path
+  -> draft version only
+  -> Scenario or Replay receipt
+  -> rollback / reverse patch path
 ```
 
-This keeps development velocity high without turning ConfigPilot into an unsafe remote operator.
+### 8.2 ConfigPilot Console UI
+
+The Console keeps the human review and customer-delivery proof surface:
+
+- proposal inbox
+- diff viewer
+- accept / reject / apply controls
+- rollback / reverse controls
+- evidence links
+- replay receipt viewer
+- audit trail
+- validation state
+- human actor + external agent co-author
+
+Example UI truth:
+
+```text
+Change proposed by: Codex via intera-ops
+Authorized by: Curtis / delivery user
+Evidence: chat Axxx, provider call #7, get_latest_deposit schema snapshot
+Reason: GMT parameter mismatch
+Status: Applied to draft J1B v4; active J1B v3 unchanged
+Replay: original gmt=+7, draft gmt=+5, assertion pass
+Rollback: available
+```
+
+### 8.3 Optional Lightweight Assistant
+
+SaaS may still include a light ConfigPilot chat for:
+
+- explaining configuration, diffs, traces, and Scenario receipts
+- answering simple metrics questions inside Console
+- drafting simple Scenarios or Hooks
+- helping users discover `intera-ops` workflows
+
+It should not try to become an internal Codex-class coding agent. Deep investigation, cross-file analysis, batch tuning, debug replay orchestration, and commit-level code work belong to external harness agents.
+
+### 8.4 Authentication And Permission Model
+
+External agents operate through a human-authorized session, not permanent super-admin credentials.
+
+Target login:
+
+```text
+intera ops login
+  -> browser / device-code login
+  -> user completes Intera auth / SSO / 2FA
+  -> CLI receives short-lived scoped ops token
+  -> token stored in keychain or temporary env
+```
+
+Initial scopes:
+
+- `read:orgs`
+- `read:agents`
+- `read:ops`
+- `read:debug_trace`
+- `write:draft`
+- `run:scenario`
+- `run:replay`
+
+`read:debug_trace` is high privilege and separate from ordinary `read:ops`. Provider request/response payloads may contain PII, internal prompts, Tool output, retrieval evidence, and secret placeholders; access requires audit, redaction policy, encryption, and retention limits.
+
+Hard rules:
+
+- never give external agents production DB passwords
+- never give external agents production shell access
+- never let agents read org-wide data and filter client-side
+- require `agentId` / `agentConfigId` on every AgentOps read and write
+- route AgentOps APIs through typed auth, zod contracts, org-agent ownership checks, audit, and envelope responses
+- draft writes are allowed only through typed proposals
+- active publish / activate / deploy remains human-gated unless a later explicit scope is approved
+- replay must not call real side-effecting Tools
+- trace/debug packs must redact secrets and configurable PII
+
+Current local MVP API surface, 2026-06-26:
+
+- `GET /api/agentops/agents/[agentId]/metrics`
+- `GET /api/agentops/agents/[agentId]/chats/[chatId]/forensic-pack`
+- `POST /api/agentops/agents/[agentId]/proposals`
+- `POST /api/agentops/agents/[agentId]/replay`
+
+The local MVP still uses authenticated Console sessions with owner/admin gates instead of permanent external-agent tokens. Proposal intake only persists drafted `PilotProposal` records and refs-only AgentOps metadata; it never accepts, applies, publishes, activates, or mutates active Agent config. Replay currently accepts only `mode: local_dry_run`, returns a receipt, appends no Scenario receipts, marks no Scenario validation state, calls no provider/runtime Tool path, and is disabled in production runtime.
+
+### 8.5 Evidence And Debug Packs
+
+Forensic Pack is the default incident object for delivery and operations. Given a chat/run id, it returns:
+
+- original transcript and SaaS link
+- translated transcript when requested by the operator
+- case / chat / ProcedureRun state
+- Tool calls and selected args/results
+- Knowledge queries, matched docs/chunks, scores, and miss indicators
+- Hook decisions and risk flags
+- HumanTask and transfer events
+- token, latency, cost, and timeline metrics
+- config snapshot refs for the Agent version used at incident time
+
+Debug Trace Pack is provider-call level. It may include:
+
+- LLM request / response
+- visible Tool schema snapshot
+- prompt, Procedure, memory, and dynamic ProcedureRun tail
+- Tool args/results
+- KB retrieval raw evidence
+- Hook context and decision output
+- `inputEpoch`, timing, token, and cost details
+
+Debug packs are not memory. They are auditable operational evidence with retention and redaction controls.
+
+### 8.6 Metrics Query Layer
+
+External agents should ask metrics questions through controlled API or query DSL, not raw SQL. Metrics must define window, denominator, filters, timezone, and scope.
+
+Examples:
+
+```text
+intera ops metrics --agent j1b-prod --window 20m --metric handoff_rate
+intera ops metrics --agent j1b-prod --window 24h --metric knowledge_miss_rate
+intera ops metrics --agent j1b-prod --window 24h --metric tool_timeout_top
+```
+
+### 8.7 Replay And Breakpoint Runner
+
+Replay is the differentiating AgentOps loop:
+
+```text
+incident chat
+  -> forensic/debug pack
+  -> root-cause proposal
+  -> draft patch
+  -> replay against draft
+  -> assertion receipt
+  -> human approval
+```
+
+Supported targets:
+
+- chat-to-scenario generation
+- provider-call breakpoint replay
+- active-vs-draft comparison
+- Tool argument assertion, such as `tool.get_latest_deposit.input.gmt=+5`
+- KB retrieval assertion, such as `retrieval.includes(docId)`
+- Hook outcome assertion, such as `hook.transfer_before_final_answer=allow`
+
+Acceptance should be receipt-based, not "the new answer looks better." For example:
+
+```text
+original: get_latest_deposit.gmt = +7
+draft replay: get_latest_deposit.gmt = +5
+assertion: pass
+```
+
+### 8.8 `intera-ops` Surface
+
+Target CLI examples:
+
+```bash
+intera ops login
+intera ops agents
+intera ops select-agent j1b-prod
+intera ops metrics --window 20m --metric handoff_rate
+intera ops chat Axxx --forensic-pack --translate zh
+intera ops debug Axxx --provider-calls
+intera ops propose tool update get_latest_deposit \
+  --field description \
+  --evidence chat:Axxx \
+  --reason "GMT mismatch in production trace"
+intera ops replay chat Axxx --draft latest --assert tool.get_latest_deposit.input.gmt=+5
+```
+
+Target package/documentation layout:
+
+```text
+packages/intera-ops-cli
+packages/intera-ops-mcp
+doc/agentops/AGENTS.md
+doc/agentops/SKILL.md
+doc/agentops/openapi.yaml
+```
+
+### 8.9 Implementation Priority
+
+P0: expose ConfigPilot capabilities as stable AgentOps APIs. Preserve `/api/admin/config-pilot/propose`, `/apply`, context, and `PilotProposal`, but make contracts external-agent usable: auth scopes, audit identity, evidence refs, proposal lifecycle, and draft-only writes.
+
+P1: ship `intera-ops` CLI/MCP and agent documentation. It should describe workflows, metric definitions, patch examples, safety rules, and MCP tool schemas.
+
+P2: ship Forensic Pack and Metrics APIs first. Debug Trace Pack remains separate and high-permission until scoped debug auth, durable audit, redaction, and retention controls are ready.
+
+P3: ship Replay / breakpoint runner incrementally. The first accepted slice is return-only `local_dry_run` assertion receipts; provider-call breakpoint replay and draft-vs-active comparison come later.
+
+P4: enable continuous tuning workflows: customer feedback -> external agent evidence pull -> root cause -> typed patch proposal -> replay receipt -> human approve.
 
 ---
 
@@ -703,5 +931,10 @@ Defer:
 - arbitrary HTTP/code Hook execution without the launch restrictions
 - complex permission workflow for every mutation
 - generalized workflow Tool builder if HTTP Tool + Static Fixture is enough for the first customer
+- internal Codex-class ConfigPilot agent
+- raw production DB or shell access for external agents
+- direct active-version writes from `intera-ops`
+- replay against side-effecting production Tools
+- org-wide AgentOps reads that rely on client-side filtering
 
 The first goal is a clean, commercially usable foundation, not maximum surface area.
