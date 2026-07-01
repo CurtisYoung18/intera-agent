@@ -33,6 +33,7 @@ function makeDb(options: MockDbOptions = {}) {
     if (callIndex === 1) return [{ exists: options.hasAgentConfigColumn ?? false }]
     return [row]
   })
+  const $executeRaw = vi.fn(async () => 1)
 
   const findUnique = options.prismaSupportsAgentConfig === false
     ? vi.fn(async () => { throw new Error('Unknown argument orgId_agentConfigId_userId') })
@@ -48,7 +49,9 @@ function makeDb(options: MockDbOptions = {}) {
       findUnique,
       findMany: vi.fn(async () => []),
       upsert,
+      deleteMany: vi.fn(async () => ({ count: 1 })),
     },
+    $executeRaw,
   }
 }
 
@@ -67,6 +70,7 @@ describe('user profile storage', () => {
     vi.resetModules()
     const {
       readUserProfile,
+      deleteUserProfile,
       upsertUserProfile,
       resetUserProfileStorageScopeCacheForTests,
     } = await import('@/lib/db/user-profiles')
@@ -109,12 +113,27 @@ describe('user profile storage', () => {
       },
       update: { profile: '# User Profile' },
     })
+
+    const deletedCount = await deleteUserProfile(db as any, {
+      orgId: 'default',
+      agentConfigId: 'agent-j1b',
+      userId: 'user-1',
+    })
+
+    expect(deletedCount).toBe(1)
+    expect(db.userProfile.deleteMany).toHaveBeenCalledWith({
+      where: {
+        orgId: 'default',
+        userId: 'user-1',
+      },
+    })
   })
 
   it('falls back to raw agent-scoped reads and writes when the DB still has agent_config_id but the Prisma client no longer exposes that unique key', async () => {
     vi.resetModules()
     const {
       readUserProfile,
+      deleteUserProfile,
       upsertUserProfile,
       resetUserProfileStorageScopeCacheForTests,
     } = await import('@/lib/db/user-profiles')
@@ -146,5 +165,19 @@ describe('user profile storage', () => {
     expect(writtenRow.agentConfigId).toBe('agent-j1b')
     expect(db.userProfile.upsert).not.toHaveBeenCalled()
     expect(db.$queryRaw).toHaveBeenCalled()
+
+    resetUserProfileStorageScopeCacheForTests()
+    db.$queryRaw.mockClear()
+    db.$executeRaw.mockClear()
+
+    const deletedCount = await deleteUserProfile(db as any, {
+      orgId: 'default',
+      agentConfigId: 'agent-j1b',
+      userId: 'user-1',
+    })
+
+    expect(deletedCount).toBe(1)
+    expect(db.userProfile.deleteMany).not.toHaveBeenCalled()
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1)
   })
 })

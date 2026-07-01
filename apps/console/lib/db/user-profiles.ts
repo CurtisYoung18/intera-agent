@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { PrismaClient, UserProfile } from '@prisma/client'
 import { Prisma } from '@prisma/client'
 
-type QueryablePrisma = Pick<PrismaClient, '$queryRaw'> & {
+type QueryablePrisma = Pick<PrismaClient, '$queryRaw'> & Partial<Pick<PrismaClient, '$executeRaw'>> & {
   userProfile: {
     findUnique: (args: unknown) => Promise<UserProfile | null>
     findMany: (args: unknown) => Promise<UserProfile[]>
     upsert: (args: unknown) => Promise<UserProfile>
+    deleteMany?: (args: unknown) => Promise<{ count: number }>
   }
 }
 
@@ -250,6 +251,31 @@ async function upsertUserProfileRaw(
   return rows[0]!
 }
 
+async function deleteUserProfileRaw(
+  db: QueryablePrisma,
+  scope: UserProfileStorageScope,
+  input: { orgId: string; userId: string; agentConfigId?: string | null },
+): Promise<number> {
+  if (typeof db.$executeRaw !== 'function') {
+    throw new Error('deleteUserProfile requires Prisma $executeRaw for raw scoped deletes')
+  }
+
+  if (scope === 'agent_config_profile') {
+    return Number(await db.$executeRaw(Prisma.sql`
+      delete from user_profiles
+      where "orgId" = ${input.orgId}
+        and "userId" = ${input.userId}
+        and agent_config_id = ${normalizedAgentConfigId(input.agentConfigId)}
+    `))
+  }
+
+  return Number(await db.$executeRaw(Prisma.sql`
+    delete from user_profiles
+    where "orgId" = ${input.orgId}
+      and "userId" = ${input.userId}
+  `))
+}
+
 export async function getUserProfileStorageScope(db: QueryablePrisma): Promise<UserProfileStorageScope> {
   return detectUserProfileStorageScope(db)
 }
@@ -356,6 +382,41 @@ export async function upsertUserProfile(
   } catch {
     return upsertUserProfileRaw(db, scope, input)
   }
+}
+
+export async function deleteUserProfile(
+  db: QueryablePrisma,
+  input: { orgId: string; userId: string; agentConfigId?: string | null },
+): Promise<number> {
+  const scope = await detectUserProfileStorageScope(db)
+  if (scope === 'agent_config_profile') {
+    if (!supportsAgentConfigScopedPrismaClient()) {
+      return deleteUserProfileRaw(db, scope, input)
+    }
+    try {
+      const result = await db.userProfile.deleteMany?.({
+        where: {
+          orgId: input.orgId,
+          agentConfigId: normalizedAgentConfigId(input.agentConfigId),
+          userId: input.userId,
+        },
+      })
+      if (result) return result.count
+    } catch {
+      return deleteUserProfileRaw(db, scope, input)
+    }
+    return deleteUserProfileRaw(db, scope, input)
+  }
+
+  try {
+    const result = await db.userProfile.deleteMany?.({
+      where: { orgId: input.orgId, userId: input.userId },
+    })
+    if (result) return result.count
+  } catch {
+    return deleteUserProfileRaw(db, scope, input)
+  }
+  return deleteUserProfileRaw(db, scope, input)
 }
 
 export function resetUserProfileStorageScopeCacheForTests(): void {

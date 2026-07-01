@@ -4,13 +4,19 @@
 import { z } from 'zod'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
-import { getUserProfileStorageScope, readUserProfile, upsertUserProfile } from '@/lib/db/user-profiles'
+import { mergeProfile } from '@intera/shared/memory/mergeProfile'
+import { deleteUserProfile, getUserProfileStorageScope, readUserProfile, upsertUserProfile } from '@/lib/db/user-profiles'
 import { caseIdFilterForScope, resolveRequiredAgentCaseScope } from '@/app/api/_agent-scope'
 
 function caseWhereForProfileKey(profileKey: string, orgId: string): Record<string, unknown> {
   if (profileKey.startsWith('chat:')) return { orgId, chatId: profileKey.slice(5) }
   if (profileKey.startsWith('user:')) return { orgId, userId: profileKey.slice(5) }
   return { orgId, userId: profileKey }
+}
+
+function sectionsForEditedProfile(profile: string): string {
+  if (!profile.trim()) return '{}'
+  return mergeProfile('', profile, 4000).sections
 }
 
 const querySchema = z.object({
@@ -93,7 +99,7 @@ export const PUT = defineRoute<z.infer<typeof putSchema>, { userId: string }>({
       orgId: repo.orgId,
       userId: decoded,
       agentConfigId: scope.agentConfigId,
-      patch: { profile: input.profile },
+      patch: { profile: input.profile, sections: sectionsForEditedProfile(input.profile) },
     })
     const profileScope = await getUserProfileStorageScope(repo.raw as any).catch(() => 'legacy_org_profile' as const)
     return apiOk({ profile, profileScope })
@@ -109,13 +115,32 @@ export const DELETE = defineRoute<z.infer<typeof querySchema>, { userId: string 
     const decoded = decodeURIComponent(params.userId)
     const scope = await resolveRequiredAgentCaseScope(repo, input)
     const caseWhere = { ...caseWhereForProfileKey(decoded, repo.orgId), ...caseIdFilterForScope(scope) }
-    const caseIds = (await repo.raw.case.findMany({ where: caseWhere, select: { id: true } })).map(c => c.id)
+    const cases = await repo.raw.case.findMany({ where: caseWhere, select: { id: true, chatId: true } })
+    const caseIds = cases.map(c => c.id)
+    const chatIds = Array.from(new Set(cases.map(c => c.chatId).filter(Boolean) as string[]))
+    const profileScope = await getUserProfileStorageScope(repo.raw as any).catch(() => 'legacy_org_profile' as const)
 
-    await Promise.all([
+    const [deletedProfiles, , , deletedChatSessions] = await Promise.all([
+      deleteUserProfile(repo.raw as any, {
+        orgId: repo.orgId,
+        userId: decoded,
+        agentConfigId: scope.agentConfigId,
+      }),
       repo.raw.case.deleteMany({ where: caseWhere }),
       caseIds.length > 0 ? repo.raw.externalConversation.deleteMany({ where: { orgId: repo.orgId, internalCaseId: { in: caseIds } } }) : Promise.resolve(),
+      chatIds.length > 0
+        ? repo.raw.chatSession.deleteMany({ where: { orgId: repo.orgId, chatId: { in: chatIds } } })
+        : Promise.resolve({ count: 0 }),
     ])
 
-    return apiOk({ ok: true, deleted: decoded, deletedCases: caseIds.length, profileDeleted: false, profileScope: 'legacy_org_profile' })
+    return apiOk({
+      ok: true,
+      deleted: decoded,
+      deletedCases: caseIds.length,
+      deletedChatSessions: deletedChatSessions?.count ?? 0,
+      profileDeleted: deletedProfiles > 0,
+      deletedProfiles,
+      profileScope,
+    })
   },
 })
