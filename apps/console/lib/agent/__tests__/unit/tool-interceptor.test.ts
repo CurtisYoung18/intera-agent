@@ -159,6 +159,106 @@ describe('tool-interceptor start_procedure truth alignment', () => {
     })
   })
 
+  it('emits a form_request when start_procedure and ask_user_questions are batched in one model turn', async () => {
+    const activateProcedureContext = vi.fn(async () => {})
+    const sendEvent = vi.fn()
+    const traceWrite = vi.fn(async () => {})
+
+    const result = await interceptToolResults(
+      {
+        caseId: 'case-form-batch',
+        orgId: 'org-a',
+        agentConfigId: 'agent-a',
+        userId: 'user-1',
+        chatId: 'chat-1',
+        config: {} as any,
+        caseSchema: null,
+        chatMemory: {
+          setCaseStatus: vi.fn(),
+          setContextEntriesBulk: vi.fn(),
+        } as any,
+        persistence: {} as any,
+        traceWriter: {
+          write: traceWrite,
+        } as any,
+        toolRouter: {} as any,
+        getCaseLoop: () => null,
+        dryRun: false,
+        messages: [],
+        getCurrentStage: () => 'investigating',
+        setPendingEscalation: vi.fn(),
+        activateProcedureContext,
+      },
+      [
+        {
+          name: 'start_procedure',
+          output: { ok: true },
+          toolUse: {
+            id: 'toolu_start_batch',
+            name: 'start_procedure',
+            input: {
+              procedureId: 'deposit_not_credited',
+              reason: 'Customer said the deposit is missing.',
+            },
+          },
+        } as any,
+        {
+          name: 'ask_user_questions',
+          output: { ok: true, output: { ok: true, handled: 'channel' }, latencyMs: 1 },
+          latencyMs: 1,
+          toolUse: {
+            id: 'toolu_form_batch',
+            name: 'ask_user_questions',
+            status: 'completed',
+            input: {
+              title: '充值未到账信息',
+              description: '请先提供查单所需的资料。',
+              fields: [{
+                key: 'member_id',
+                label: '会员ID',
+                type: 'text',
+                required: true,
+                placeholder: '例如：JAYA12345',
+              }],
+            },
+          },
+        } as any,
+      ],
+      sendEvent,
+    )
+
+    expect(activateProcedureContext).toHaveBeenCalled()
+    expect(result.action).toMatchObject({
+      kind: 'return',
+      result: { transition: 'waiting_form' },
+    })
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'case_status',
+      data: expect.objectContaining({
+        caseId: 'case-form-batch',
+        caseType: 'deposit_not_credited',
+      }),
+    }))
+    expect(sendEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'form_request',
+      data: expect.objectContaining({
+        caseId: 'case-form-batch',
+        toolCallId: 'toolu_form_batch',
+        title: '充值未到账信息',
+        fields: [expect.objectContaining({
+          key: 'member_id',
+          label: '会员ID',
+          type: 'text',
+        })],
+      }),
+    }))
+    expect(traceWrite).toHaveBeenCalledWith(
+      'form_request',
+      'Form requested: 充值未到账信息',
+      expect.objectContaining({ caseId: 'case-form-batch' }),
+    )
+  })
+
   it('ignores nested structured payloads on start_procedure so runtime only trusts customer form events', async () => {
     const sendEvent = vi.fn()
     const legacyKey = `collected${'Facts'}`

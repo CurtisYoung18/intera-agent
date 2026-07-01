@@ -91,10 +91,17 @@ export async function interceptToolResults(
   sendEvent: (event: SSEEvent) => void,
 ): Promise<{ action: InterceptAction; toolResults: ToolExecutionResult[] }> {
   // 1. Runtime tool: start_procedure
+  let startProcedureAction: InterceptAction | null = null
   const startProcedureResult = toolResults.find((r) => r.name === 'start_procedure')
   if (startProcedureResult) {
     const action = await handleStartProcedure(ctx, startProcedureResult, sendEvent)
-    if (action.kind !== 'pass') return { action, toolResults }
+    if (action.kind !== 'pass') {
+      const startRejected =
+        startProcedureResult.toolUse?.status === 'error' ||
+        (isRecord(startProcedureResult.output) && startProcedureResult.output.ok === false)
+      if (action.kind !== 'continue' || startRejected) return { action, toolResults }
+      startProcedureAction = action
+    }
   }
 
   // 2. Data tool: read_chat_memory
@@ -115,6 +122,8 @@ export async function interceptToolResults(
     const action = await handleRequestUserInput(ctx, formResult, sendEvent)
     if (action.kind !== 'pass') return { action, toolResults }
   }
+
+  if (startProcedureAction) return { action: startProcedureAction, toolResults }
 
   return { action: { kind: 'pass' }, toolResults }
 }
