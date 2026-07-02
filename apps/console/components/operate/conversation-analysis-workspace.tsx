@@ -223,6 +223,8 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
   const [traces, setTraces] = useState<TraceRow[]>([])
   const [messages, setMessages] = useState<MsgItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [messagesLoaded, setMessagesLoaded] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
   const [showTraces, setShowTraces] = useState(true)
 
@@ -255,22 +257,20 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
         const canonicalChatId = detail.data.resolvedChatId || found.chatId
         setSession(found)
         setResolvedChatId(canonicalChatId)
+        setMessages([])
+        setMessagesLoaded(false)
+        setShowMessages(false)
 
-        const [tracesResult, messagesResult] = await Promise.all([
-          apiClient<{ traces: TraceRow[] }>(withAgent(`/api/chats/${encodeURIComponent(canonicalChatId)}/traces?limit=500`)),
-          apiClient<{ messages: MsgItem[] }>(
-            withAgent(`/api/chats/${encodeURIComponent(canonicalChatId)}/messages?limit=500`),
-          ),
-        ])
+        const tracesResult = await apiClient<{ traces: TraceRow[] }>(
+          withAgent(`/api/chats/${encodeURIComponent(canonicalChatId)}/traces?limit=500&payloadMode=summary`),
+        )
         setTraces(tracesResult.data.traces ?? [])
-        setMessages((messagesResult.data.messages ?? []).sort((a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        ))
       } catch (error) {
         console.error('Conversation analysis load failed:', error)
         setSession(null)
         setMessages([])
         setTraces([])
+        setMessagesLoaded(false)
       } finally {
         setLoading(false)
       }
@@ -278,6 +278,30 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
 
     void load()
   }, [agentLoading, decodedChatId, selectedAgentId, withAgent])
+
+  useEffect(() => {
+    if (!showMessages || messagesLoaded || messagesLoading || !selectedAgentId || !activeChatId) return
+
+    async function loadMessages() {
+      setMessagesLoading(true)
+      try {
+        const messagesResult = await apiClient<{ messages: MsgItem[] }>(
+          withAgent(`/api/chats/${encodeURIComponent(activeChatId)}/messages?limit=500`),
+        )
+        setMessages((messagesResult.data.messages ?? []).sort((a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        ))
+        setMessagesLoaded(true)
+      } catch (error) {
+        console.error('Conversation analysis messages load failed:', error)
+        setMessages([])
+      } finally {
+        setMessagesLoading(false)
+      }
+    }
+
+    void loadMessages()
+  }, [activeChatId, messagesLoaded, messagesLoading, selectedAgentId, showMessages, withAgent])
 
   const analysis = useMemo(() => buildConversationAnalysis(traces), [traces])
   const conversationTruth = useMemo(
@@ -340,7 +364,7 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
                 <SourceTruthPill truth={conversationTruth} />
               </div>
               <p className="mt-1 text-[12px] text-[var(--fog)]/78">
-                {session.cases.length} {isZh ? '个流程记录' : 'flow records'} · {messages.length} {isZh ? '条消息' : 'messages'} · {traces.length} {isZh ? '个事件' : 'events'} · {analysis.toolCalls.length} {isZh ? '次工具调用' : 'tool calls'}
+                {session.cases.length} {isZh ? '个流程记录' : 'flow records'} · {session.messageCount} {isZh ? '条消息' : 'messages'} · {traces.length} {isZh ? '个事件' : 'events'} · {analysis.toolCalls.length} {isZh ? '次工具调用' : 'tool calls'}
               </p>
             </div>
           </div>
@@ -459,27 +483,33 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
         >
           <ChevronDown className={`h-4 w-4 text-[var(--fog)]/60 transition-transform ${showMessages ? '' : '-rotate-90'}`} />
           <h2 className="text-[13px] font-bold text-[var(--mist)]">
-            {isZh ? `会话消息 (${messages.length})` : `Conversation messages (${messages.length})`}
+            {isZh ? `会话消息 (${messagesLoaded ? messages.length : session.messageCount})` : `Conversation messages (${messagesLoaded ? messages.length : session.messageCount})`}
           </h2>
         </button>
         {showMessages ? (
-          <div className="max-h-[420px] space-y-3 overflow-auto">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] ${
-                  message.role === 'user' ? 'bg-indigo/20 text-indigo' : 'bg-black/[0.04] text-[var(--fog)]'
-                }`}>
-                  {message.role === 'user' ? <User className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+          messagesLoading ? (
+            <div className="flex items-center justify-center rounded-xl border border-dashed border-black/[0.08] px-4 py-8">
+              <OrganicLoader icon="spin" size={18} className="text-indigo/60" />
+            </div>
+          ) : (
+            <div className="max-h-[420px] space-y-3 overflow-auto">
+              {messages.map((message) => (
+                <div key={message.id} className={`flex gap-2 ${message.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] ${
+                    message.role === 'user' ? 'bg-indigo/20 text-indigo' : 'bg-black/[0.04] text-[var(--fog)]'
+                  }`}>
+                    {message.role === 'user' ? <User className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+                  </div>
+                  <div className={`min-w-0 max-w-[80%] rounded-xl px-3 py-2 text-[12px] leading-relaxed ${
+                    message.role === 'user' ? 'bg-indigo/[0.06]' : 'border border-black/[0.05] bg-white/80'
+                  }`}>
+                    <MessageContent content={message.content} contentBlocks={message.contentBlocks} imagePreviewMode="auto" />
+                    <span className="mt-1 block text-[9px] text-[var(--fog)]/50">{fmtTime(message.createdAt, locale)}</span>
+                  </div>
                 </div>
-                <div className={`min-w-0 max-w-[80%] rounded-xl px-3 py-2 text-[12px] leading-relaxed ${
-                  message.role === 'user' ? 'bg-indigo/[0.06]' : 'border border-black/[0.05] bg-white/80'
-                }`}>
-                  <MessageContent content={message.content} contentBlocks={message.contentBlocks} imagePreviewMode="auto" />
-                  <span className="mt-1 block text-[9px] text-[var(--fog)]/50">{fmtTime(message.createdAt, locale)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )
         ) : null}
       </section>
     </div>

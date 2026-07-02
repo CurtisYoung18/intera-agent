@@ -93,23 +93,26 @@ export async function resolveAgentCaseScopeForChat(
   agentConfigId: string,
   chatId: string,
 ): Promise<AgentCaseScope> {
-  const scope = await resolveAgentCaseScope(repo, agentConfigId)
-  const scopedCaseIds = new Set(scope.caseIds)
+  await assertAgentInOrg(repo, agentConfigId)
   const chatCases = await repo.raw.case.findMany({
     where: { orgId: repo.orgId, chatId },
     select: { id: true },
   })
   const chatCaseIds = chatCases.map((caseRow: { id: string }) => caseRow.id)
-  if (chatCaseIds.length === 0) return scope
+  if (chatCaseIds.length === 0) {
+    return { agentConfigId, runs: [], caseIds: [], runIds: [] }
+  }
 
   const runsForChat = await repo.raw.procedureRun.findMany({
     where: { orgId: repo.orgId, caseId: { in: chatCaseIds } },
-    select: { caseId: true, agentConfigId: true },
+    select: { id: true, caseId: true, agentConfigId: true },
   })
   const externalConversationsForChat = await repo.externalConversation.findMany({
     where: { internalCaseId: { in: chatCaseIds } },
     select: { internalCaseId: true, metadata: true },
   }) as ExternalConversationScopeRow[]
+  const selectedRuns = runsForChat.filter((run: { agentConfigId: string | null }) => run.agentConfigId === agentConfigId)
+  const selectedCaseIds = new Set(selectedRuns.map((run: { caseId: string }) => run.caseId))
   const casesWithRuns = new Set(runsForChat.map((run: { caseId: string }) => run.caseId))
   const runsByCase = new Map<string, Array<{ caseId: string; agentConfigId: string | null }>>()
   for (const run of runsForChat) {
@@ -134,14 +137,19 @@ export async function resolveAgentCaseScopeForChat(
   const legacyPlaygroundCaseIds = isPlaygroundChatForAgent(chatId, agentConfigId)
     ? chatCaseIds.filter((caseId: string) => {
         const runs = runsByCase.get(caseId) ?? []
-        return !scopedCaseIds.has(caseId) && runs.length > 0 && runs.every((run) => isLegacyRunAgentConfig(run.agentConfigId))
+        return !selectedCaseIds.has(caseId) && (runs.length === 0 || runs.every((run) => isLegacyRunAgentConfig(run.agentConfigId)))
       })
     : []
-  if (unscopedCaseIds.length === 0 && legacyPlaygroundCaseIds.length === 0) return scope
 
   return {
-    ...scope,
-    caseIds: uniqueStrings([...scope.caseIds, ...unscopedCaseIds, ...legacyPlaygroundCaseIds]),
+    agentConfigId,
+    runs: selectedRuns.map((run: { id: string; caseId: string }) => ({ id: run.id, caseId: run.caseId })),
+    caseIds: uniqueStrings([
+      ...selectedRuns.map((run: { caseId: string }) => run.caseId),
+      ...unscopedCaseIds,
+      ...legacyPlaygroundCaseIds,
+    ]),
+    runIds: uniqueStrings(selectedRuns.map((run: { id: string }) => run.id)),
   }
 }
 

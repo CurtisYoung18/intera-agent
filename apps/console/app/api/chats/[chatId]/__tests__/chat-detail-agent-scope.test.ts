@@ -96,7 +96,7 @@ vi.mock('@/lib/db/repo-for-org', () => ({
           findMany: vi.fn(async (args: any) => h.runs
             .filter((row) => matchesWhere(row, args?.where ?? {}))
             .sort((a, b) => b.updatedAt.toISOString().localeCompare(a.updatedAt.toISOString()))
-            .map((row) => ({ id: row.id, caseId: row.caseId }))),
+            .map((row) => ({ id: row.id, caseId: row.caseId, agentConfigId: row.agentConfigId }))),
         },
       },
     } as any
@@ -179,7 +179,7 @@ describe('/api/chats/[chatId] agent scoping', () => {
     expect(body.error.code).toBe('not_found')
   })
 
-  it('includes same-chat general cases that have no ProcedureRun for traceability', async () => {
+  it('keeps same-chat no-run cases without LiveChat metadata out of arbitrary agent scope', async () => {
     h.cases.push({
       id: 'case-general',
       orgId: 'default',
@@ -199,15 +199,8 @@ describe('/api/chats/[chatId] agent scoping', () => {
     const body = await res.json()
 
     expect(body.ok).toBe(true)
-    expect(body.data.session.cases).toHaveLength(2)
-    expect(body.data.session.cases.map((caseRow: { id: string }) => caseRow.id)).toEqual([
-      'case-general',
-      'run-a',
-    ])
-    expect(body.data.session.cases.find((caseRow: { id: string }) => caseRow.id === 'case-general')).toMatchObject({
-      runId: null,
-      goal: 'Direct answer without a ProcedureRun',
-    })
+    expect(body.data.session.cases).toHaveLength(1)
+    expect(body.data.session.cases.map((caseRow: { id: string }) => caseRow.id)).toEqual(['run-a'])
     expect(body.data.session.cases.some((caseRow: { id: string }) => caseRow.id === 'run-b')).toBe(false)
   })
 })

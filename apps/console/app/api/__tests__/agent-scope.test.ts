@@ -103,7 +103,11 @@ describe('resolveAgentCaseScopeForChat', () => {
 
     expect(scope.caseIds).toEqual(['case-run'])
     expect(scope.runIds).toEqual(['run-1'])
-    expect(scope.runs).toEqual([{ id: 'run-1', caseId: 'case-run', orgId: 'default', agentConfigId: 'agent-1' }])
+    expect(scope.runs).toEqual([{ id: 'run-1', caseId: 'case-run' }])
+    expect(repo.raw.procedureRun.findMany).toHaveBeenCalledWith({
+      where: { orgId: 'default', caseId: { in: ['case-run'] } },
+      select: { id: true, caseId: true, agentConfigId: true },
+    })
   })
 
   it('adopts legacy playground cases when their ProcedureRuns only carry unknown agentConfigId', async () => {
