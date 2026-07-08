@@ -9,6 +9,7 @@
 // AgentLoop, which delegates prompt and tool decisions to this class.
 
 import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
+import { isKnowledgeToolName } from './knowledge-tooling'
 
 // ---------------------------------------------------------------------------
 // Service bag
@@ -40,7 +41,7 @@ export class ConversationLoop {
 
   private static isAllowedTool(name: string): boolean {
     if (ConversationLoop.CORE_ALLOWED_TOOLS.has(name)) return true
-    if (name.startsWith('kb_search_')) return true
+    if (isKnowledgeToolName(name)) return true
     return false
   }
 

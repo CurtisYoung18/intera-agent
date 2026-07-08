@@ -7,11 +7,26 @@ import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 import type { ConversationLoop } from './conversation-loop'
 import type { CaseAgentLoop } from './case-agent-loop'
+import { isKnowledgeToolName } from './knowledge-tooling'
 
 export interface PromptSelection {
   prompt: string
   tools: Tool[]
 }
+
+export const PROCEDURE_TOOL_SCHEMA_FILTERING_ENV = 'INTERA_PROCEDURE_TOOL_SCHEMA_FILTERING'
+
+const PROCEDURE_SCHEMA_SYSTEM_TOOL_NAMES = new Set([
+  'start_procedure',
+  'ask_user_questions',
+  'read_chat_memory',
+  'read_user_profile',
+  'remember',
+  'get_current_time',
+  'create_human_task',
+  'finalize_procedure',
+  'finalize_consultation',
+])
 
 export interface PromptSelectorContext {
   isCaseActive: boolean
@@ -24,6 +39,26 @@ export interface PromptSelectorContext {
   caseLoop: CaseAgentLoop | null
   allTools: Tool[]
   procedureRunTail?: string
+  procedureToolSchemaFilteringEnabled?: boolean
+}
+
+export function isProcedureToolSchemaFilteringEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const raw = env[PROCEDURE_TOOL_SCHEMA_FILTERING_ENV]?.trim().toLowerCase()
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
+}
+
+export function isProcedureSchemaSystemToolName(name: string): boolean {
+  return PROCEDURE_SCHEMA_SYSTEM_TOOL_NAMES.has(name)
+}
+
+export function isCoreDiscoverySchemaToolName(name: string): boolean {
+  return isProcedureSchemaSystemToolName(name) || isKnowledgeToolName(name)
+}
+
+function filterCoreDiscoveryToolSchemas(allTools: Tool[]): Tool[] {
+  return allTools.filter((tool) => isCoreDiscoverySchemaToolName(tool.name))
 }
 
 /**
@@ -37,6 +72,8 @@ export interface PromptSelectorContext {
 export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelection {
   const { isCaseActive, isConsultation, caseSchema, systemPrompt, currentStage,
     conversationLoop, caseLoop, allTools, procedureRunTail } = ctx
+  const procedureToolSchemaFilteringEnabled =
+    ctx.procedureToolSchemaFilteringEnabled ?? isProcedureToolSchemaFilteringEnabled()
 
   const appendDynamicTail = (prompt: string): string =>
     procedureRunTail?.trim() ? `${prompt.trim()}\n\n${procedureRunTail.trim()}` : prompt
@@ -44,7 +81,7 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
   if (!isCaseActive) {
     return {
       prompt: appendDynamicTail(conversationLoop.buildPrompt()),
-      tools: allTools,
+      tools: procedureToolSchemaFilteringEnabled ? filterCoreDiscoveryToolSchemas(allTools) : allTools,
     }
   }
 
@@ -76,12 +113,12 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
     ].join('\n')
     return {
       prompt: appendDynamicTail(prompt),
-      tools: allTools,
+      tools: procedureToolSchemaFilteringEnabled ? caseLoop.filterProcedureTools(allTools) : allTools,
     }
   }
 
   return {
     prompt: appendDynamicTail(conversationLoop.buildPrompt()),
-    tools: allTools,
+    tools: procedureToolSchemaFilteringEnabled ? filterCoreDiscoveryToolSchemas(allTools) : allTools,
   }
 }

@@ -9,6 +9,8 @@ export interface ToolSummary {
   description: string
   needsMemberId: boolean
   knowledgeSourceId?: string
+  knowledgeProvider?: string
+  knowledgeTool?: boolean
 }
 
 export interface PromptContext {
@@ -83,14 +85,19 @@ function renderCaseState(state: PromptContext['case_state']): string {
 
 function renderTools(tools: PromptContext['available_tools']): string {
   if (!tools?.length) return ''
-  const kbTools = tools.filter((tool) => !!tool.knowledgeSourceId)
-  const lookupTools = tools.filter((tool) => !tool.knowledgeSourceId && tool.needsMemberId)
-  const otherTools = tools.filter((tool) => !tool.knowledgeSourceId && !tool.needsMemberId)
+  const isKnowledgeTool = (tool: NonNullable<PromptContext['available_tools']>[number]): boolean =>
+    !!tool.knowledgeTool || !!tool.knowledgeSourceId || tool.name === 'search_knowledge' || tool.knowledgeProvider === 'gptbots'
+  const kbTools = tools.filter(isKnowledgeTool)
+  const lookupTools = tools.filter((tool) => !isKnowledgeTool(tool) && tool.needsMemberId)
+  const otherTools = tools.filter((tool) => !isKnowledgeTool(tool) && !tool.needsMemberId)
 
   const lines: string[] = ['## Available Tools']
   if (kbTools.length) {
     lines.push('\n**Knowledge Bases** (call for any factual question — FAQs, policies, contact info, how-to):')
     for (const t of kbTools) lines.push(`- ${t.name}: ${t.description}`)
+    if (kbTools.some((tool) => tool.name === 'search_knowledge')) {
+      lines.push('- Override: if older instructions mention kb_search_* tools, use search_knowledge instead and choose the matching source key.')
+    }
   }
   if (lookupTools.length) {
     lines.push('\n**Account Lookups** (all require member_id — if member_id is missing, ask_user_questions is mandatory and plain-text collection is not allowed):')

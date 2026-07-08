@@ -9,6 +9,15 @@
 
 import type { ToolUse, ToolResult, ToolDefinition } from '@intera/shared/types'
 import { knowledgeSourceToolName } from './tool-names'
+import {
+  KNOWLEDGE_PROVIDER_GPTBOTS,
+  UNIFIED_KNOWLEDGE_TOOL_NAME,
+  buildKnowledgeSourceOptions,
+  isKnowledgeToolName,
+  normalizeKnowledgeSourceSelector,
+  type KnowledgeSourceOption,
+  type KnowledgeSourceRuntimeRow,
+} from './knowledge-tooling'
 
 /** Tool execution stores `{ ok, output, latencyMs }`; consumers need the inner tool payload. */
 export function unwrapToolExecutionPayload(toolExecutionOutput: unknown): unknown {
@@ -171,7 +180,7 @@ function normalizeToolInputForExecution(
 
 function shouldAttemptToolRepair(definition: ToolDefinition): boolean {
   if (definition.mode !== 'http') return false
-  if (definition.name.startsWith('kb_search_')) return true
+  if (isKnowledgeToolName(definition.name)) return true
   if (definition.toolCategory === 'system_info') return true
   return READ_ONLY_QUERY_TOOL_NAMES.has(definition.name)
 }
@@ -220,6 +229,29 @@ async function readResponseBody(response: Response): Promise<unknown> {
 
 function payloadIndicatesFailure(payload: unknown): payload is Record<string, unknown> {
   return isRecord(payload) && payload.ok === false
+}
+
+function clampTopK(value: unknown, fallback: number): number {
+  const raw = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : fallback
+  if (!Number.isFinite(raw)) return Math.min(Math.max(fallback, 1), 30)
+  return Math.min(Math.max(Math.round(raw), 1), 30)
+}
+
+function stringInput(input: Record<string, unknown>, key: string): string | undefined {
+  const value = input[key]
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+interface KnowledgeRequestResolution {
+  body?: Record<string, unknown>
+  source?: KnowledgeSourceOption
+  sourceSelection?: Record<string, unknown>
+  effectiveTopK?: number
+  recoverableError?: Record<string, unknown>
 }
 
 /**
@@ -555,77 +587,18 @@ export class StreamingToolExecutor {
     const resolvedEndpoint = this.resolveEnvVars(definition.endpoint)
     const resolvedHeaders = await this.resolveHeaders(definition.headers as Record<string, string> | undefined)
 
-    // For kb_search_* tools: each knowledge source is a separate tool with its
-    // groupIds baked into the endpoint or resolved from DB at execution time.
+    // Knowledge tools resolve source config at execution time so topK/rerank
+    // and group bindings match the current KnowledgeSource row.
     let body = input
-    if (definition.name.startsWith('kb_search_')) {
-      try {
-        const { prisma } = await import('@intera/shared/prisma')
-
-        // kb_search_<sourceName>: load the specific source
-        let sources: Array<{
-          id: string; name: string; groupIds: string; topK: number; embeddingRate: number;
-          docCorrelation: number | null; rerankVersion: string | null;
-          modelControlTopK: boolean;
-        }> = []
-
-        if (definition.knowledgeSourceId) {
-          const source = await prisma.knowledgeSource.findFirst({
-            where: { agentConfigId: this.agentConfigId ?? '', id: definition.knowledgeSourceId, enabled: true },
-          })
-          if (source) sources = [source]
-        } else if (definition.name.startsWith('kb_search_')) {
-          const enabledSources = await prisma.knowledgeSource.findMany({
-            where: { agentConfigId: this.agentConfigId ?? '', enabled: true },
-          })
-          const source = enabledSources.find((candidate) => (
-            knowledgeSourceToolName(candidate.name, candidate.id) === definition.name ||
-            `kb_search_${candidate.name.replace(/[^a-zA-Z0-9_-]/g, '_')}` === definition.name
-          ))
-          if (source) sources = [source]
-        }
-
-        if (sources.length > 0) {
-          const allGroupIds: string[] = []
-          let maxTopK = 15
-          let embeddingRateSum = 0
-          let minDocCorrelation: number | undefined
-
-          for (const s of sources) {
-            const ids = JSON.parse(s.groupIds) as string[]
-            allGroupIds.push(...ids)
-            if (s.topK > maxTopK) maxTopK = s.topK
-            embeddingRateSum += s.embeddingRate
-            if (s.docCorrelation != null) {
-              if (minDocCorrelation == null || s.docCorrelation < minDocCorrelation) {
-                minDocCorrelation = s.docCorrelation
-              }
-            }
-          }
-
-          const avgEmbeddingRate = embeddingRateSum / sources.length
-          const source = sources[0]
-          body = {
-            prompt: input.query,
-            top_k: source.modelControlTopK
-              ? Math.min(Math.max((input.topK as number) ?? source.topK, 1), 30)
-              : source.topK,
-            group_ids: [...new Set(allGroupIds)],
-            embedding_rate: avgEmbeddingRate,
-            ...(sources[0]?.rerankVersion && { rerank_version: sources[0].rerankVersion }),
-            ...(minDocCorrelation != null && { doc_correlation: minDocCorrelation }),
-          }
-        } else {
-          body = {
-            prompt: input.query,
-            top_k: (input.topK as number) ?? 15,
-          }
-        }
-      } catch {
-        body = {
-          prompt: input.query,
-          top_k: (input.topK as number) ?? 15,
-        }
+    let knowledgeResolution: KnowledgeRequestResolution | null = null
+    if (isKnowledgeToolName(definition.name)) {
+      knowledgeResolution = await this.resolveKnowledgeRequest(definition, input)
+      if (knowledgeResolution.recoverableError) {
+        return knowledgeResolution.recoverableError
+      }
+      body = knowledgeResolution.body ?? {
+        prompt: input.query,
+        top_k: (input.topK as number) ?? 15,
       }
     }
 
@@ -663,13 +636,200 @@ export class StreamingToolExecutor {
     // We must sort descending by score so the most relevant chunks surface first.
     // This is idempotent when the list is already sorted (no-rerank path).
     if (
-      definition.name.startsWith('kb_search_') &&
+      isKnowledgeToolName(definition.name) &&
       data && Array.isArray((data as Record<string, unknown>).list)
     ) {
       const list = (data as Record<string, unknown>).list as Array<{ score?: number }>
       list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     }
+
+    if (definition.name === UNIFIED_KNOWLEDGE_TOOL_NAME && knowledgeResolution?.source) {
+      return {
+        ...(isRecord(data) ? data : { data }),
+        knowledgeSourceId: knowledgeResolution.source.id,
+        knowledgeSourceName: knowledgeResolution.source.name,
+        knowledgeSourceKey: knowledgeResolution.source.key,
+        knowledgeProvider: KNOWLEDGE_PROVIDER_GPTBOTS,
+        query: typeof input.query === 'string' ? input.query : '',
+        topK: knowledgeResolution.effectiveTopK,
+        sourceSelection: knowledgeResolution.sourceSelection,
+      }
+    }
     return data
+  }
+
+  private async resolveKnowledgeRequest(
+    definition: ToolDefinition,
+    input: Record<string, unknown>,
+  ): Promise<KnowledgeRequestResolution> {
+    try {
+      const { prisma } = await import('@intera/shared/prisma')
+
+      if (definition.name !== UNIFIED_KNOWLEDGE_TOOL_NAME) {
+        const legacySource = await this.resolveLegacyKnowledgeSource(definition)
+        if (!legacySource) {
+          return {
+            body: {
+              prompt: input.query,
+              top_k: (input.topK as number) ?? 15,
+            },
+          }
+        }
+        return this.buildKnowledgeRequestBody(legacySource, input, {
+          mode: 'legacy_tool',
+          requestedSource: definition.name,
+        })
+      }
+
+      const enabledSources = await prisma.knowledgeSource.findMany({
+        where: { agentConfigId: this.agentConfigId ?? '', enabled: true },
+      }) as KnowledgeSourceRuntimeRow[]
+      const options = buildKnowledgeSourceOptions(enabledSources, definition.knowledgeSources)
+
+      if (options.length === 0) {
+        return {
+          recoverableError: {
+            recoverable: true,
+            errorCode: 'knowledge_source_unavailable',
+            message: 'No enabled knowledge source with bound groupIds is available for search_knowledge.',
+            query: typeof input.query === 'string' ? input.query : '',
+            availableSources: [],
+          },
+        }
+      }
+
+      const requestedSource = stringInput(input, 'source')
+        ?? stringInput(input, 'sourceId')
+        ?? stringInput(input, 'sourceName')
+
+      if (!requestedSource && options.length > 1) {
+        return {
+          recoverableError: {
+            recoverable: true,
+            errorCode: 'source_required',
+            message: 'search_knowledge requires a source when multiple knowledge sources are available. Retry with one of the listed source keys.',
+            query: typeof input.query === 'string' ? input.query : '',
+            availableSources: options.map((option) => this.describeSourceOption(option)),
+          },
+        }
+      }
+
+      const selected = requestedSource
+        ? this.matchKnowledgeSourceOption(options, requestedSource)
+        : options[0]
+
+      if (!selected) {
+        return {
+          recoverableError: {
+            recoverable: true,
+            errorCode: 'unknown_source',
+            message: `Unknown knowledge source "${requestedSource}". Retry with one of the listed source keys.`,
+            requestedSource,
+            query: typeof input.query === 'string' ? input.query : '',
+            availableSources: options.map((option) => this.describeSourceOption(option)),
+          },
+        }
+      }
+
+      return this.buildKnowledgeRequestBody(selected, input, {
+        mode: requestedSource ? 'explicit' : 'auto_single_source',
+        requestedSource,
+      })
+    } catch {
+      if (definition.name === UNIFIED_KNOWLEDGE_TOOL_NAME) {
+        return {
+          recoverableError: {
+            recoverable: true,
+            errorCode: 'knowledge_source_resolution_failed',
+            message: 'Unable to load knowledge source configuration for search_knowledge. Retry later or escalate if the issue persists.',
+            query: typeof input.query === 'string' ? input.query : '',
+          },
+        }
+      }
+      return {
+        body: {
+          prompt: input.query,
+          top_k: (input.topK as number) ?? 15,
+        },
+      }
+    }
+  }
+
+  private async resolveLegacyKnowledgeSource(definition: ToolDefinition): Promise<KnowledgeSourceOption | null> {
+    const { prisma } = await import('@intera/shared/prisma')
+
+    if (definition.knowledgeSourceId) {
+      const source = await prisma.knowledgeSource.findFirst({
+        where: { agentConfigId: this.agentConfigId ?? '', id: definition.knowledgeSourceId, enabled: true },
+      }) as KnowledgeSourceRuntimeRow | null
+      return source ? buildKnowledgeSourceOptions([source])[0] ?? null : null
+    }
+
+    const enabledSources = await prisma.knowledgeSource.findMany({
+      where: { agentConfigId: this.agentConfigId ?? '', enabled: true },
+    }) as KnowledgeSourceRuntimeRow[]
+    const options = buildKnowledgeSourceOptions(enabledSources)
+    return options.find((candidate) => (
+      candidate.legacyToolName === definition.name ||
+      knowledgeSourceToolName(candidate.name, candidate.id) === definition.name ||
+      `kb_search_${candidate.name.replace(/[^a-zA-Z0-9_-]/g, '_')}` === definition.name
+    )) ?? null
+  }
+
+  private buildKnowledgeRequestBody(
+    source: KnowledgeSourceOption,
+    input: Record<string, unknown>,
+    selection: { mode: string; requestedSource?: string },
+  ): KnowledgeRequestResolution {
+    const effectiveTopK = source.modelControlTopK
+      ? clampTopK(input.topK, source.topK)
+      : source.topK
+    return {
+      source,
+      effectiveTopK,
+      sourceSelection: {
+        mode: selection.mode,
+        requestedSource: selection.requestedSource,
+        source: source.key,
+        sourceName: source.name,
+        legacyToolName: source.legacyToolName,
+      },
+      body: {
+        prompt: input.query,
+        top_k: effectiveTopK,
+        group_ids: [...new Set(source.groupIds)],
+        embedding_rate: source.embeddingRate,
+        ...(source.rerankVersion && { rerank_version: source.rerankVersion }),
+        ...(source.docCorrelation != null && { doc_correlation: source.docCorrelation }),
+      },
+    }
+  }
+
+  private matchKnowledgeSourceOption(
+    options: KnowledgeSourceOption[],
+    rawSource: string,
+  ): KnowledgeSourceOption | undefined {
+    const normalized = normalizeKnowledgeSourceSelector(rawSource)
+    const lower = rawSource.trim().toLowerCase()
+    return options.find((option) => (
+      option.key === rawSource ||
+      option.key.toLowerCase() === lower ||
+      option.id === rawSource ||
+      option.name === rawSource ||
+      option.name.toLowerCase() === lower ||
+      option.legacyToolName === rawSource ||
+      normalizeKnowledgeSourceSelector(option.name) === normalized ||
+      normalizeKnowledgeSourceSelector(option.legacyToolName) === normalized
+    ))
+  }
+
+  private describeSourceOption(option: KnowledgeSourceOption): Record<string, unknown> {
+    return {
+      source: option.key,
+      name: option.name,
+      description: option.description,
+      legacyToolName: option.legacyToolName,
+    }
   }
 
   private async executeHttpWithRepair(

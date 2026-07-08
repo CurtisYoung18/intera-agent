@@ -290,11 +290,14 @@ function mapTraceRecord(record: TraceRecord): { stage: TraceStage; source: Trace
 
   if (actionType === 'tool_call' || actionType === 'tool_result') {
     const parsedPayload = parseJson(record.payload)
-    if (typeof parsedPayload?.knowledgeSourceId === 'string' && parsedPayload.knowledgeSourceId.trim()) {
+    if (
+      parsedPayload?.isKnowledgeTool === true ||
+      typeof parsedPayload?.knowledgeSourceId === 'string' && parsedPayload.knowledgeSourceId.trim()
+    ) {
       return { stage: 'Knowledge retrieval', source: 'knowledge' }
     }
     const toolName = toolNameFromTrace(record, parsedPayload)
-    if (toolName?.startsWith('kb_search_')) {
+    if (toolName === 'search_knowledge' || toolName?.startsWith('kb_search_')) {
       return { stage: 'Knowledge retrieval', source: 'knowledge' }
     }
   }

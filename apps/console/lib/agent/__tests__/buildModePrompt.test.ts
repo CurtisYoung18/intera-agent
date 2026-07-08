@@ -105,6 +105,28 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     expect(caseTypesCount).toBe(1)
   })
 
+  it('renders unified search_knowledge as the only KB prompt summary with a legacy-name override', async () => {
+    const result = await buildModePrompt({
+      ...baseInput,
+      coreSystemPrompt: 'You are a support agent.',
+      availableTools: [
+        {
+          name: 'search_knowledge',
+          description: 'Search knowledge sources. Available sources: source="deposit_bonus" - Deposit Bonus.',
+          needsMemberId: false,
+          knowledgeProvider: 'gptbots',
+          knowledgeTool: true,
+        },
+      ],
+    })
+
+    expect(result.prompt).toContain('## Available Tools')
+    expect(result.prompt).toContain('search_knowledge')
+    expect(result.prompt).toContain('## Knowledge Tool Override')
+    expect(result.prompt).toContain('kb_search_*')
+    expect(result.prompt).not.toContain('kb_search_deposit')
+  })
+
   // ── Case mode: case-specific blocks injected ──
   it('injects case_schema/case_state/hooks in case mode', async () => {
     const result = await buildModePrompt({

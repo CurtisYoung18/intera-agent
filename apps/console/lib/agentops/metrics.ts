@@ -258,7 +258,9 @@ function knowledgeResultCount(output: unknown): number | null {
 
 function isKnowledgeTrace(toolName: string | null, payload: Record<string, unknown> | null): boolean {
   return Boolean(
+    toolName === 'search_knowledge' ||
     toolName?.startsWith('kb_search_') ||
+    payload?.isKnowledgeTool === true ||
     payload?.knowledgeSourceId ||
     payload?.knowledgeSourceName,
   )

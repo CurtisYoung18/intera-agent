@@ -15,12 +15,14 @@ import { unwrapToolExecutionPayload, type ToolExecutionResult } from './streamin
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import type { LoopResult } from './loop'
 import { getActiveProcedureRun, recordProcedureToolResult } from './session-store'
+import { isProcedureSchemaSystemToolName } from './prompt-selector'
 import {
   HUMAN_TASK_CREATE_FAILED_MESSAGE,
   HUMAN_TASK_CREATE_FAILED_PROGRESS,
 } from './human-task-errors'
 import { normalizeHumanHandoffNotePayload } from './human-handoff'
 import { makeInternalRuntimeMessage } from './message-builder'
+import { isKnowledgeToolDefinition, isKnowledgeToolName } from './knowledge-tooling'
 
 export interface CaseLoopServices {
   caseId: string
@@ -55,7 +57,7 @@ export class CaseAgentLoop {
       const knowledgeToolNames = new Set(
         this.services.toolRouter
           .getToolDefinitions()
-          .filter((tool) => !!tool.knowledgeSourceId)
+          .filter((tool) => isKnowledgeToolDefinition(tool) && !tool.providerHidden)
           .map((tool) => tool.name),
       )
       this.procedureExecutor = new ProcedureExecutor(caseSchema.procedure, caseSchema.type, knowledgeToolNames)
@@ -104,7 +106,22 @@ export class CaseAgentLoop {
   }
 
   filterProcedureTools(allTools: Tool[]): Tool[] {
-    return allTools
+    if (!this.procedureExecutor) return allTools
+
+    const activeRun = getActiveProcedureRun(this.services.caseId)
+    if (!activeRun?.currentStepId) return allTools
+    if (activeRun.agentConfigId && activeRun.agentConfigId !== this.services.agentConfigId) return allTools
+
+    const stepSelection = this.procedureExecutor.toolSelectionForStep(activeRun.currentStepId)
+    if (!stepSelection) return allTools
+
+    const stepToolNames = new Set(stepSelection.toolNames)
+    const allowKnowledgeFallback = stepSelection.includesKnowledgeTools && stepToolNames.size === 0
+    return allTools.filter((tool) =>
+      isProcedureSchemaSystemToolName(tool.name) ||
+      stepToolNames.has(tool.name) ||
+      (allowKnowledgeFallback && isKnowledgeToolName(tool.name)),
+    )
   }
 
   emitProgressEvent(iterationCount: number, sendEvent: (event: SSEEvent) => void): void {

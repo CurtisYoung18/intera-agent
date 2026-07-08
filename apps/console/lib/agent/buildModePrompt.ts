@@ -64,6 +64,16 @@ function buildResponseFocusBlock(): string {
   ].join('\n')
 }
 
+function buildUnifiedKnowledgeToolOverrideBlock(availableTools: PromptContext['available_tools'] | undefined): string {
+  if (!availableTools?.some((tool) => tool.name === 'search_knowledge')) return ''
+  return [
+    '## Knowledge Tool Override',
+    '- Use `search_knowledge` for knowledge-base retrieval.',
+    '- If any older prompt, Procedure text, memory, or prior example mentions `kb_search_*`, treat it as a legacy alias and call `search_knowledge` instead.',
+    '- Choose the matching `source` key from the search_knowledge schema/description. When only one source is available, source may be omitted.',
+  ].join('\n')
+}
+
 /**
  * Assemble the final system prompt for core (discovery) or case (execution) mode.
  *
@@ -89,6 +99,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
     continuity: input.continuityContext?.trim() ?? '',
     responseFocus: buildResponseFocusBlock(),
     tools: resolvePrompt('{{available_tools}}', baseCtx),
+    knowledgeToolOverride: buildUnifiedKnowledgeToolOverrideBlock(input.availableTools),
     caseTypes: resolvePrompt('{{case_types}}', baseCtx),
     sessionBinding: resolvePrompt('{{session_binding}}', baseCtx),
   })

@@ -14,6 +14,7 @@ import {
   shouldRecordProcedureEvidence,
 } from './runtime-managed-tools'
 import { recordProcedureToolResult } from './session-store'
+import { isKnowledgeToolDefinition, isKnowledgeToolName } from './knowledge-tooling'
 
 export interface PostToolUsePhaseDeps {
   caseId: string
@@ -111,15 +112,28 @@ export class PostToolUsePhase {
       ? input.toolBasedOnEpoch.get(result.toolUse.id)
       : undefined
     const deferTerminalTrace = this.deps.shouldDeferTerminalToolTrace?.(result.name) === true
+    const toolDefinition = this.deps.getToolRouter().getTool(result.name)
+    const payloadRecord = payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
+      : null
+    const knowledgeSourceId = typeof payloadRecord?.knowledgeSourceId === 'string'
+      ? payloadRecord.knowledgeSourceId
+      : toolDefinition?.knowledgeSourceId
+    const knowledgeSourceName = typeof payloadRecord?.knowledgeSourceName === 'string'
+      ? payloadRecord.knowledgeSourceName
+      : toolDefinition?.knowledgeSourceName
+    const knowledgeProvider = typeof payloadRecord?.knowledgeProvider === 'string'
+      ? payloadRecord.knowledgeProvider
+      : toolDefinition?.knowledgeProvider
+    const isKnowledgeTool = isKnowledgeToolDefinition(toolDefinition) || isKnowledgeToolName(result.name) || !!knowledgeSourceId
     if (!deferTerminalTrace && shouldRecordProcedureEvidence(result.name)) {
-      const toolDefinition = this.deps.getToolRouter().getTool(result.name)
       recordProcedureToolResult(this.deps.caseId, {
         toolName: result.name,
         toolUseId: result.toolUse?.id,
         basedOnInputEpoch: basedOnInputEpoch ?? input.iterationBasedOnInputEpoch,
         toolOutput: payload,
         toolError: (result.output as { error?: string })?.error,
-        isKnowledgeTool: !!toolDefinition?.knowledgeSourceId,
+        isKnowledgeTool,
       })
     }
 
@@ -136,6 +150,10 @@ export class PostToolUsePhase {
         input: result.toolUse?.input,
         renderHints: result.renderHints,
         basedOnInputEpoch: basedOnInputEpoch ?? input.iterationBasedOnInputEpoch,
+        isKnowledgeTool,
+        knowledgeSourceId,
+        knowledgeSourceName,
+        knowledgeProvider,
       },
     )
   }

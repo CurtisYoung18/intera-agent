@@ -25,7 +25,6 @@ type ProcedureAction =
   | { id: string; kind: 'ask'; label: string; fields: string[]; guidance?: string; required?: boolean }
   | { id: string; kind: 'search_knowledge'; label: string; suggestedSources: string[]; guidance?: string; required?: boolean }
   | { id: string; kind: 'call_tool'; label: string; toolName: string; guidance?: string; required?: boolean }
-  | { id: string; kind: 'request_human_handoff'; label: string; queue?: string; guidance?: string; required?: boolean }
   | { id: string; kind: 'end'; label: string; status: 'completed' | 'cancelled'; guidance?: string; required?: boolean }
 
 type ProcedureStep = {
@@ -39,11 +38,10 @@ type ProcedureStep = {
     label?: string
     condition?: {
       id?: string
-      kind: 'llm_eval' | 'tool_event' | 'runtime_signal'
+      kind: 'llm_eval' | 'tool_event'
       prompt?: string
       toolName?: string
       event?: 'called' | 'succeeded' | 'failed' | 'stale' | 'empty_result'
-      signal?: 'explicit_human_request' | 'no_progress_loop' | 'knowledge_gap'
       label?: string
     }
     guidance?: string
@@ -375,25 +373,6 @@ function procedure(options: {
   return { version: 'v2', ...options }
 }
 
-function explicitHumanBranch(idPrefix: string, queue: string): ProcedureStep['branches'] {
-  return [
-    {
-      id: `${idPrefix}_explicit_human_request`,
-      kind: 'if',
-      label: 'Customer asked for human help',
-      condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
-      actions: [
-        {
-          id: `${idPrefix}_handoff_requested`,
-          kind: 'request_human_handoff',
-          label: 'Create human review task',
-          queue,
-        },
-      ],
-    },
-  ]
-}
-
 function finalizeStep(idPrefix: string, title: string, label: string): ProcedureStep {
   return {
     id: `${idPrefix}_finalize`,
@@ -438,7 +417,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               suggestedSources: ['General', 'Account', 'Deposit', 'Withdrawal', 'Promotion', 'Game'],
             },
           ],
-          branches: explicitHumanBranch('general', 'j1n_support'),
         },
         finalizeStep('general', 'Answer from knowledge', 'Finish general answer'),
       ],
@@ -477,7 +455,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               toolName: 'check_latest_deposit_status',
             },
           ],
-          branches: explicitHumanBranch('deposit', 'payment_ops'),
           completionGuidance: 'Do not claim credited, failed, pending, or rejected without check_latest_deposit_status evidence. If member_id is invalid/unclear or the live result is empty/Not Found once, ask the customer to confirm the correct JAYA member_id and receipt details rather than handing off. If a tool attempt fails once, retry or explain that the status cannot be verified yet and request evidence. Create a human task only for explicit human request after automation, confirmed live-vs-receipt conflict, or repeated unresolved dispute with usable member_id and payment evidence.',
         },
         finalizeStep('deposit', 'Explain deposit result', 'Finish deposit answer'),
@@ -523,7 +500,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               toolName: 'check_latest_withdrawal_status',
             },
           ],
-          branches: explicitHumanBranch('withdrawal', 'payment_ops'),
           completionGuidance: 'Do not claim approval, rejection, or remaining turnover without live tool evidence. If member_id is invalid/unclear or either live result is empty/Not Found once, ask the customer to confirm the correct JAYA member_id and withdrawal details rather than handing off. If a tool attempt fails once, retry or explain that the status cannot be verified yet and request evidence. Create a human task only for explicit human request after automation, confirmed live-vs-screenshot conflict, or repeated unresolved dispute with usable member_id and withdrawal evidence.',
         },
         finalizeStep('withdrawal', 'Explain withdrawal result', 'Finish withdrawal answer'),
@@ -557,7 +533,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               toolName: 'reset_withdrawal_pin',
             },
           ],
-          branches: explicitHumanBranch('pin_reset', 'account_ops'),
         },
         finalizeStep('pin_reset', 'Explain reset result', 'Finish reset answer'),
       ],
@@ -603,7 +578,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               required: false,
             },
           ],
-          branches: explicitHumanBranch('promotion', 'promo_ops'),
         },
         finalizeStep('promotion', 'Explain promotion result', 'Finish promotion answer'),
       ],
@@ -649,7 +623,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               required: false,
             },
           ],
-          branches: explicitHumanBranch('account', 'account_ops'),
         },
         finalizeStep('account', 'Explain account result', 'Finish account answer'),
       ],
@@ -688,7 +661,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               toolName: 'get_recommend_games',
             },
           ],
-          branches: explicitHumanBranch('game', 'j1n_support'),
         },
         finalizeStep('game', 'Share recommendation', 'Finish game answer'),
       ],
@@ -720,7 +692,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               toolName: 'get_bet_history',
             },
           ],
-          branches: explicitHumanBranch('bet_history', 'game_ops'),
         },
         finalizeStep('bet_history', 'Explain bet history result', 'Finish bet history answer'),
       ],
@@ -753,7 +724,6 @@ const CASE_TYPES: CaseTypeSeed[] = [
               toolName: 'get_transaction_history',
             },
           ],
-          branches: explicitHumanBranch('transaction_history', 'payment_ops'),
         },
         finalizeStep('transaction_history', 'Explain transaction history result', 'Finish transaction history answer'),
       ],

@@ -12,7 +12,6 @@ import {
 } from './trace-aggregator'
 import type { ContentBlock, Message, SSEEvent, ToolDefinition } from '@intera/shared/types'
 import { buildModePrompt } from './buildModePrompt'
-import type { ToolSummary } from './prompt-resolver'
 import { loadAgentConfig } from './config-loader'
 import { buildModelList } from './build-model-list'
 import { resolveEffectiveModel } from './resolve-model'
@@ -20,6 +19,7 @@ import { getProcedureRuntime, recordInitialInputEvent } from './session-store'
 import { normalizeSSEEvent } from './stream-handler'
 import { normalizeContentBlocks } from './message-builder'
 import { ToolRouter } from './tools'
+import { isKnowledgeToolDefinition, toolSummariesFromDefinitions } from './knowledge-tooling'
 import { LOOP_HISTORY_REPLAY_LIMIT } from './history-window'
 import { parseProcedure } from '@intera/shared/contracts/case-types'
 import type { CaseSchemaConfig } from '@intera/shared/types'
@@ -79,7 +79,7 @@ function classifyToolExecution(
 
   const toolCategory = definition.toolCategory
   const definitionMode = definition.mode
-  const isKnowledgeTool = !!definition.knowledgeSourceId
+  const isKnowledgeTool = isKnowledgeToolDefinition(definition)
 
   if (dryRun && toolCategory !== 'system_info') {
     return {
@@ -257,7 +257,7 @@ function schemaFromCaseTypeRow(caseType: {
   }
 }
 
-function enrichTraceRecord(
+export function enrichTraceRecord(
   record: TraceRecord,
   toolDefinitions: Map<string, ToolDefinition>,
   capabilityTruth: PlaygroundCapabilityTruth,
@@ -280,40 +280,30 @@ function enrichTraceRecord(
 
   const definition = toolDefinitions.get(toolName)
   const executionTruth = classifyToolExecution(toolName, definition, dryRun)
+  const parsedKnowledgeSourceId = typeof parsed?.knowledgeSourceId === 'string' ? parsed.knowledgeSourceId : undefined
+  const parsedKnowledgeSourceName = typeof parsed?.knowledgeSourceName === 'string' ? parsed.knowledgeSourceName : undefined
+  const parsedKnowledgeProvider = typeof parsed?.knowledgeProvider === 'string' ? parsed.knowledgeProvider : undefined
   const nextPayload = {
     ...(parsed ?? {}),
     toolName,
     executionTruth,
-    knowledgeSourceId: definition?.knowledgeSourceId,
-    knowledgeSourceName: definition?.knowledgeSourceName,
+    knowledgeSourceId: parsedKnowledgeSourceId ?? definition?.knowledgeSourceId,
+    knowledgeSourceName: parsedKnowledgeSourceName ?? definition?.knowledgeSourceName,
+    knowledgeProvider: parsedKnowledgeProvider ?? definition?.knowledgeProvider,
   }
   return { ...record, payload: JSON.stringify(nextPayload) }
 }
 
 function deriveApplicableStages(toolDefinitions: ToolDefinition[]): string[] {
   const applicable = new Set<string>(['Hooks', 'Model generation'])
-  if (toolDefinitions.some((definition) => !!definition.knowledgeSourceId)) {
+  if (toolDefinitions.some((definition) => isKnowledgeToolDefinition(definition))) {
     applicable.add('Knowledge retrieval')
   }
-  if (toolDefinitions.some((definition) => !definition.knowledgeSourceId)) {
+  if (toolDefinitions.some((definition) => !isKnowledgeToolDefinition(definition))) {
     applicable.add('Tools')
   }
   return ['Hooks', 'Knowledge retrieval', 'Tools', 'Procedure', 'Model generation']
     .filter((stage) => applicable.has(stage))
-}
-
-function toolNeedsMemberId(definition: ToolDefinition): boolean {
-  const schema = definition.inputSchema as { properties?: Record<string, unknown> } | null | undefined
-  return !!schema?.properties && Object.prototype.hasOwnProperty.call(schema.properties, 'member_id')
-}
-
-function toolSummariesFromDefinitions(toolDefinitions: ToolDefinition[]): ToolSummary[] {
-  return toolDefinitions.map((definition) => ({
-    name: definition.name,
-    description: definition.description,
-    needsMemberId: toolNeedsMemberId(definition),
-    knowledgeSourceId: definition.knowledgeSourceId,
-  }))
 }
 
 function latestProcedureCaseType(caseId: string | undefined): string {
@@ -374,8 +364,9 @@ export async function* runPlaygroundTurn(input: {
 
   const toolRouter = await ToolRouter.create(agentConfigId, dryRun)
   const toolDefinitions = toolRouter.getToolDefinitions()
+  const providerVisibleToolDefinitions = toolRouter.getProviderVisibleToolDefinitions()
   const toolDefinitionMap = new Map(toolDefinitions.map((definition) => [definition.name, definition]))
-  const availableTools = toolSummariesFromDefinitions(toolDefinitions)
+  const availableTools = toolSummariesFromDefinitions(providerVisibleToolDefinitions)
   const capabilityTruth = buildCapabilityTruth(resolvedModel, toolDefinitions, dryRun)
   const applicableStages = deriveApplicableStages(toolDefinitions)
 

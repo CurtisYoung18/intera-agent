@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { AgentConfigData } from '@intera/shared/types'
 import { DEFAULT_MEMORY_STRATEGY } from '@intera/shared/defaults'
 import { AgentLoop } from '../../loop'
 import { ToolRouter } from '../../tools'
-import { selectPromptAndTools, type PromptSelectorContext } from '../../prompt-selector'
+import {
+  isProcedureToolSchemaFilteringEnabled,
+  selectPromptAndTools,
+  type PromptSelectorContext,
+} from '../../prompt-selector'
 import type { ConversationLoop } from '../../conversation-loop'
-import type { CaseAgentLoop } from '../../case-agent-loop'
+import { CaseAgentLoop } from '../../case-agent-loop'
 import { createMemoryPersistence } from '../../persistence-port'
 import { RuntimeManagedToolResolver } from '../../runtime-managed-tools'
 import { HookContextBuilder } from '../../hook-context-builder'
@@ -63,6 +68,27 @@ function toolProcedure(toolName: string) {
   }
 }
 
+function knowledgeProcedure() {
+  return {
+    version: 'v2' as const,
+    whenToUse: 'Use when knowledge lookup is needed.',
+    steps: [
+      {
+        id: 'search_policy',
+        title: 'Search policy',
+        guidance: 'Search the configured knowledge source.',
+        actions: [{
+          id: 'search_deposit_policy',
+          kind: 'search_knowledge' as const,
+          label: 'Search deposit policy',
+          suggestedSources: ['deposit_faq'],
+        }],
+        branches: [],
+      },
+    ],
+  }
+}
+
 function config(): AgentConfigData {
   return {
     model: 'claude-sonnet-4-20250514',
@@ -93,6 +119,14 @@ function endOnlyProcedure() {
         branches: [],
       },
     ],
+  }
+}
+
+function makeTool(name: string): Tool {
+  return {
+    name,
+    description: `${name} tool`,
+    input_schema: { type: 'object', properties: {}, required: [] },
   }
 }
 
@@ -247,6 +281,354 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(after.prompt).not.toContain('action=call_tool')
     expect(after.tools.map((tool) => tool.name)).toEqual(before.tools.map((tool) => tool.name))
     closeSession(caseId)
+  })
+
+  it('keeps all tool schemas by default when Procedure-aware filtering is disabled', () => {
+    expect(isProcedureToolSchemaFilteringEnabled({})).toBe(false)
+
+    const allTools = [
+      makeTool('start_procedure'),
+      makeTool('get_latest_deposit'),
+      makeTool('get_latest_withdrawal'),
+      makeTool('kb_search_deposit_faq'),
+    ]
+    const conversationLoop = { buildPrompt: () => 'CORE_PROMPT' } as unknown as ConversationLoop
+    const filterProcedureTools = vi.fn(() => [makeTool('get_latest_deposit')])
+    const caseLoop = {
+      buildProcedurePrompt: () => 'PROCEDURE_DEFINITION',
+      filterProcedureTools,
+    } as unknown as CaseAgentLoop
+
+    const selection = selectPromptAndTools({
+      isCaseActive: true,
+      isConsultation: false,
+      systemPrompt: 'CORE_PROMPT',
+      currentStage: 'investigating',
+      nudgeCount: 0,
+      conversationLoop,
+      caseLoop,
+      allTools,
+    })
+
+    expect(selection.tools).toBe(allTools)
+    expect(selection.tools.map((tool) => tool.name)).toEqual(allTools.map((tool) => tool.name))
+    expect(filterProcedureTools).not.toHaveBeenCalled()
+  })
+
+  it('filters Core discovery schemas to base tools when the flag is enabled', () => {
+    const allTools = [
+      makeTool('get_latest_deposit'),
+      makeTool('start_procedure'),
+      makeTool('ask_user_questions'),
+      makeTool('read_chat_memory'),
+      makeTool('read_user_profile'),
+      makeTool('remember'),
+      makeTool('get_current_time'),
+      makeTool('create_human_task'),
+      makeTool('finalize_procedure'),
+      makeTool('search_knowledge'),
+      makeTool('kb_search_deposit_faq'),
+      makeTool('kb_search_withdrawal_faq'),
+    ]
+    const conversationLoop = { buildPrompt: () => 'CORE_PROMPT' } as unknown as ConversationLoop
+
+    const selection = selectPromptAndTools({
+      isCaseActive: false,
+      isConsultation: false,
+      systemPrompt: 'CORE_PROMPT',
+      currentStage: 'created',
+      nudgeCount: 0,
+      conversationLoop,
+      caseLoop: null,
+      allTools,
+      procedureToolSchemaFilteringEnabled: true,
+    })
+
+    const names = selection.tools.map((tool) => tool.name)
+    expect(names).not.toContain('get_latest_deposit')
+    expect(names).toEqual([
+      'start_procedure',
+      'ask_user_questions',
+      'read_chat_memory',
+      'read_user_profile',
+      'remember',
+      'get_current_time',
+      'create_human_task',
+      'finalize_procedure',
+      'search_knowledge',
+      'kb_search_deposit_faq',
+      'kb_search_withdrawal_faq',
+    ])
+  })
+
+  it('filters Procedure schemas to current step tools plus conservative system tools when enabled', () => {
+    const caseId = 'r3-procedure-schema-filtering'
+    const procedure = toolProcedure('get_latest_deposit')
+    recordInitialInputEvent(caseId, { content: 'deposit missing' })
+    startProcedureRun(caseId, {
+      agentConfigId: 'agent_1',
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure,
+    })
+
+    const caseLoop = new CaseAgentLoop({
+      type: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure,
+    } as any, {
+      caseId,
+      orgId: 'org_1',
+      agentConfigId: 'agent_1',
+      userId: 'user_1',
+      chatId: 'chat_1',
+      config: config(),
+      chatMemory: { getSummary: () => ({ caseStatus: 'investigating' }) },
+      getHookEngine: vi.fn(),
+      traceWriter: {},
+      toolRouter: {
+        getToolDefinitions: () => [
+          { name: 'kb_search_deposit_faq', knowledgeSourceId: 'knowledge_1' },
+        ],
+      },
+      getMessages: () => [],
+      addMessage: vi.fn(),
+    } as any)
+
+    const allTools = [
+      makeTool('start_procedure'),
+      makeTool('ask_user_questions'),
+      makeTool('read_chat_memory'),
+      makeTool('read_user_profile'),
+      makeTool('remember'),
+      makeTool('get_current_time'),
+      makeTool('create_human_task'),
+      makeTool('finalize_procedure'),
+      makeTool('kb_search_deposit_faq'),
+      makeTool('kb_search_withdrawal_faq'),
+      makeTool('get_latest_deposit'),
+      makeTool('get_latest_withdrawal'),
+      makeTool('void_customer_balance'),
+    ]
+
+    const selection = selectPromptAndTools({
+      isCaseActive: true,
+      isConsultation: false,
+      systemPrompt: 'CORE_PROMPT',
+      currentStage: 'investigating',
+      nudgeCount: 0,
+      conversationLoop: { buildPrompt: () => 'CORE_PROMPT' } as unknown as ConversationLoop,
+      caseLoop,
+      allTools,
+      procedureToolSchemaFilteringEnabled: true,
+    })
+
+    const names = selection.tools.map((tool) => tool.name)
+    expect(names).toEqual(expect.arrayContaining([
+      'start_procedure',
+      'ask_user_questions',
+      'read_chat_memory',
+      'read_user_profile',
+      'remember',
+      'get_current_time',
+      'create_human_task',
+      'finalize_procedure',
+      'get_latest_deposit',
+    ]))
+    expect(names).not.toContain('kb_search_deposit_faq')
+    expect(names).not.toContain('kb_search_withdrawal_faq')
+    expect(names).not.toContain('get_latest_withdrawal')
+    expect(names).not.toContain('void_customer_balance')
+    closeSession(caseId)
+  })
+
+  it('keeps only known knowledge tools for a Procedure knowledge step when enabled', () => {
+    const caseId = 'r3-procedure-knowledge-schema-filtering'
+    const procedure = knowledgeProcedure()
+    recordInitialInputEvent(caseId, { content: 'what is the deposit policy?' })
+    startProcedureRun(caseId, {
+      agentConfigId: 'agent_1',
+      procedureId: 'deposit_policy',
+      displayName: 'Deposit Policy',
+      procedure,
+    })
+
+    const caseLoop = new CaseAgentLoop({
+      type: 'deposit_policy',
+      displayName: 'Deposit Policy',
+      procedure,
+    } as any, {
+      caseId,
+      orgId: 'org_1',
+      agentConfigId: 'agent_1',
+      userId: 'user_1',
+      chatId: 'chat_1',
+      config: config(),
+      chatMemory: { getSummary: () => ({ caseStatus: 'investigating' }) },
+      getHookEngine: vi.fn(),
+      traceWriter: {},
+      toolRouter: {
+        getToolDefinitions: () => [
+          { name: 'kb_search_deposit_faq', knowledgeSourceId: 'knowledge_1' },
+        ],
+      },
+      getMessages: () => [],
+      addMessage: vi.fn(),
+    } as any)
+
+    const allTools = [
+      makeTool('start_procedure'),
+      makeTool('ask_user_questions'),
+      makeTool('read_chat_memory'),
+      makeTool('read_user_profile'),
+      makeTool('remember'),
+      makeTool('get_current_time'),
+      makeTool('create_human_task'),
+      makeTool('finalize_procedure'),
+      makeTool('kb_search_deposit_faq'),
+      makeTool('kb_search_withdrawal_faq'),
+      makeTool('get_latest_deposit'),
+    ]
+
+    const selection = selectPromptAndTools({
+      isCaseActive: true,
+      isConsultation: false,
+      systemPrompt: 'CORE_PROMPT',
+      currentStage: 'investigating',
+      nudgeCount: 0,
+      conversationLoop: { buildPrompt: () => 'CORE_PROMPT' } as unknown as ConversationLoop,
+      caseLoop,
+      allTools,
+      procedureToolSchemaFilteringEnabled: true,
+    })
+
+    const names = selection.tools.map((tool) => tool.name)
+    expect(names).toEqual(expect.arrayContaining([
+      'start_procedure',
+      'ask_user_questions',
+      'read_chat_memory',
+      'read_user_profile',
+      'remember',
+      'get_current_time',
+      'create_human_task',
+      'finalize_procedure',
+      'kb_search_deposit_faq',
+    ]))
+    expect(names).not.toContain('kb_search_withdrawal_faq')
+    expect(names).not.toContain('get_latest_deposit')
+    closeSession(caseId)
+  })
+
+  it('keeps unified search_knowledge for a Procedure knowledge step without leaking unrelated legacy KB or business tools', () => {
+    const caseId = 'r3-procedure-unified-knowledge-schema-filtering'
+    const procedure = knowledgeProcedure()
+    recordInitialInputEvent(caseId, { content: 'what is the deposit policy?' })
+    startProcedureRun(caseId, {
+      agentConfigId: 'agent_1',
+      procedureId: 'deposit_policy',
+      displayName: 'Deposit Policy',
+      procedure,
+    })
+
+    const caseLoop = new CaseAgentLoop({
+      type: 'deposit_policy',
+      displayName: 'Deposit Policy',
+      procedure,
+    } as any, {
+      caseId,
+      orgId: 'org_1',
+      agentConfigId: 'agent_1',
+      userId: 'user_1',
+      chatId: 'chat_1',
+      config: config(),
+      chatMemory: { getSummary: () => ({ caseStatus: 'investigating' }) },
+      getHookEngine: vi.fn(),
+      traceWriter: {},
+      toolRouter: {
+        getToolDefinitions: () => [
+          { name: 'search_knowledge', knowledgeProvider: 'gptbots' },
+          { name: 'kb_search_deposit_faq', knowledgeSourceId: 'legacy_1', providerHidden: true },
+        ],
+      },
+      getMessages: () => [],
+      addMessage: vi.fn(),
+    } as any)
+
+    const allTools = [
+      makeTool('start_procedure'),
+      makeTool('ask_user_questions'),
+      makeTool('read_chat_memory'),
+      makeTool('read_user_profile'),
+      makeTool('remember'),
+      makeTool('get_current_time'),
+      makeTool('create_human_task'),
+      makeTool('finalize_procedure'),
+      makeTool('search_knowledge'),
+      makeTool('kb_search_deposit_faq'),
+      makeTool('kb_search_withdrawal_faq'),
+      makeTool('get_latest_deposit'),
+    ]
+
+    const selection = selectPromptAndTools({
+      isCaseActive: true,
+      isConsultation: false,
+      systemPrompt: 'CORE_PROMPT',
+      currentStage: 'investigating',
+      nudgeCount: 0,
+      conversationLoop: { buildPrompt: () => 'CORE_PROMPT' } as unknown as ConversationLoop,
+      caseLoop,
+      allTools,
+      procedureToolSchemaFilteringEnabled: true,
+    })
+
+    const names = selection.tools.map((tool) => tool.name)
+    expect(names).toContain('search_knowledge')
+    expect(names).not.toContain('kb_search_deposit_faq')
+    expect(names).not.toContain('kb_search_withdrawal_faq')
+    expect(names).not.toContain('get_latest_deposit')
+    closeSession(caseId)
+  })
+
+  it('falls back to all Procedure schemas when the active step cannot be determined', () => {
+    const caseId = 'r3-procedure-schema-filtering-fallback'
+    const procedure = toolProcedure('get_latest_deposit')
+    const caseLoop = new CaseAgentLoop({
+      type: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure,
+    } as any, {
+      caseId,
+      orgId: 'org_1',
+      agentConfigId: 'agent_1',
+      userId: 'user_1',
+      config: config(),
+      chatMemory: { getSummary: () => ({ caseStatus: 'investigating' }) },
+      getHookEngine: vi.fn(),
+      traceWriter: {},
+      toolRouter: { getToolDefinitions: () => [] },
+      getMessages: () => [],
+      addMessage: vi.fn(),
+    } as any)
+    const allTools = [
+      makeTool('start_procedure'),
+      makeTool('get_latest_deposit'),
+      makeTool('get_latest_withdrawal'),
+    ]
+
+    const selection = selectPromptAndTools({
+      isCaseActive: true,
+      isConsultation: false,
+      systemPrompt: 'CORE_PROMPT',
+      currentStage: 'investigating',
+      nudgeCount: 0,
+      conversationLoop: { buildPrompt: () => 'CORE_PROMPT' } as unknown as ConversationLoop,
+      caseLoop,
+      allTools,
+      procedureToolSchemaFilteringEnabled: true,
+    })
+
+    expect(selection.tools).toBe(allTools)
+    expect(selection.tools.map((tool) => tool.name)).toEqual(allTools.map((tool) => tool.name))
   })
 })
 

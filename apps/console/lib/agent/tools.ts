@@ -13,6 +13,13 @@ import { z } from 'zod'
 import { knowledgeSourceToolName, stableToolNameSegment } from './tool-names'
 import { hasKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import { RETIRED_TOOL_NAMES } from '@/lib/tool-classifications'
+import {
+  KNOWLEDGE_PROVIDER_GPTBOTS,
+  buildKnowledgeSourceOptions,
+  buildUnifiedKnowledgeToolDefinition,
+  isUnifiedKnowledgeToolEnabled,
+  providerVisibleToolDefinitions,
+} from './knowledge-tooling'
 
 /**
  * System Tools — always-available core tools registered directly in the constructor.
@@ -448,6 +455,8 @@ export class ToolRouter {
       const knowledgeSources = (await prisma.knowledgeSource.findMany({
         where: { agentConfigId, enabled: true },
       })).filter((source) => hasKnowledgeSourceGroupIds(source.groupIds))
+      const unifiedKnowledgeToolEnabled = isUnifiedKnowledgeToolEnabled()
+      const knowledgeSourceOptions = buildKnowledgeSourceOptions(knowledgeSources)
 
       // Auto-heal legacy KB rows that still point at retired reranker defaults.
       // Runtime must preserve the admin-configured topK instead of rewriting it.
@@ -482,11 +491,13 @@ export class ToolRouter {
       const usedKnowledgeToolNames = new Set<string>()
       for (const ks of knowledgeSources) {
         const baseToolName = knowledgeSourceToolName(ks.name, ks.id)
+        const sourceOption = knowledgeSourceOptions.find((option) => option.id === ks.id)
         const fallbackSuffix = ks.id ? `_${stableToolNameSegment(ks.id).slice(-6)}` : ''
         const toolName = usedKnowledgeToolNames.has(baseToolName)
           ? `${baseToolName}${fallbackSuffix}`
           : baseToolName
         usedKnowledgeToolNames.add(toolName)
+        if (sourceOption) sourceOption.legacyToolName = toolName
         const baseDesc = ks.description || `Search the "${ks.name}" knowledge base`
         router.tools.set(toolName, {
           name: toolName,
@@ -512,6 +523,9 @@ export class ToolRouter {
           displayVerb: { text: `Searching ${ks.name}`, icon: 'dots' },
           knowledgeSourceId: ks.id,
           knowledgeSourceName: ks.name,
+          knowledgeSourceKey: sourceOption?.key,
+          knowledgeProvider: KNOWLEDGE_PROVIDER_GPTBOTS,
+          providerHidden: unifiedKnowledgeToolEnabled,
           renderHints: {
             livechat: {
               kind: 'carousel',
@@ -531,6 +545,13 @@ export class ToolRouter {
           },
         })
       }
+
+      if (unifiedKnowledgeToolEnabled) {
+        const unifiedTool = buildUnifiedKnowledgeToolDefinition(knowledgeSourceOptions, gptbotsApiKey)
+        if (unifiedTool) {
+          router.tools.set(unifiedTool.name, unifiedTool)
+        }
+      }
     } catch (err) {
       console.warn('[ToolRouter] Failed to load tools from DB, using built-ins only:', err)
     }
@@ -543,6 +564,7 @@ export class ToolRouter {
     const tools: Tool[] = []
     for (const tool of this.tools.values()) {
       if (!tool.enabled) continue
+      if (tool.providerHidden) continue
       tools.push({
         name: tool.name,
         description: tool.description,
@@ -555,6 +577,11 @@ export class ToolRouter {
   /** Returns full tool definitions (with runtime config). */
   getToolDefinitions(): ToolDefinition[] {
     return Array.from(this.tools.values()).filter((t) => t.enabled)
+  }
+
+  /** Returns enabled definitions that are safe to expose to provider schemas/prompts. */
+  getProviderVisibleToolDefinitions(): ToolDefinition[] {
+    return providerVisibleToolDefinitions(this.getToolDefinitions())
   }
 
   getTool(name: string): ToolDefinition | undefined {

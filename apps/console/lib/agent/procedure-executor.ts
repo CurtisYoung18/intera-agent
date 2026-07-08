@@ -10,6 +10,11 @@ import {
   buildProcedureConditionLabel,
 } from '@intera/shared/contracts/case-types'
 
+export interface ProcedureStepToolSelection {
+  toolNames: string[]
+  includesKnowledgeTools: boolean
+}
+
 /**
  * Renders a Procedure into the case-mode system prompt and exposes the completion gate.
  * Held by CaseAgentLoop when the case type carries a `procedure`.
@@ -42,6 +47,41 @@ export class ProcedureExecutor {
       .filter((step) => this.v2StepMatchesTool(step, toolName))
       .map((step) => step.id)
     return [...new Set(matchingTargets)]
+  }
+
+  /** Tools directly relevant to the active Procedure step. */
+  toolSelectionForStep(stepId: string | null | undefined): ProcedureStepToolSelection | null {
+    if (!stepId) return null
+    const step = this.procedure.steps.find((candidate) => candidate.id === stepId)
+    if (!step) return null
+
+    const toolNames = new Set<string>()
+    let includesKnowledgeTools = false
+
+    for (const action of collectStepActions(step)) {
+      switch (action.kind) {
+        case 'ask':
+          toolNames.add('ask_user_questions')
+          break
+        case 'search_knowledge':
+          includesKnowledgeTools = true
+          for (const name of this.knowledgeToolNames) toolNames.add(name)
+          break
+        case 'call_tool': {
+          const name = action.toolName.trim()
+          if (name) toolNames.add(name)
+          break
+        }
+        case 'request_human_handoff':
+          toolNames.add('create_human_task')
+          break
+        case 'end':
+          toolNames.add('finalize_procedure')
+          break
+      }
+    }
+
+    return { toolNames: [...toolNames], includesKnowledgeTools }
   }
 
   /** Completion gate — see {@link isProcedureComplete}. */

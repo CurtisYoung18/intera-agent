@@ -380,7 +380,7 @@ function collectKnowledgeHits(
 
   for (const result of toolResults) {
     const explicitSource = firstNonEmptyString(result as Record<string, unknown>, ['knowledgeSourceName', 'knowledgeSourceId'])
-    if (!explicitSource && !result.name.startsWith('kb_search_')) continue
+    if (!explicitSource && result.name !== 'search_knowledge' && !result.name.startsWith('kb_search_')) continue
     const query = isRecord(result.input) && typeof result.input.query === 'string'
       ? result.input.query
       : undefined

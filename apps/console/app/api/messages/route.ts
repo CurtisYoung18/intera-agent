@@ -26,7 +26,8 @@ import {
   type RuntimeEventSource,
 } from '@/lib/agent/session-store'
 import { isInvestigableCaseType } from '@/lib/agent/case-type-slugs'
-import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
+import { toolSummariesFromDefinitions } from '@/lib/agent/knowledge-tooling'
+import { ToolRouter } from '@/lib/agent/tools'
 import { prisma } from '@intera/shared/prisma'
 import { buildModePrompt } from '@/lib/agent/buildModePrompt'
 import { createSafeSseWriter } from '@/lib/api/safe-sse'
@@ -1103,36 +1104,12 @@ export async function POST(request: NextRequest) {
           description: string
           needsMemberId: boolean
           knowledgeSourceId?: string
+          knowledgeProvider?: string
+          knowledgeTool?: boolean
         }> = []
         try {
-          const dbTools = await prisma.tool.findMany({
-            where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
-            select: { name: true, description: true, inputSchema: true, mode: true },
-          })
-          for (const s of dbTools) {
-            const schema = s.inputSchema ? JSON.parse(s.inputSchema) : {}
-            const needsMemberId = !!schema.properties?.member_id
-            toolSummaries.push({ name: s.name, description: s.description, needsMemberId })
-          }
-          const kbSources = await prisma.knowledgeSource.findMany({
-            where: { agentConfigId: resolvedAgentConfigId ?? '', enabled: true },
-            select: { id: true, name: true, description: true },
-          })
-          for (const ks of kbSources) {
-            toolSummaries.push({
-              name: knowledgeSourceToolName(ks.name, ks.id),
-              description: ks.description || `Search the ${ks.name} knowledge base`,
-              needsMemberId: false,
-              knowledgeSourceId: ks.id,
-            })
-          }
-          // Include built-in tools not in DB
-          const { BUILT_IN_TOOLS } = await import('@/lib/agent/tools')
-          for (const s of BUILT_IN_TOOLS) {
-            if (!toolSummaries.find(t => t.name === s.name)) {
-              toolSummaries.push({ name: s.name, description: s.description, needsMemberId: false })
-            }
-          }
+          const promptToolRouter = await ToolRouter.create(resolvedAgentConfigId ?? '', true)
+          toolSummaries.push(...toolSummariesFromDefinitions(promptToolRouter.getProviderVisibleToolDefinitions()))
         } catch { /* DB unavailable, prompt just won't list tools */ }
 
         // ── Unified prompt assembly (base+append model) ──

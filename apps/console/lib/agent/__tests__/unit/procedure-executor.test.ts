@@ -93,4 +93,23 @@ describe('ProcedureExecutor', () => {
     expect(ex.stepIdsForTool('lookup_bonus_policy')).toContain('search_policy')
     expect(ex.stepIdsForTool('kb_search_bonus_policy')).not.toContain('search_policy')
   })
+
+  it('selects current-step action tools for schema filtering', () => {
+    const ex = new ProcedureExecutor(proc, 'deposit_issue')
+    expect(ex.toolSelectionForStep('understand_issue')).toEqual({
+      toolNames: ['ask_user_questions'],
+      includesKnowledgeTools: false,
+    })
+    expect(ex.toolSelectionForStep('investigate_deposit')).toEqual({
+      toolNames: ['get_latest_deposit', 'get_kyc_status'],
+      includesKnowledgeTools: false,
+    })
+    expect(ex.toolSelectionForStep('missing_step')).toBeNull()
+
+    const knowledgeEx = new ProcedureExecutor(knowledgeProc, 'knowledge_issue', new Set(['lookup_bonus_policy']))
+    expect(knowledgeEx.toolSelectionForStep('search_policy')).toEqual({
+      toolNames: ['lookup_bonus_policy'],
+      includesKnowledgeTools: true,
+    })
+  })
 })

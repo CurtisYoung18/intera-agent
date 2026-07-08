@@ -147,6 +147,17 @@ export interface ToolDefinition {
   /** Internal source mapping for generated knowledge-search tools. */
   knowledgeSourceId?: string
   knowledgeSourceName?: string
+  knowledgeSourceKey?: string
+  knowledgeProvider?: string
+  knowledgeSources?: Array<{
+    id: string
+    key: string
+    name: string
+    description?: string
+    legacyToolName: string
+  }>
+  /** Keep an enabled ToolDefinition executable internally while hiding it from provider schemas/prompts. */
+  providerHidden?: boolean
   // Zod validation — catches type errors at runtime, feeds back to LLM for correction
   // Pattern from Claude Code: tool.inputSchema.safeParse(input)
   zodSchema?: import('zod').ZodType

@@ -22,11 +22,12 @@ import type { HookContextBuilder } from './hook-context-builder'
 import type { Profiler } from './profiler'
 import { consumeStream, type StreamContentBlock } from './stream-handler'
 import { StreamingTextSanitizer } from './streaming-text-sanitizer'
-import { StreamingToolExecutor } from './streaming-tool-executor'
+import { StreamingToolExecutor, unwrapToolExecutionPayload } from './streaming-tool-executor'
 import { processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
 import type { TraceWriter } from './trace'
 import type { ToolRouter } from './tools'
 import { hasRecognizedTokenUsage, readInputTokens, readOutputTokens } from './usage-accounting'
+import { isKnowledgeToolDefinition } from './knowledge-tooling'
 
 export type LlmStreamTerminalResult = {
   messages: Message[]
@@ -104,6 +105,10 @@ export class LlmStreamPhase {
       this.deps.getToolRouter().getToolDefinitions(),
       (toolUse, status, renderHints) => {
         const skillDef = this.deps.getToolRouter().getTool(toolUse.name)
+        const payload = status !== 'executing' ? unwrapToolExecutionPayload(toolUse.result) : undefined
+        const payloadRecord = payload && typeof payload === 'object' && !Array.isArray(payload)
+          ? payload as Record<string, unknown>
+          : null
         input.sendEvent({
           type: status === 'executing' ? 'tool_executing' : 'tool_result',
           data: {
@@ -112,6 +117,16 @@ export class LlmStreamPhase {
             result: status !== 'executing' ? toolUse.result : undefined,
             displayVerb: status === 'executing' ? skillDef?.displayVerb : undefined,
             renderHints: renderHints ?? skillDef?.renderHints,
+            isKnowledgeTool: isKnowledgeToolDefinition(skillDef),
+            knowledgeSourceId: typeof payloadRecord?.knowledgeSourceId === 'string'
+              ? payloadRecord.knowledgeSourceId
+              : skillDef?.knowledgeSourceId,
+            knowledgeSourceName: typeof payloadRecord?.knowledgeSourceName === 'string'
+              ? payloadRecord.knowledgeSourceName
+              : skillDef?.knowledgeSourceName,
+            knowledgeProvider: typeof payloadRecord?.knowledgeProvider === 'string'
+              ? payloadRecord.knowledgeProvider
+              : skillDef?.knowledgeProvider,
           },
           timestamp: this.timestamp(),
         })

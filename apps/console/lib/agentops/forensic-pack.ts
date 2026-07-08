@@ -537,7 +537,7 @@ function buildEvidence(
       toolAcc.set(toolName, acc)
     }
 
-    if ((kind === 'knowledge' || toolName?.startsWith('kb_search_')) && toolName) {
+    if ((kind === 'knowledge' || toolName === 'search_knowledge' || toolName?.startsWith('kb_search_')) && toolName) {
       const knowledge = summarizeKnowledgeTrace(trace, payload, toolName, attribution)
       const key = `${toolName}:${knowledge.sourceName ?? ''}:${knowledge.query ?? ''}`
       const existing = knowledgeAcc.get(key)
@@ -1046,7 +1046,7 @@ function evidenceBelongsToAllowedScope(
 function classifyTraceKind(trace: TraceRow, payload: JsonRecord | null): ForensicTimelineEvidence['kind'] {
   const toolName = toolNameFromTrace(trace, payload)
   if (trace.actionType === 'tool_call' || trace.actionType === 'tool_result') {
-    return toolName?.startsWith('kb_search_') || payload?.knowledgeSourceId ? 'knowledge' : 'tool'
+    return toolName === 'search_knowledge' || toolName?.startsWith('kb_search_') || payload?.isKnowledgeTool === true || payload?.knowledgeSourceId ? 'knowledge' : 'tool'
   }
   if (trace.actionType === 'hook_hit' || (trace.actionType === 'loop_decision' && isHookDecisionTitle(trace.title))) return 'hook'
   if (trace.actionType === 'human_task_created' || trace.actionType === 'human_task_resolved' || trace.actionType === 'escalated') return 'human_task'
