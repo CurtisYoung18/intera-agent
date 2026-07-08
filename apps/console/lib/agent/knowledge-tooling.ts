@@ -149,7 +149,7 @@ export function buildUnifiedKnowledgeToolDescription(options: KnowledgeSourceOpt
     'If older instructions mention a kb_search_* tool, call search_knowledge instead and choose the matching source.',
     'Available sources:',
     ...sourceLines,
-    'When more than one source is available, source is required. topK is clamped to 1-30 and honored only for sources that allow model-controlled topK.',
+    'When more than one source is available, source is required. topK is clamped to 1-15 and honored only for sources that allow model-controlled topK.',
   ].join('\n')
 }
 
@@ -174,7 +174,7 @@ export function buildUnifiedKnowledgeToolDefinition(
         },
         topK: {
           type: 'number',
-          description: 'Optional number of results to return. Runtime clamps to 1-30 and honors this only when the selected source allows it.',
+          description: 'Optional number of results to return. Runtime clamps to 1-15 and honors this only when the selected source allows it.',
           default: options[0]?.topK ?? 15,
         },
       },

@@ -237,8 +237,8 @@ function clampTopK(value: unknown, fallback: number): number {
     : typeof value === 'string'
       ? Number(value)
       : fallback
-  if (!Number.isFinite(raw)) return Math.min(Math.max(fallback, 1), 30)
-  return Math.min(Math.max(Math.round(raw), 1), 30)
+  if (!Number.isFinite(raw)) return Math.min(Math.max(fallback, 1), 15)
+  return Math.min(Math.max(Math.round(raw), 1), 15)
 }
 
 function stringInput(input: Record<string, unknown>, key: string): string | undefined {

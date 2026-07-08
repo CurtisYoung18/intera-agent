@@ -157,35 +157,45 @@ const REQUIRED_KNOWLEDGE_SOURCES = [
   'Withdrawal',
 ] as const
 
+const J1N_DEFAULT_KNOWLEDGE_TOP_K = 8
+const J1N_DYNAMIC_TOP_K_ENABLED = true
+
 const KNOWLEDGE_SOURCE_PATCHES: Record<string, {
   description: string
   topK?: number
+  modelControlTopK?: boolean
   includeGroupsFrom?: string[]
 }> = {
   Account: {
     description: 'Search for account FAQ and navigation: account verification steps, "Is my account verified?" self-check path, Security Center 100%, bank account count, transaction history navigation via Account -> Statement -> Search, username/real-name change policy, VIP status page, account security, fees, and profile rules. Use before asking member_id unless the user explicitly asks to check their current account state. For username or real-name change, the final answer must include the exact phrase "cannot be changed".',
-    topK: 15,
+    topK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+    modelControlTopK: J1N_DYNAMIC_TOP_K_ENABLED,
   },
   Deposit: {
     description: 'Search for deposit FAQ and navigation: how to deposit, deposit method, change deposit method, minimum/maximum deposit limits, processing time, pending deposit guidance, and crypto deposit support. Use before asking member_id unless the user asks for their own latest/missing deposit status. For "What is the minimum deposit?", answer in Romanized Nepali and include Bank Transfer minimum NPR 300 and Online Payment minimum NPR 500. For crypto deposit, include the exact phrase "currently not supported".',
-    topK: 15,
+    topK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+    modelControlTopK: J1N_DYNAMIC_TOP_K_ENABLED,
   },
   Game: {
     description: 'Search for game FAQ: game types, demo games without deposit, specific game rules, interrupted/canceled games, maintenance, and cannot-play-game guidance. If a broad game inventory answer is needed, General knowledge may also contain the exact game-type list.',
-    topK: 15,
+    topK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+    modelControlTopK: J1N_DYNAMIC_TOP_K_ENABLED,
     includeGroupsFrom: ['General'],
   },
   General: {
     description: 'Search for general Jayabaji FAQ: introduction, "Who is JAYABAJI?", registration, website safety, app download, support languages, age requirement, referral, rebate, turnover review, betting history/wager history navigation, and other broad self-service help. For "Who is JAYABAJI?", always call search_knowledge with source="general" and answer in Romanized Nepali. Do not use General for deposit/withdrawal transaction history navigation; use Account KB for Account -> Statement -> Search.',
-    topK: 15,
+    topK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+    modelControlTopK: J1N_DYNAMIC_TOP_K_ENABLED,
   },
   Promotion: {
     description: 'Search for promotion FAQ and rules: claim bonus, welcome bonus, cashback, VIP bonus, active promotion explanation, turnover, minimum deposit, max bonus, issue time, eligible provider/game, claim location, and promotion links. Use before answering any standalone promotion rule or bonus-terms question. When a promotion row contains minimum deposit, turnover, and max bonus, include all three fields even if the user asks only for minimum deposit.',
-    topK: 15,
+    topK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+    modelControlTopK: J1N_DYNAMIC_TOP_K_ENABLED,
   },
   Withdrawal: {
     description: 'Search for withdrawal FAQ and navigation: how to withdraw, withdrawal method, change withdrawal method, withdrawal limits, processing time, crypto withdrawal support, withdrawal PIN required, setting withdrawal PIN, and adding bank details. Use before asking member_id unless the user asks for their own withdrawal status, failed withdrawal, remaining turnover, or transaction dispute. For crypto withdrawal, include the exact phrase "currently not supported". For how-to-withdraw, preserve "minimum withdrawal 1500 NPR".',
-    topK: 15,
+    topK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+    modelControlTopK: J1N_DYNAMIC_TOP_K_ENABLED,
   },
 }
 
@@ -281,6 +291,12 @@ Source of truth:
 - Customer screenshots, receipts, or text claims are customer-provided evidence only, not live system authority. You may summarize what appears in them, but do not conclude approved, rejected, credited, withdrawn, turnover complete, or eligible solely from a screenshot.
 - If a live tool result is missing, empty, stale, failed, or conflicts with the customer report, explain that it needs manual review and create a human task.
 - Use get_current_time for date or time-sensitive questions. Follow the tool output timezone; do not guess today's date.
+
+Knowledge retrieval budget:
+- When calling search_knowledge, pass topK intentionally. The default is 8 if omitted.
+- Use topK 3-5 for simple FAQ, navigation, method, timing, or one-rule questions.
+- Use topK 8-10 for policy, limits, promotion terms, numeric completeness, or questions that need exact fields.
+- Use topK 12-15 only for broad, ambiguous, multi-topic, or first-search-missed questions. Do not use topK 15 routinely.
 
 Member identity:
 - A member_id is required before any member-specific lookup or reset. Valid Jayabaji member ids normally start with JAYA.
@@ -1255,6 +1271,8 @@ function printPlan(): void {
       brainPromptChars: CORE_SYSTEM_PROMPT.length,
       requiredTools: REQUIRED_TOOLS,
       requiredKnowledgeSources: REQUIRED_KNOWLEDGE_SOURCES,
+      knowledgeDefaultTopK: J1N_DEFAULT_KNOWLEDGE_TOP_K,
+      knowledgeDynamicTopK: J1N_DYNAMIC_TOP_K_ENABLED,
       toolDescriptionPatches: Object.keys(TOOL_DESCRIPTION_PATCHES),
       knowledgeSourcePatches: Object.keys(KNOWLEDGE_SOURCE_PATCHES),
       caseTypes: CASE_TYPES.map((ct) => ct.type),
@@ -1355,6 +1373,7 @@ async function main(): Promise<void> {
           data: {
             description: patch.description,
             ...(patch.topK != null ? { topK: patch.topK } : {}),
+            ...(patch.modelControlTopK != null ? { modelControlTopK: patch.modelControlTopK } : {}),
             ...(groupIds.size > 0 ? { groupIds: JSON.stringify([...groupIds]) } : {}),
           },
         })

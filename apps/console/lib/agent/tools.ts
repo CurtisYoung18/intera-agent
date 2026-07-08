@@ -502,13 +502,13 @@ export class ToolRouter {
         router.tools.set(toolName, {
           name: toolName,
           description: ks.modelControlTopK
-            ? `${baseDesc}. Number of results to return (1–30, higher values return more matches). Default: ${ks.topK}.`
+            ? `${baseDesc}. Number of results to return (1-15, higher values return more matches). Default: ${ks.topK}.`
             : baseDesc,
           inputSchema: {
             type: 'object',
             properties: {
               query: { type: 'string', description: 'Search query in the user\'s language' },
-              ...(ks.modelControlTopK ? { topK: { type: 'number', description: `Number of results to return (1–30). Default: ${ks.topK}.`, default: ks.topK } } : {}),
+              ...(ks.modelControlTopK ? { topK: { type: 'number', description: `Number of results to return (1-15). Default: ${ks.topK}.`, default: ks.topK } } : {}),
             },
             required: ['query'],
           },

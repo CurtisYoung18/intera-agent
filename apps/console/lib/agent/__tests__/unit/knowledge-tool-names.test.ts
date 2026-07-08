@@ -309,7 +309,7 @@ describe('generated knowledge-search tool names', () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))
     expect(body).toMatchObject({
       prompt: 'deposit bonus',
-      top_k: 30,
+      top_k: 15,
       group_ids: ['group-deposit'],
       embedding_rate: 0.8,
       rerank_version: 'BGE-Rerank',
@@ -323,7 +323,7 @@ describe('generated knowledge-search tool names', () => {
         knowledgeSourceName: 'Deposit Bonus',
         knowledgeProvider: 'gptbots',
         query: 'deposit bonus',
-        topK: 30,
+        topK: 15,
         sourceSelection: {
           mode: 'explicit',
           requestedSource: 'kb_search_deposit_bonus',
