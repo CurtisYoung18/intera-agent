@@ -350,7 +350,7 @@ export const zhCommon: Record<string, string> = {
   'guide.doc.admin.subAgentsTitle': 'ProcedureRuns（流程运行）',
   'guide.doc.admin.subAgentsBody': 'ProcedureRun 是运行时状态，不是可编辑的业务资源。请在 Build → Procedures 配置源 Procedure，并通过 Trace、Memory、HumanTask 检查运行证据。',
   'guide.doc.admin.knowledgeTitle': 'Knowledge（知识库）',
-  'guide.doc.admin.knowledgeBody': '接入外部 RAG 知识源（GPTBots 或自定义 API）。每个知识源生成一个 kb_search_* 工具供代理使用。在 Console 中配置知识源端点、API 密钥和测试查询。',
+  'guide.doc.admin.knowledgeBody': '接入外部 RAG 知识源（GPTBots 或自定义 API）。知识源通过统一的 search_knowledge 工具和 source key 暴露给 Agent，端点、API 密钥和测试查询仍在 Console 中配置。',
   'guide.doc.admin.routingTitle': 'Routing（路由）',
   'guide.doc.admin.routingBody': '定义人工运营队列（如 payment_ops 支付运营、account_ops 账号运营）。设置每个队列可调用的 Tool、优先级和 HumanTask 最大等待时间。',
   'guide.doc.admin.modelsTitle': 'Models（模型）',

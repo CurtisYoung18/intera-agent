@@ -1,3 +1,5 @@
+import { knowledgeToolDisplay } from '@/lib/agent/knowledge-display'
+
 const PLAYGROUND_REVIEW_PREFIX = 'playground-test-'
 
 const EXPORTED_REVIEW_STAGES = new Set([
@@ -57,6 +59,7 @@ export interface OperateTraceTruth {
   detailText: string | null
   payload: Record<string, unknown> | null
   toolName?: string
+  displayToolName?: string
   latencyMs?: number | null
   executionLabel?: string
   executionNote?: string
@@ -783,6 +786,7 @@ export function summarizeToolPairing(traces: TraceTruthInput[]): ToolPairingSumm
 export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth {
   const payload = parseJson(trace.payload) ?? parseJson(trace.detail)
   const toolName = toolNameFromTrace(trace, payload)
+  const toolDisplay = knowledgeToolDisplay({ toolName, payload, fallback: trace.title })
   const status = deriveTraceStatus(trace, payload)
   const executionTruth =
     payload?.executionTruth && typeof payload.executionTruth === 'object' && !Array.isArray(payload.executionTruth)
@@ -798,11 +802,12 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
     return {
       kind: 'tool_call',
       status,
-      semanticLabel: 'Tool call',
-      title: toolName || trace.title || 'Tool call',
+      semanticLabel: toolDisplay.isKnowledge ? 'Knowledge search' : 'Tool call',
+      title: toolDisplay.isKnowledge ? toolDisplay.label : toolName || trace.title || 'Tool call',
       detailText: detailTextForTrace(trace, payload),
       payload,
       toolName,
+      displayToolName: toolDisplay.label,
       executionLabel,
       executionNote,
       isExportedReviewStage: false,
@@ -853,11 +858,12 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
     return {
       kind: 'tool_result',
       status,
-      semanticLabel: 'Tool result',
-      title: toolName || trace.title || 'Tool result',
+      semanticLabel: toolDisplay.isKnowledge ? 'Knowledge result' : 'Tool result',
+      title: toolDisplay.isKnowledge ? toolDisplay.label : toolName || trace.title || 'Tool result',
       detailText: detailTextForTrace(trace, payload),
       payload,
       toolName,
+      displayToolName: toolDisplay.label,
       latencyMs: typeof payload?.latencyMs === 'number' ? payload.latencyMs : null,
       executionLabel,
       executionNote,

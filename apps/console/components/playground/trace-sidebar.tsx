@@ -9,6 +9,7 @@ import RenderHintCard from '@/components/chat/render-hint-card'
 import CopyButton from '@/components/ui/copy-button'
 import { OrganicLoader } from '@/components/config-pilot/ai-motion'
 import { cacheHitRateFromParts, promptTokenTotalFromParts } from '@/lib/agent/usage-accounting'
+import { knowledgeToolDisplay } from '@/lib/agent/knowledge-display'
 import type {
   PlaygroundTraceEvent,
   PlaygroundTraceStep,
@@ -196,6 +197,7 @@ function ToolCallCard({
   isExpanded: boolean; onToggle: () => void
 }) {
   const isResult = actionType === 'tool_result'
+  const display = knowledgeToolDisplay({ toolName, payload: event?.payload, fallback: toolName })
   const isError = event?.status === 'block' || event?.status === 'warn'
     ? true
     : /"ok"\s*:\s*false|"ok":\s*false|ok:\s*false/i.test(detailText)
@@ -243,7 +245,7 @@ function ToolCallCard({
             fontFamily: 'var(--font-mono)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {toolName}
+            {display.label}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <span style={{
@@ -739,7 +741,7 @@ function TurnSection({
                 color: t.status === 'error' ? 'var(--vermillion)' : '#5a524b',
                 fontFamily: 'var(--font-mono)',
               }}>
-                Tool: {t.name}
+                Tool: {knowledgeToolDisplay({ toolName: t.name }).label}
               </span>
               <span style={{
                 fontSize: 11, color: t.status === 'running' ? 'var(--amber)' : t.status === 'error' ? 'var(--vermillion)' : '#b8a99a',

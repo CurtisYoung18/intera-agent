@@ -133,6 +133,28 @@ describe('Scenario runner harness', () => {
     expect(receipt.checks.find((check) => check.name === 'procedure_outcome')?.passed).toBe(true)
   })
 
+  it('matches legacy knowledge expectations against unified search_knowledge evidence', () => {
+    const checks = evaluateScenario(
+      { toolsCalled: ['kb_search_deposit'] },
+      {
+        toolsCalled: ['search_knowledge'],
+        toolCalls: [],
+        toolResults: [],
+        hookDecisions: [],
+        knowledgeHits: [],
+        humanTransfer: false,
+        handoff: [],
+      },
+    )
+
+    expect(checks).toHaveLength(1)
+    expect(checks[0]).toMatchObject({
+      name: 'tool:search_knowledge',
+      passed: true,
+      expected: { name: 'search_knowledge', legacyName: 'kb_search_deposit' },
+    })
+  })
+
   it('supports explicit Tool call count ranges', () => {
     const checks = evaluateScenario(
       { toolCalls: [{ name: 'get_latest_deposit', minCalls: 1, maxCalls: 1 }] },

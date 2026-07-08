@@ -176,7 +176,7 @@ const KNOWLEDGE_SOURCE_PATCHES: Record<string, {
     includeGroupsFrom: ['General'],
   },
   General: {
-    description: 'Search for general Jayabaji FAQ: introduction, "Who is JAYABAJI?", registration, website safety, app download, support languages, age requirement, referral, rebate, turnover review, betting history/wager history navigation, and other broad self-service help. For "Who is JAYABAJI?", always call kb_search_general and answer in Romanized Nepali. Do not use General for deposit/withdrawal transaction history navigation; use Account KB for Account -> Statement -> Search.',
+    description: 'Search for general Jayabaji FAQ: introduction, "Who is JAYABAJI?", registration, website safety, app download, support languages, age requirement, referral, rebate, turnover review, betting history/wager history navigation, and other broad self-service help. For "Who is JAYABAJI?", always call search_knowledge with source="general" and answer in Romanized Nepali. Do not use General for deposit/withdrawal transaction history navigation; use Account KB for Account -> Statement -> Search.',
     topK: 15,
   },
   Promotion: {
@@ -269,11 +269,11 @@ Voice and language:
 Answer preflight:
 - Before sending any final customer-facing answer, quickly rewrite it if it contains Devanagari while the customer did not ask for Nepali script and it is not the exact fixed human-handoff sentence.
 - Before sending any ordinary FAQ answer, quickly rewrite it if it is a whole sentence or paragraph in English. Keep exact product names, links, numbers, and required policy phrases only.
-- If the user asks who JAYABAJI is, the answer must be grounded by kb_search_general.
+- If the user asks who JAYABAJI is, the answer must be grounded by search_knowledge with source="general".
 
 Source of truth:
-- Standalone FAQ, how-to, rules, limits, platform navigation, and promotion-terms questions must use the relevant kb_search tool before answering.
-- Username-change and real-name-change questions are Account FAQ: call kb_search_account before answering, and the final answer must include the exact phrase "cannot be changed".
+- Standalone FAQ, how-to, rules, limits, platform navigation, and promotion-terms questions must use search_knowledge with the relevant source key before answering.
+- Username-change and real-name-change questions are Account FAQ: call search_knowledge with source="account" before answering, and the final answer must include the exact phrase "cannot be changed".
 - When answering from KB, preserve concrete retrieved fields such as amounts, limits, dates, processing time, turnover, max bonus, eligible provider/game, claim location, and links.
 - If a retrieved KB chunk says to use an exact phrase, copy that phrase exactly inside the Romanized Nepali answer.
 - For promotion bonus rows, always include Minimum Deposit, Turnover, and Max Bonus when those fields are present, even if the customer only asks for minimum deposit.
@@ -286,7 +286,7 @@ Member identity:
 - A member_id is required before any member-specific lookup or reset. Valid Jayabaji member ids normally start with JAYA.
 - Do not ask for member_id unless the customer asks for personal current status, history, eligibility, reset, account state, transaction-specific checking, or dispute handling.
 - For ordinary FAQ/how-to/rules/limits/navigation questions, answer from KB and do not collect member_id.
-- Treat ambiguous "Is my account verified?" as a self-service FAQ first: call kb_search_account, then explain in Romanized Nepali that the customer can go to Account -> Security Center and if it shows 100%, the account is verified. Ask member_id only if the customer explicitly asks you to check their current account.
+- Treat ambiguous "Is my account verified?" as a self-service FAQ first: call search_knowledge with source="account", then explain in Romanized Nepali that the customer can go to Account -> Security Center and if it shows 100%, the account is verified. Ask member_id only if the customer explicitly asks you to check their current account.
 - If a member-specific workflow needs member_id and the latest user message does not provide it, call read_user_profile before asking the customer. If the profile contains a valid JAYA member_id, use it and do not ask again.
 - If read_user_profile does not contain a usable member_id, call ask_user_questions. The tool call itself is the collection step.
 - In channel chats, do not ask for member_id, method, amount, payment channel, date, transaction id, or screenshot details in plain text when ask_user_questions can collect them.
@@ -411,7 +411,7 @@ const CASE_TYPES: CaseTypeSeed[] = [
           guidance: 'Use dynamic KB search instead of routing through fixed GPTBots branches. Do not call ask_user_questions for FAQ/self-service questions like turnover review, username change, real-name change, how to withdraw, or how to verify an account. Do call ask_user_questions for ambiguous money/funds issues with a single issue_type select field before any member_id/detail form. If the message already names deposit plus not-arrived/not-credited/not-updated balance cues such as "aayeko chaina", "aayena", or "update bhayena", start j1n_deposit_status instead of answering a processing-time FAQ.',
           actions: [
             {
-              id: 'general_kb_search',
+              id: 'general_knowledge_search',
               kind: 'search_knowledge',
               label: 'Search J1N knowledge',
               suggestedSources: ['General', 'Account', 'Deposit', 'Withdrawal', 'Promotion', 'Game'],
@@ -799,7 +799,7 @@ const SCENARIOS: ScenarioSeed[] = [
       { role: 'user', content: 'My member id is JAYA117FFEB. Also, how can I claim my bonus?' },
     ],
     expected: {
-      toolsCalled: ['kb_search_promotion', 'remember'],
+      toolsCalled: ['search_knowledge', 'remember'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       memoryScope: 'user',
       requiredTerms: ['Reward Centre'],
@@ -893,7 +893,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_promotion'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['Reward Centre', 'claim'],
     },
@@ -910,7 +910,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_general'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['Reward centre', 'Bonus'],
     },
@@ -927,7 +927,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_promotion'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['500', 'x15', '20,000'],
     },
@@ -944,7 +944,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_promotion'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['300', 'x5', '1,000'],
     },
@@ -961,7 +961,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_promotion'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['500', 'x12', '8,888'],
     },
@@ -978,7 +978,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_deposit'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['deposit page'],
     },
@@ -995,7 +995,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_deposit'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['Bank Transfer', '300', 'Online Payment', '500'],
       forbiddenScript: 'Devanagari',
@@ -1014,7 +1014,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_withdrawal'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'check_latest_withdrawal_status', 'turnover_withdraw_condition', 'create_human_task'],
       requiredTerms: ['bank account', 'withdrawal'],
     },
@@ -1031,7 +1031,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_withdrawal'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'check_latest_withdrawal_status', 'turnover_withdraw_condition', 'create_human_task'],
       requiredTerms: ['WITHDRAWAL', '1500'],
     },
@@ -1048,7 +1048,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_withdrawal'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'check_latest_withdrawal_status', 'turnover_withdraw_condition', 'create_human_task'],
       requiredTerms: ['5-10 minutes'],
     },
@@ -1065,7 +1065,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_withdrawal'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'reset_withdrawal_pin', 'create_human_task'],
       requiredTerms: ['Security Centre', 'Withdrawal PIN'],
     },
@@ -1082,7 +1082,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_general'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'create_human_task'],
       requiredTerms: ['online casino', 'sports betting'],
       forbiddenScript: 'Devanagari',
@@ -1101,7 +1101,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_account'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'get_account_status', 'create_human_task'],
       requiredTerms: ['cannot be changed'],
       forbiddenScript: 'Devanagari',
@@ -1120,7 +1120,7 @@ const SCENARIOS: ScenarioSeed[] = [
     ],
     expected: {
       caseType: 'j1n_general_support',
-      toolsCalled: ['kb_search_account'],
+      toolsCalled: ['search_knowledge'],
       forbiddenTools: ['ask_user_questions', 'get_account_status', 'create_human_task'],
       requiredTerms: ['cannot be changed'],
       forbiddenScript: 'Devanagari',

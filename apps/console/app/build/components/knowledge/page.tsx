@@ -23,7 +23,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import EmptyState from '@/components/ui/empty-state'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
-import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
+import { knowledgeSourceDisplayLabel } from '@/lib/agent/knowledge-display'
 import { useSession } from '@/lib/hooks/use-session'
 import { hasKnowledgeSourceGroupIds, parseKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
 import type { CaseTypeItem } from '@intera/shared/contracts/case-types'
@@ -104,8 +104,8 @@ function toEditingSource(source?: KnowledgeSource | null): EditingSource {
   }
 }
 
-function getToolName(name: string, sourceId?: string) {
-  return knowledgeSourceToolName(name, sourceId)
+function getKnowledgeSourceDisplayName(name: string, sourceId?: string) {
+  return knowledgeSourceDisplayLabel(name, sourceId)
 }
 
 function getKbName(kbs: GptBotKb[], groupId: string) {
@@ -448,7 +448,7 @@ export default function BuildKnowledgePage() {
                 <div>
                   <h1 className="text-[22px] font-semibold text-[var(--mist)]">Knowledge</h1>
                   <p className="mt-1 text-[13px] leading-6 text-[var(--fog)]">
-                    Enabled sources become `kb_search_*` tools. The agent chooses which sources to query based on source descriptions and current Procedure context.
+                    Enabled sources are routed through the unified `search_knowledge` tool. The agent chooses source keys based on source descriptions and current Procedure context.
                   </p>
                 </div>
               </div>
@@ -457,7 +457,7 @@ export default function BuildKnowledgePage() {
             <div className="inline-flex items-center gap-2 rounded-[18px] border border-black/[0.06] bg-white/[0.72] px-4 py-3 shadow-[var(--shadow-card)] backdrop-blur-xl">
               <Bot className="h-4 w-4 text-[var(--color-accent-primary)]" />
               <span className="text-[12px] font-semibold text-[var(--color-accent-primary)]">
-                {gptConnected ? `${enabledCount} tools active` : `${sources.length} sources configured`}
+                {gptConnected ? `${enabledCount} sources active` : `${sources.length} sources configured`}
               </span>
             </div>
           </div>
@@ -569,7 +569,7 @@ export default function BuildKnowledgePage() {
                           <div className="flex items-center gap-2">
                             <p className="truncate text-[14px] font-semibold text-[var(--mist)]">{source.name}</p>
                             <code className="rounded-full border border-black/[0.06] bg-white/82 px-2 py-1 text-[10px] text-[var(--fog)]">
-                              {getToolName(source.name, source.id)}
+                              {getKnowledgeSourceDisplayName(source.name, source.id)}
                             </code>
                           </div>
                           {source.description ? (

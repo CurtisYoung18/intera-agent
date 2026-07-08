@@ -53,7 +53,7 @@ describe('TraceSidebar', () => {
 
     expect(screen.getByTitle('Trace turn is running')).toBeTruthy()
     expect(screen.getByTitle('Tool is running')).toBeTruthy()
-    expect(screen.getByText('Tool: kb_search_deposit')).toBeTruthy()
+    expect(screen.getByText('Tool: search_knowledge · Deposit')).toBeTruthy()
   })
 
   it('renders hook decisions, procedure guards, and tool execution labels without the runtime-truth summary card', () => {

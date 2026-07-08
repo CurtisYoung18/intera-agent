@@ -12,6 +12,7 @@ import { ConsoleBackButton, ConsoleStatusPill } from '@/components/ui/console-ch
 import SourceTruthPill from '@/components/operate/source-truth-pill'
 import { getRuntimeSourceTruth, summarizeToolPairing } from '@/lib/operate/runtime-truth'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import { knowledgeToolDisplay } from '@/lib/agent/knowledge-display'
 import {
   hasRecognizedTokenUsage,
   cacheHitRateFromParts,
@@ -460,12 +461,13 @@ function ToolCallCard({
   locale: 'zh' | 'en'
 }) {
   const [expanded, setExpanded] = useState(false)
+  const display = knowledgeToolDisplay({ toolName: tc.name, payload: { input: tc.input, output: tc.output } })
   return (
     <div className="rounded-lg border border-black/[0.04] bg-white/40 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-black/[0.01] transition-colors">
         <Wrench className="h-3 w-3 text-[var(--fog)]/60" />
-        <span className="text-[12px] font-medium text-[var(--mist)]">{tc.name}</span>
+        <span className="text-[12px] font-medium text-[var(--mist)]">{display.label}</span>
         {tc.latencyMs != null && (
           <span className="text-[10px] text-[var(--fog)]/50 ml-auto">{fmtMs(tc.latencyMs)}</span>
         )}

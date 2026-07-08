@@ -13,6 +13,7 @@ import {
   type ScenarioExecutionMode,
   type ScenarioToolExecutionMode,
 } from '@intera/shared/contracts/scenarios'
+import { normalizeExpectedKnowledgeToolName } from '@/lib/agent/knowledge-display'
 
 export interface ScenarioReceiptBuildOptions {
   executionMode?: ScenarioExecutionMode
@@ -100,19 +101,25 @@ export function evaluateScenario(
     ...(expected.toolsCalled ?? []),
     ...(expected.toolCalls?.map((tool) => tool.name) ?? []),
   ]
-  for (const toolName of [...new Set(expectedToolNames)]) {
-    const actualCount = evidence.toolsCalled.filter((name) => name === toolName).length
-    const expectedCall = expected.toolCalls?.find((tool) => tool.name === toolName)
+  const normalizedEvidenceToolNames = evidence.toolsCalled.map((name) => normalizeExpectedKnowledgeToolName(name))
+  const normalizedExpectedToolNames = new Map<string, string>()
+  for (const toolName of expectedToolNames) {
+    normalizedExpectedToolNames.set(normalizeExpectedKnowledgeToolName(toolName), toolName)
+  }
+  for (const [normalizedToolName, originalToolName] of normalizedExpectedToolNames.entries()) {
+    const actualCount = normalizedEvidenceToolNames
+      .filter((name) => name === normalizedToolName).length
+    const expectedCall = expected.toolCalls?.find((tool) => normalizeExpectedKnowledgeToolName(tool.name) === normalizedToolName)
     const minCalls = expectedCall?.minCalls ?? 1
     const maxCalls = expectedCall?.maxCalls
     const passed = actualCount >= minCalls && (maxCalls === undefined || actualCount <= maxCalls)
     checks.push({
-      name: `tool:${toolName}`,
-      expected: { name: toolName, minCalls, maxCalls },
+      name: `tool:${normalizedToolName}`,
+      expected: { name: normalizedToolName, minCalls, maxCalls, legacyName: normalizedToolName === originalToolName ? undefined : originalToolName },
       actual: { calls: actualCount },
       passed,
       code: passed ? undefined : (actualCount < minCalls ? 'required_tool_missing' : 'tool_call_count_mismatch'),
-      detail: passed ? undefined : `Expected ${toolName} ${formatCallRange(minCalls, maxCalls)}, saw ${actualCount}`,
+      detail: passed ? undefined : `Expected ${normalizedToolName} ${formatCallRange(minCalls, maxCalls)}, saw ${actualCount}`,
     })
   }
 

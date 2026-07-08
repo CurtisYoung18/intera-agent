@@ -205,24 +205,24 @@ describe('BuildToolsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('No tools match the current search.')).toBeDefined()
     })
-    expect(screen.queryByText('kb_search_account')).toBeNull()
-    expect(screen.queryByText('kb_search_deposit')).toBeNull()
+    expect(screen.queryByText('search_knowledge · Account')).toBeNull()
+    expect(screen.queryByText('search_knowledge · Deposit')).toBeNull()
 
     fireEvent.change(search, { target: { value: 'deposit' } })
 
     await waitFor(() => {
-      expect(screen.getByText('kb_search_deposit')).toBeDefined()
+      expect(screen.getByText('search_knowledge · Deposit')).toBeDefined()
     })
-    expect(screen.queryByText('kb_search_account')).toBeNull()
-    expect(screen.queryByText('kb_search_empty')).toBeNull()
+    expect(screen.queryByText('search_knowledge · Account')).toBeNull()
+    expect(screen.queryByText('search_knowledge · Empty')).toBeNull()
   })
 
   it('hides enabled knowledge sources that are not bound to any knowledge base', async () => {
     await renderPage()
 
-    expect(screen.getByText('kb_search_account')).toBeDefined()
-    expect(screen.getByText('kb_search_deposit')).toBeDefined()
-    expect(screen.queryByText('kb_search_empty')).toBeNull()
+    expect(screen.getByText('search_knowledge · Account')).toBeDefined()
+    expect(screen.getByText('search_knowledge · Deposit')).toBeDefined()
+    expect(screen.queryByText('search_knowledge · Empty')).toBeNull()
   })
 
   it('routes toggles and endpoint tests through backend APIs', async () => {
@@ -232,7 +232,7 @@ describe('BuildToolsPage', () => {
     expect(customToggle.closest('[role="button"]')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Disable create_human_task' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Disable kb_search_account' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Disable search_knowledge · Account' }))
 
     fireEvent.click(screen.getByLabelText('Edit lookup_balance'))
     await screen.findByText('Edit Tool')

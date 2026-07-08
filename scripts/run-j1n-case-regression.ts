@@ -227,7 +227,7 @@ const cases: Array<{
       return [t1, t2]
     },
     validate(ctx, facts) {
-      ctx.check(facts.tools.includes('kb_search_promotion'), 'should search Promotion KB')
+      ctx.check(facts.tools.includes('search_knowledge'), 'should search Promotion KB through search_knowledge')
       ctx.check(
         !facts.tools.some((tool) => ['promotion', 'turnover_promotion_active_status'].includes(tool)),
         'general promo should not call member-specific promo tools',

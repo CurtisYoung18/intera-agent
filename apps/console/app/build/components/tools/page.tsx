@@ -29,6 +29,7 @@ import ConfirmDialog from '@/components/ui/confirm-dialog'
 import SlidePanel from '@/components/ui/slide-panel'
 import { PageLoader } from '@/components/ui/page-loader'
 import { apiClient, ApiClientError, bustConfigCache } from '@/lib/api/client'
+import { UNIFIED_KNOWLEDGE_DISPLAY_NAME, knowledgeSourceDisplayLabel } from '@/lib/agent/knowledge-display'
 import { knowledgeSourceToolName } from '@/lib/agent/tool-names'
 import { useSession } from '@/lib/hooks/use-session'
 import { hasKnowledgeSourceGroupIds } from '@/lib/knowledge/source-groups'
@@ -133,8 +134,18 @@ function displayToolDescription(tool: Pick<ToolItem, 'name' | 'description'>) {
     .replace(/\bplatform policy\b/gi, 'platform rule')
 }
 
-function getToolName(name: string, sourceId?: string) {
-  return knowledgeSourceToolName(name, sourceId)
+function getKnowledgeSourceDisplayName(name: string, sourceId?: string) {
+  return knowledgeSourceDisplayLabel(name, sourceId)
+}
+
+function getKnowledgeSourceSearchText(source: KnowledgeSourceRow) {
+  return [
+    getKnowledgeSourceDisplayName(source.name, source.id),
+    UNIFIED_KNOWLEDGE_DISPLAY_NAME,
+    knowledgeSourceToolName(source.name, source.id),
+    source.name,
+    source.description ?? '',
+  ].join(' ').toLowerCase()
 }
 
 function toolIcon(tool: ToolItem) {
@@ -248,14 +259,7 @@ export default function BuildToolsPage() {
     const eligibleSources = knowledgeSources.filter((source) => source.enabled && hasKnowledgeSourceGroupIds(source.groupIds))
     const query = search.trim().toLowerCase()
     if (!query) return eligibleSources
-    return eligibleSources.filter((source) => {
-      const generatedToolName = getToolName(source.name, source.id).toLowerCase()
-      return (
-        generatedToolName.includes(query) ||
-        source.name.toLowerCase().includes(query) ||
-        (source.description ?? '').toLowerCase().includes(query)
-      )
-    })
+    return eligibleSources.filter((source) => getKnowledgeSourceSearchText(source).includes(query))
   }, [knowledgeSources, search])
 
   const systemTools = filtered.filter((tool) => tool.isSystem || SYSTEM_TOOL_NAMES.has(tool.name))
@@ -560,13 +564,13 @@ export default function BuildToolsPage() {
               {!hasSearch || filteredKnowledgeSources.length > 0 ? (
                 <section>
                   <div className="mb-3 flex items-center gap-2">
-                    <h2 className="text-[15px] font-semibold text-[var(--mist)]">Knowledge search tools</h2>
+                    <h2 className="text-[15px] font-semibold text-[var(--mist)]">Knowledge sources</h2>
                     <span className="rounded-full border border-teal-500/20 bg-teal-500/[0.08] px-2 py-0.5 text-[10px] font-medium text-teal-600">
-                      Auto-generated
+                      Runtime-routed
                     </span>
                   </div>
                   <p className="mb-4 text-[12px] text-[var(--fog)]">
-                    Each enabled source with at least one bound knowledge base generates a <code className="rounded bg-teal-500/[0.08] px-1 text-[11px]">kb_search_&lt;name&gt;</code> tool. Configure source details in{' '}
+                    Runtime exposes one <code className="rounded bg-teal-500/[0.08] px-1 text-[11px]">search_knowledge</code> tool and routes it by source key. Configure source details in{' '}
                     <Link href="/build/components/knowledge" className="text-teal-600 underline">
                       Knowledge
                     </Link>.
@@ -585,16 +589,16 @@ export default function BuildToolsPage() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-[13px] font-semibold text-[var(--mist)]">
-                                {getToolName(source.name, source.id)}
+                                {getKnowledgeSourceDisplayName(source.name, source.id)}
                               </p>
                               <span className="mt-0.5 inline-block rounded-full bg-teal-500/[0.08] px-1.5 py-0.5 text-[10px] font-medium text-teal-600">
-                                KB source
+                                Knowledge source
                               </span>
                             </div>
                             <button
                               type="button"
                               onClick={() => toggleKnowledgeSource(source)}
-                              aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getToolName(source.name, source.id)}`}
+                              aria-label={`${source.enabled ? 'Disable' : 'Enable'} ${getKnowledgeSourceDisplayName(source.name, source.id)}`}
                               className="flex-shrink-0 transition-opacity hover:opacity-80"
                             >
                               {source.enabled ? <ToggleRight className="h-7 w-7 text-malachite" /> : <ToggleLeft className="h-7 w-7 text-[var(--smoke)]/30" />}

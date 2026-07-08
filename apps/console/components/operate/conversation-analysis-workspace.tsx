@@ -11,6 +11,7 @@ import { useConsoleLocale } from '@/components/locale-provider'
 import { ConsoleBackButton } from '@/components/ui/console-chrome'
 import { apiClient } from '@/lib/api/client'
 import { useAgentContext } from '@/lib/agent/agent-context'
+import { knowledgeToolDisplay } from '@/lib/agent/knowledge-display'
 import { summarizeConversationSourceTruth, summarizeToolPairing } from '@/lib/operate/runtime-truth'
 import {
   hasRecognizedTokenUsage,
@@ -518,6 +519,7 @@ export default function ConversationAnalysisWorkspace({ chatId }: { chatId: stri
 
 function ToolCallCard({ toolCall, locale }: { toolCall: ToolCall; locale: 'zh' | 'en' }) {
   const [expanded, setExpanded] = useState(false)
+  const display = knowledgeToolDisplay({ toolName: toolCall.name, payload: { input: toolCall.input, output: toolCall.output } })
   return (
     <div className="overflow-hidden rounded-lg border border-black/[0.04] bg-white/40">
       <button
@@ -526,7 +528,7 @@ function ToolCallCard({ toolCall, locale }: { toolCall: ToolCall; locale: 'zh' |
         type="button"
       >
         <Wrench className="h-3 w-3 text-[var(--fog)]/60" />
-        <span className="text-[12px] font-medium text-[var(--mist)]">{toolCall.name}</span>
+        <span className="text-[12px] font-medium text-[var(--mist)]">{display.label}</span>
         {toolCall.iteration != null ? <span className="rounded-md bg-black/[0.04] px-1.5 py-0.5 text-[10px] text-[var(--fog)]">#{toolCall.iteration}</span> : null}
         {toolCall.latencyMs != null ? (
           <span className="ml-auto text-[10px] text-[var(--fog)]/50">{fmtMs(toolCall.latencyMs)}</span>

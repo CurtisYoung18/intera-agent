@@ -353,7 +353,7 @@ export const enCommon: Record<string, string> = {
   'guide.doc.admin.subAgentsTitle': 'ProcedureRuns',
   'guide.doc.admin.subAgentsBody': 'ProcedureRuns are runtime state, not editable business resources. Configure the source Procedures under Build → Procedures and inspect runtime evidence through Trace, Memory, and HumanTasks.',
   'guide.doc.admin.knowledgeTitle': 'Knowledge',
-  'guide.doc.admin.knowledgeBody': 'Connect external RAG sources (GPTBots or custom API). Each knowledge source generates a kb_search_* tool available to the agent. Configure source endpoints, API keys, and test queries from the Console.',
+  'guide.doc.admin.knowledgeBody': 'Connect external RAG sources (GPTBots or custom API). Sources are exposed through one search_knowledge tool with source keys, while endpoints, API keys, and test queries stay configurable from the Console.',
   'guide.doc.admin.routingTitle': 'Routing',
   'guide.doc.admin.routingBody': 'Define human operator queues (e.g. payment_ops, account_ops). Set which Tools each queue is authorized to call, priority levels, and max waiting times for HumanTasks.',
   'guide.doc.admin.modelsTitle': 'Models',
