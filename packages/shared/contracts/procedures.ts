@@ -23,7 +23,6 @@ export const PROCEDURE_CONDITION_KINDS = [
 export const procedureConditionKindSchema = z.enum(PROCEDURE_CONDITION_KINDS)
 
 export const PROCEDURE_RUNTIME_SIGNALS = [
-  'explicit_human_request',
   'no_progress_loop',
   'knowledge_gap',
 ] as const

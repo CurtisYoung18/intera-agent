@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import {
   Activity, ChevronDown, ChevronLeft,
   CheckCircle2, XCircle, Loader2, Brain,
@@ -11,6 +10,8 @@ import { OrganicLoader } from '@/components/config-pilot/ai-motion'
 import { cacheHitRateFromParts, promptTokenTotalFromParts } from '@/lib/agent/usage-accounting'
 import { knowledgeToolDisplay } from '@/lib/agent/knowledge-display'
 import type {
+  PlaygroundKnowledgeRetrievalSummary,
+  PlaygroundToolSchemaSummary,
   PlaygroundTraceEvent,
   PlaygroundTraceStep,
 } from '@/lib/agent/trace-aggregator'
@@ -189,6 +190,68 @@ function toneForStatus(status: PlaygroundTraceEvent['status']) {
   }
 }
 
+function formatLatency(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
+
+function knowledgeSummaryParts(summary?: PlaygroundKnowledgeRetrievalSummary): string[] {
+  if (!summary) return []
+  const parts: string[] = []
+  const source = summary.sourceName || summary.source
+  if (source) parts.push(`source ${source}`)
+  if (summary.topK != null) {
+    const requested = summary.requestedTopK != null && summary.requestedTopK !== summary.topK
+      ? ` requested ${summary.requestedTopK}`
+      : ''
+    parts.push(`topK ${summary.topK}${requested}`)
+  } else if (summary.requestedTopK != null) {
+    parts.push(`topK ${summary.requestedTopK}`)
+  }
+  if (summary.resultCount != null) parts.push(`${summary.resultCount} result${summary.resultCount === 1 ? '' : 's'}`)
+  if (summary.latencyMs != null) parts.push(formatLatency(summary.latencyMs))
+  return parts
+}
+
+function ToolSchemaSummaryPanel({ summary }: { summary: PlaygroundToolSchemaSummary }) {
+  const schemaMode = summary.knowledgeSchemaUnified
+    ? 'Unified search_knowledge'
+    : summary.legacyKnowledgeToolCount > 0
+      ? `${summary.legacyKnowledgeToolCount} legacy KB schema${summary.legacyKnowledgeToolCount === 1 ? '' : 's'} visible`
+      : 'No knowledge schema'
+  const toolNames = summary.toolNames.length > 0
+    ? `${summary.toolNames.join(', ')}${summary.hiddenToolNameCount > 0 ? `, +${summary.hiddenToolNameCount} more` : ''}`
+    : 'No Tool names captured'
+
+  return (
+    <div style={{
+      padding: '8px 10px',
+      borderRadius: 8,
+      background: 'rgba(91,138,247,0.04)',
+      border: '1px solid rgba(91,138,247,0.10)',
+      marginBottom: 6,
+    }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        gap: 5,
+        marginBottom: 6,
+      }}>
+        <BreakdownCell label="Visible Tools" value={String(summary.providerVisibleToolCount)} />
+        <BreakdownCell label="Schema Tokens" value={`~${summary.approxSchemaTokens}`} />
+        <BreakdownCell label="Sources" value={summary.knowledgeSourceCount > 0 ? String(summary.knowledgeSourceCount) : '-'} />
+      </div>
+      <div style={{
+        fontSize: 10.5,
+        color: '#5a524b',
+        lineHeight: 1.55,
+      }}>
+        <div><strong>Knowledge schema:</strong> {schemaMode}</div>
+        <div style={{ marginTop: 2, wordBreak: 'break-word' }}><strong>Tool names:</strong> {toolNames}</div>
+      </div>
+    </div>
+  )
+}
+
 function ToolCallCard({
   toolKey, actionType, detailText, toolName, event, isExpanded, onToggle,
 }: {
@@ -203,6 +266,7 @@ function ToolCallCard({
     : /"ok"\s*:\s*false|"ok":\s*false|ok:\s*false/i.test(detailText)
   const executionLabel = event?.executionTruth?.label
   const executionNote = event?.executionTruth?.note
+  const knowledgeParts = knowledgeSummaryParts(event?.knowledgeSummary)
 
   const lines = detailText.split('\n')
   const inputLines: string[] = []
@@ -247,7 +311,7 @@ function ToolCallCard({
           }}>
             {display.label}
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
           <span style={{
             fontSize: 9,
             color: isResult ? '#2f7a4b' : 'var(--indigo)',
@@ -268,6 +332,16 @@ function ToolCallCard({
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {executionLabel}
+              </span>
+            )}
+            {knowledgeParts.length > 0 && (
+              <span style={{
+                fontSize: 9,
+                color: '#8a7e74',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: 1.35,
+              }}>
+                {knowledgeParts.join(' · ')}
               </span>
             )}
           </div>
@@ -353,6 +427,20 @@ function ToolCallCard({
               {executionNote}
             </div>
           ) : null}
+          {knowledgeParts.length > 0 ? (
+            <div style={{
+              padding: '8px 10px',
+              borderRadius: 8,
+              background: 'rgba(91,138,247,0.04)',
+              border: '1px solid rgba(91,138,247,0.10)',
+              fontSize: 10.5,
+              color: '#5a524b',
+              lineHeight: 1.55,
+              marginBottom: 6,
+            }}>
+              {knowledgeParts.join(' · ')}
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -360,8 +448,8 @@ function ToolCallCard({
 }
 
 function PromptSection({ label, data, color }: { label: string; data: string; color: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const truncated = data.length > 200 && !expanded
+  const truncated = data.length > 200
+  const preview = truncated ? `${data.slice(0, 200)}...` : data
   return (
     <div style={{ marginBottom: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
@@ -371,42 +459,59 @@ function PromptSection({ label, data, color }: { label: string; data: string; co
         }}>{label}</span>
         <CopyButton text={data} label={`Copy ${label}`} />
       </div>
-      <div
-        onClick={() => truncated && setExpanded(true)}
-        style={{
-          padding: '8px 10px', borderRadius: 8,
-          background: 'rgba(91,138,247,0.04)',
-          border: '1px solid rgba(91,138,247,0.10)',
-          fontSize: 11, fontFamily: 'var(--font-mono)',
-          color: '#5a524b', lineHeight: 1.6,
-          maxHeight: expanded ? 400 : 120, overflowY: 'auto',
-          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-          cursor: truncated ? 'pointer' : undefined,
-        }}
-      >
-        {truncated ? data.slice(0, 200) + '…' : data}
+      <div style={{
+        padding: '8px 10px', borderRadius: 8,
+        background: 'rgba(91,138,247,0.04)',
+        border: '1px solid rgba(91,138,247,0.10)',
+        fontSize: 11, fontFamily: 'var(--font-mono)',
+        color: '#5a524b', lineHeight: 1.6,
+        maxHeight: 120, overflowY: 'auto',
+        whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+      }}>
+        {preview}
       </div>
-      {truncated && (
-        <button onClick={() => setExpanded(true)} style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: 10, color: 'var(--indigo)', padding: '2px 0',
-          fontWeight: 600,
-        }}>
-          Show all ({data.length.toLocaleString()} formatted chars)
-        </button>
-      )}
+      {truncated ? (
+        <details style={{ marginTop: 2 }}>
+          <summary style={{
+            cursor: 'pointer',
+            fontSize: 10,
+            color: 'var(--indigo)',
+            padding: '2px 0',
+            fontWeight: 600,
+          }}>
+            Show all ({data.length.toLocaleString()} formatted chars)
+          </summary>
+          <div style={{
+            marginTop: 4,
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: 'rgba(255,252,249,0.55)',
+            border: '1px solid rgba(0,0,0,0.04)',
+            fontSize: 11,
+            fontFamily: 'var(--font-mono)',
+            color: '#5a524b',
+            lineHeight: 1.6,
+            maxHeight: 400,
+            overflowY: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}>
+            {data}
+          </div>
+        </details>
+      ) : null}
     </div>
   )
 }
 
 function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceStep; isExpanded: boolean; tb: (k: string) => string }) {
+  const toolSchemaSummary = step.toolSchemaSummary ?? step.promptData?.toolSchemaSummary
   const hasPromptData = !!step.promptData && (
     !!step.promptData.systemPrompt ||
     (step.promptData.messages?.length ?? 0) > 0 ||
-    (step.promptData.tools?.length ?? 0) > 0 ||
-    step.promptData.toolChoice != null
+    step.promptData.toolChoice != null ||
+    !!toolSchemaSummary
   )
-  const [showPromptData, setShowPromptData] = useState(false)
   const promptTokens = promptTokenTotal(step.usage)
 
   const formatPromptValue = (value: unknown): string => {
@@ -432,12 +537,14 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
         }}>
           {tb('trace.modelResponse')}
         </span>
-        {step.usage && (
+        {(step.usage || toolSchemaSummary) && (
           <span style={{
             fontSize: 10, color: '#b8a99a',
             marginLeft: 'auto', fontFamily: 'var(--font-mono)',
           }}>
-            {promptTokens || step.usage.inputTokens || 0} prompt · {step.usage.outputTokens || 0} out tok
+            {step.usage ? `${promptTokens || step.usage.inputTokens || 0} prompt · ${step.usage.outputTokens || 0} out tok` : ''}
+            {step.usage && toolSchemaSummary ? ' · ' : ''}
+            {toolSchemaSummary ? `${toolSchemaSummary.providerVisibleToolCount} tools · ~${toolSchemaSummary.approxSchemaTokens} schema tok` : ''}
           </span>
         )}
       </div>
@@ -455,35 +562,35 @@ function ModelGenerationRow({ step, isExpanded, tb }: { step: PlaygroundTraceSte
             </div>
           )}
           {hasPromptData && (
-            <>
-              <button onClick={() => setShowPromptData(!showPromptData)} style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 10, fontWeight: 600, color: 'var(--indigo)',
-                padding: '2px 0', display: 'flex', alignItems: 'center', gap: 4,
+            <details>
+              <summary style={{
+                cursor: 'pointer',
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--indigo)',
+                padding: '2px 0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
               }}>
-                <ChevronDown size={10} style={{
-                  transition: 'transform 200ms cubic-bezier(0.4,0,0.2,1)',
-                  transform: showPromptData ? 'rotate(0deg)' : 'rotate(-90deg)',
-                }} />
-                {showPromptData ? 'Hide' : 'Show'} prompt data
-              </button>
-              {showPromptData && (
-                <div style={{ marginTop: 6 }}>
-                  {Boolean(step.promptData!.systemPrompt) && (
-                    <PromptSection label="System Prompt" data={formatPromptValue(step.promptData!.systemPrompt)} color="var(--indigo)" />
-                  )}
-                  {(step.promptData!.messages?.length ?? 0) > 0 && (
-                    <PromptSection label="Messages (IN)" data={formatPromptValue(step.promptData!.messages)} color="var(--indigo)" />
-                  )}
-                  {(step.promptData!.tools?.length ?? 0) > 0 && (
-                    <PromptSection label="Tools (IN)" data={formatPromptValue(step.promptData!.tools)} color="var(--indigo)" />
-                  )}
-                  {step.promptData!.toolChoice != null && (
-                    <PromptSection label="Tool Choice" data={formatPromptValue(step.promptData!.toolChoice)} color="var(--indigo)" />
-                  )}
-                </div>
-              )}
-            </>
+                <ChevronDown size={10} />
+                Show prompt data
+              </summary>
+              <div style={{ marginTop: 6 }}>
+                {toolSchemaSummary && (
+                  <ToolSchemaSummaryPanel summary={toolSchemaSummary} />
+                )}
+                {Boolean(step.promptData!.systemPrompt) && (
+                  <PromptSection label="System Prompt" data={formatPromptValue(step.promptData!.systemPrompt)} color="var(--indigo)" />
+                )}
+                {(step.promptData!.messages?.length ?? 0) > 0 && (
+                  <PromptSection label="Messages (IN)" data={formatPromptValue(step.promptData!.messages)} color="var(--indigo)" />
+                )}
+                {step.promptData!.toolChoice != null && (
+                  <PromptSection label="Tool Choice" data={formatPromptValue(step.promptData!.toolChoice)} color="var(--indigo)" />
+                )}
+              </div>
+            </details>
           )}
         </div>
       )}

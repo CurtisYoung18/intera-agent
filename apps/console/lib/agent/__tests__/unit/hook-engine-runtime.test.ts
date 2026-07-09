@@ -569,6 +569,20 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(streamedText).toContain('human specialist')
   })
 
+  it('does not create a handoff from customer human-request text alone', async () => {
+    const engine = new HookEngine('agent_1')
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockTextStream('I can keep checking the available account evidence here.'),
+    ])
+
+    const result = await loop.run('human agent please', sendEvent)
+
+    expect(result.transition).toBe('next_turn')
+    expect(memory.humanTasks).toHaveLength(0)
+    expect(events.some((event) => event.type === 'human_task_created')).toBe(false)
+    expect(events.some((event) => event.type === 'escalated')).toBe(false)
+  })
+
   it('keeps the model-authored handoff receipt when create_human_task is called in the same turn', async () => {
     const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
     expect(defaultHook).toBeDefined()

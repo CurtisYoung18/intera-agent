@@ -242,4 +242,70 @@ describe('runtime-truth helpers', () => {
     expect(summary.labelZh).toBe('2 个工具结果事件（缺少对应 tool_call 记录）')
     expect(summary.label).not.toContain('0 tool calls')
   })
+
+  it('summarizes llm_request_start tool schemas without exposing full provider schema payloads', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'llm_request_start',
+      title: 'LLM request: demo-model',
+      detail: null,
+      payload: JSON.stringify({
+        model: 'demo-model',
+        messageCount: 3,
+        requestPayloadCaptured: true,
+        systemPrompt: 'PRIVATE PROMPT',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { name: 'search_knowledge', description: 'full description', input_schema: { type: 'object', properties: { source: { type: 'string', enum: ['deposit', 'account'] } } } },
+          { name: 'get_current_time', description: 'full description', input_schema: { type: 'object', properties: {} } },
+        ],
+      }),
+    })
+
+    expect(trace.kind).toBe('model_request')
+    expect(trace.detailText).toContain('provider-visible tools: 2')
+    expect(trace.detailText).toContain('knowledge schema: unified')
+    expect(trace.detailText).toContain('schema tokens: ~')
+    expect(trace.payload).not.toHaveProperty('tools')
+    expect(trace.payload).not.toHaveProperty('messages')
+    expect(trace.payload).not.toHaveProperty('systemPrompt')
+    expect(trace.toolSchemaSummary?.providerVisibleToolCount).toBe(2)
+    expect(trace.toolSchemaSummary?.knowledgeSourceCount).toBe(2)
+  })
+
+  it('summarizes search_knowledge source, topK, result count, and latency', () => {
+    const trace = classifyOperateTrace({
+      actionType: 'tool_result',
+      title: 'Tool: search_knowledge',
+      detail: null,
+      payload: JSON.stringify({
+        toolName: 'search_knowledge',
+        input: { query: 'deposit bonus', source: 'deposit', topK: 8 },
+        output: {
+          ok: true,
+          output: {
+            list: [
+              { document_name: 'Deposit FAQ', score: 0.91 },
+              { document_name: 'Bonus Policy', score: 0.82 },
+            ],
+            knowledgeSourceName: 'Deposit',
+            knowledgeSourceKey: 'deposit',
+            topK: 8,
+          },
+          latencyMs: 237,
+        },
+        latencyMs: 237,
+        isKnowledgeTool: true,
+        knowledgeSourceName: 'Deposit',
+        knowledgeProvider: 'gptbots',
+      }),
+    })
+
+    expect(trace.semanticLabel).toBe('Knowledge result')
+    expect(trace.title).toBe('search_knowledge · Deposit')
+    expect(trace.detailText).toContain('source: Deposit')
+    expect(trace.detailText).toContain('topK: 8')
+    expect(trace.detailText).toContain('results: 2')
+    expect(trace.detailText).toContain('latency: 237ms')
+    expect(trace.knowledgeSummary?.resultCount).toBe(2)
+  })
 })

@@ -399,9 +399,10 @@ function buildTurnDebugDigest(
   const runtimeTruth = steps.find((step) => step.runtimeTruth)?.runtimeTruth
   const hasBlock = steps.some((step) => step.status === 'block')
   const hasWarn = !hasBlock && steps.some((step) => step.status === 'warn')
+  const toolSchemaSummary = modelStep?.toolSchemaSummary ?? modelStep?.promptData?.toolSchemaSummary
   const promptChars = traceValueCharCount(modelStep?.promptData?.systemPrompt)
     + traceValueCharCount(modelStep?.promptData?.messages)
-    + traceValueCharCount(modelStep?.promptData?.tools)
+    + ((toolSchemaSummary?.approxSchemaTokens ?? 0) * 4)
 
   return {
     turnNumber: latestIndex + 1,
@@ -423,7 +424,7 @@ function buildTurnDebugDigest(
     promptCaptured: Boolean(modelStep?.promptData && (
       modelStep.promptData.systemPrompt ||
       modelStep.promptData.messages?.length ||
-      modelStep.promptData.tools?.length
+      toolSchemaSummary
     )),
     promptChars,
     latestInput: latestMessageByRole(chatMessages, 'user'),

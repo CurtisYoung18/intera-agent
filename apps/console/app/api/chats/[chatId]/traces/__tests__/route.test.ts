@@ -73,28 +73,49 @@ beforeEach(() => {
       actionType: 'llm_request_start',
       title: 'LLM request: openai/gpt-5.4-mini',
       detail: null,
-      payload: null,
+      payload: JSON.stringify({
+        model: 'openai/gpt-5.4-mini',
+        messageCount: 4,
+        requestPayloadCaptured: true,
+        systemPrompt: 'PRIVATE PROMPT',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [
+          { name: 'search_knowledge', description: 'full schema', input_schema: { type: 'object', properties: { source: { type: 'string', enum: ['deposit', 'account'] } } } },
+          { name: 'get_current_time', description: 'full schema', input_schema: { type: 'object', properties: {} } },
+        ],
+      }),
       createdAt: new Date('2026-07-02T00:00:00.000Z'),
     }]
   })
 })
 
 describe('/api/chats/[chatId]/traces', () => {
-  it('omits heavy LLM request payloads in summary mode at the SQL projection', async () => {
+  it('returns only safe LLM request payload summaries in summary mode', async () => {
     const res = await GET(makeRequest('?agentId=agent-1&limit=500&payloadMode=summary'), routeCtx())
     const body = await res.json()
+    const payload = JSON.parse(body.data.traces[0].payload)
 
     expect(body.ok).toBe(true)
     expect(body.data.traces).toEqual([
       expect.objectContaining({
         id: 'trace-1',
         actionType: 'llm_request_start',
-        payload: null,
+        payload: expect.any(String),
       }),
     ])
-
-    const sql = String(h.lastQuery?.sql ?? h.lastQuery)
-    expect(sql).toContain('CASE WHEN "actionType" =')
-    expect(sql).toContain('llm_request_start')
+    expect(payload).toMatchObject({
+      model: 'openai/gpt-5.4-mini',
+      messageCount: 4,
+      capturedMessageCount: 1,
+      requestPayloadCaptured: true,
+      toolSchemaSummary: {
+        providerVisibleToolCount: 2,
+        knowledgeSchemaUnified: true,
+        knowledgeSourceCount: 2,
+      },
+    })
+    expect(payload).not.toHaveProperty('tools')
+    expect(payload).not.toHaveProperty('messages')
+    expect(payload).not.toHaveProperty('systemPrompt')
   })
 })

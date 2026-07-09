@@ -8,6 +8,7 @@
 import { CORE_SYSTEM_PROMPT } from '@intera/shared/defaults'
 import { resolvePrompt, buildPromptContext, type PromptContext } from './prompt-resolver'
 import type { CaseSchemaConfig } from '@intera/shared/types'
+import { isCoreDiscoverySchemaToolName } from './prompt-selector'
 
 export interface BuildModePromptInput {
   agentConfigId: string
@@ -74,6 +75,12 @@ function buildUnifiedKnowledgeToolOverrideBlock(availableTools: PromptContext['a
   ].join('\n')
 }
 
+function filterPromptVisibleTools(
+  availableTools: PromptContext['available_tools'] | undefined,
+): PromptContext['available_tools'] {
+  return (availableTools ?? []).filter((tool) => isCoreDiscoverySchemaToolName(tool.name))
+}
+
 /**
  * Assemble the final system prompt for core (discovery) or case (execution) mode.
  *
@@ -83,13 +90,14 @@ function buildUnifiedKnowledgeToolOverrideBlock(availableTools: PromptContext['a
  */
 export async function buildModePrompt(input: BuildModePromptInput): Promise<BuildModePromptOutput> {
   const baseRaw = input.coreSystemPrompt?.trim() || CORE_SYSTEM_PROMPT
+  const promptVisibleTools = filterPromptVisibleTools(input.availableTools)
 
   const baseCtx = await buildPromptContext({
     agentConfigId: input.agentConfigId,
     caseSchema: null,
     caseState: null,
     sessionBinding: input.sessionBinding ?? null,
-    available_tools: input.availableTools ?? [],
+    available_tools: promptVisibleTools,
   })
 
   // Always start from core prompt with discovery injection blocks
@@ -99,7 +107,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
     continuity: input.continuityContext?.trim() ?? '',
     responseFocus: buildResponseFocusBlock(),
     tools: resolvePrompt('{{available_tools}}', baseCtx),
-    knowledgeToolOverride: buildUnifiedKnowledgeToolOverrideBlock(input.availableTools),
+    knowledgeToolOverride: buildUnifiedKnowledgeToolOverrideBlock(promptVisibleTools),
     caseTypes: resolvePrompt('{{case_types}}', baseCtx),
     sessionBinding: resolvePrompt('{{session_binding}}', baseCtx),
   })
@@ -118,7 +126,7 @@ export async function buildModePrompt(input: BuildModePromptInput): Promise<Buil
         : null,
       caseState: input.caseSchema?.procedure ? null : (input.caseState ?? null),
       sessionBinding: input.sessionBinding ?? null,
-      available_tools: input.availableTools ?? [],
+      available_tools: promptVisibleTools,
     })
     prompt = ensureBlocks(prompt, {
       caseSchema: resolvePrompt('{{case_schema}}', caseCtx),

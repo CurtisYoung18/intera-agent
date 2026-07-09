@@ -17,16 +17,17 @@ import {
   recordProcedureTextReply,
   filterRuntimeAuthorityKeys,
   finalizeProcedureRun,
+  procedureRunPromptTail,
 } from '../../session-store'
 
-function humanRequestDetectors() {
+function legacyHumanRequestDetectors() {
   return [{
-    signal: 'explicit_human_request' as const,
+    signal: 'explicit_human_request',
     patterns: [
       String.raw`(?:connect|transfer)\s+(?:me\s+)?(?:to\s+)?(?:a\s+)?human`,
     ],
-    reason: 'Procedure detector matched explicit human request.',
-  }]
+    reason: 'Legacy Procedure detector matched explicit human request.',
+  }] as any
 }
 
 function knowledgeGapDetectors() {
@@ -417,7 +418,7 @@ describe('R3 runtime event protocol', () => {
     closeSession(caseId)
   })
 
-  it('raises and clears the explicit human request runtime signal on the v2 path', () => {
+  it('ignores legacy explicit human request detectors on the v2 path', () => {
     const caseId = 'r3-human-request-signal'
     recordInitialInputEvent(caseId, { content: 'start' })
     startProcedureRun(caseId, {
@@ -426,7 +427,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
-        runtimeSignalDetectors: humanRequestDetectors(),
+        runtimeSignalDetectors: legacyHumanRequestDetectors(),
         steps: [
           {
             id: 'triage',
@@ -437,7 +438,7 @@ describe('R3 runtime event protocol', () => {
               {
                 id: 'customer_wants_human',
                 kind: 'if',
-                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' } as any,
                 actions: [
                   {
                     id: 'handoff_now',
@@ -454,12 +455,12 @@ describe('R3 runtime event protocol', () => {
     })
 
     recordInitialInputEvent(caseId, { content: 'Please connect me to a human agent right now.' })
-    expect(getActiveProcedureRun(caseId)?.signals).toEqual(
+    expect(getActiveProcedureRun(caseId)?.signals).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ signal: 'explicit_human_request', active: true }),
       ]),
     )
-    expect(getActiveProcedureRun(caseId)?.steps[0]?.branches?.[0]?.status).toBe('matched')
+    expect(getActiveProcedureRun(caseId)?.steps[0]?.branches?.[0]?.status).toBe('skipped')
 
     const handoff = recordProcedureToolResult(caseId, {
       toolName: 'create_human_task',
@@ -468,11 +469,12 @@ describe('R3 runtime event protocol', () => {
       toolOutput: { taskId: 'task-1', queue: 'general', status: 'pending', persisted: true },
     })
     expect(handoff.stale).toBe(false)
-    expect(handoff.run?.signals.find((signal) => signal.signal === 'explicit_human_request')?.active).toBe(false)
+    expect(handoff.run?.status).toBe('completed')
+    expect(handoff.run?.outcome).toBe('handed_off')
     closeSession(caseId)
   })
 
-  it('hydrates explicit human request from pre-start customer input when the procedure starts later', () => {
+  it('does not hydrate legacy explicit human request from pre-start customer input', () => {
     const caseId = 'r3-seeded-human-request-signal'
     recordInitialInputEvent(caseId, { content: 'Please connect me to a human agent right now.' })
 
@@ -482,7 +484,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
-        runtimeSignalDetectors: humanRequestDetectors(),
+        runtimeSignalDetectors: legacyHumanRequestDetectors(),
         steps: [
           {
             id: 'triage',
@@ -493,7 +495,7 @@ describe('R3 runtime event protocol', () => {
               {
                 id: 'customer_wants_human',
                 kind: 'if',
-                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' } as any,
                 actions: [
                   {
                     id: 'handoff_now',
@@ -510,12 +512,12 @@ describe('R3 runtime event protocol', () => {
     })
 
     const active = getActiveProcedureRun(caseId)
-    expect(active?.signals).toEqual(
+    expect(active?.signals).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ signal: 'explicit_human_request', active: true }),
       ]),
     )
-    expect(active?.steps[0]?.branches?.[0]).toMatchObject({ status: 'matched' })
+    expect(active?.steps[0]?.branches?.[0]).toMatchObject({ status: 'skipped' })
     closeSession(caseId)
   })
 
@@ -528,7 +530,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
-        runtimeSignalDetectors: humanRequestDetectors(),
+        runtimeSignalDetectors: knowledgeGapDetectors(),
         steps: [
           {
             id: 'triage',
@@ -539,7 +541,7 @@ describe('R3 runtime event protocol', () => {
               {
                 id: 'wants_human',
                 kind: 'if',
-                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                condition: { kind: 'runtime_signal', signal: 'knowledge_gap' },
                 actions: [
                   {
                     id: 'handoff_now',
@@ -599,7 +601,7 @@ describe('R3 runtime event protocol', () => {
       procedure: {
         version: 'v2',
         whenToUse: 'Use for deposit issues',
-        runtimeSignalDetectors: humanRequestDetectors(),
+        runtimeSignalDetectors: knowledgeGapDetectors(),
         steps: [
           {
             id: 'triage',
@@ -610,7 +612,7 @@ describe('R3 runtime event protocol', () => {
               {
                 id: 'wants_human',
                 kind: 'if',
-                condition: { kind: 'runtime_signal', signal: 'explicit_human_request' },
+                condition: { kind: 'runtime_signal', signal: 'knowledge_gap' },
                 actions: [
                   {
                     id: 'handoff_now',
@@ -1153,6 +1155,63 @@ describe('R3 runtime event protocol', () => {
       status: 'active',
       actions: [expect.objectContaining({ id: 'ask_withdrawal_member', status: 'pending' })],
     })
+    closeSession(caseId)
+  })
+
+  it('renders switched-away ProcedureRuns as compact paused summaries', () => {
+    const caseId = 'r3-v2-paused-summary-tail'
+    recordInitialInputEvent(caseId, { content: 'My deposit is missing.' })
+    startProcedureRun(caseId, {
+      procedureId: 'deposit_issue',
+      displayName: 'Deposit',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for deposit issues',
+        steps: [{
+          id: 'deposit_lookup_step',
+          title: 'Deposit lookup full SOP title',
+          guidance: 'This paused guidance must not stay expanded after a switch.',
+          actions: [{
+            id: 'deposit_lookup_action',
+            kind: 'call_tool',
+            label: 'Check latest deposit',
+            toolName: 'get_latest_deposit',
+          }],
+          branches: [],
+        }],
+      },
+    })
+
+    startProcedureRun(caseId, {
+      procedureId: 'withdrawal_issue',
+      displayName: 'Withdrawal',
+      procedure: {
+        version: 'v2',
+        whenToUse: 'Use for withdrawal issues',
+        steps: [{
+          id: 'withdrawal_lookup_step',
+          title: 'Withdrawal lookup active title',
+          guidance: 'Active Procedure guidance may remain visible.',
+          actions: [{
+            id: 'withdrawal_lookup_action',
+            kind: 'call_tool',
+            label: 'Check latest withdrawal',
+            toolName: 'get_latest_withdrawal',
+          }],
+          branches: [],
+        }],
+      },
+    })
+
+    const tail = procedureRunPromptTail(caseId)
+
+    expect(tail).toContain('## Active ProcedureRun: Withdrawal (withdrawal_issue)')
+    expect(tail).toContain('withdrawal_lookup_action')
+    expect(tail).toContain('Paused ProcedureRun summaries:')
+    expect(tail).toContain('Deposit (deposit_issue)')
+    expect(tail).not.toContain('## Paused ProcedureRun')
+    expect(tail).not.toContain('Deposit lookup full SOP title')
+    expect(tail).not.toContain('deposit_lookup_action')
     closeSession(caseId)
   })
 

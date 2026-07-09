@@ -1,4 +1,10 @@
 import { knowledgeToolDisplay } from '@/lib/agent/knowledge-display'
+import {
+  summarizeKnowledgeRetrievalPayload,
+  summarizeToolSchemaVisibility,
+  type PlaygroundKnowledgeRetrievalSummary,
+  type PlaygroundToolSchemaSummary,
+} from '@/lib/agent/trace-aggregator'
 
 const PLAYGROUND_REVIEW_PREFIX = 'playground-test-'
 
@@ -63,6 +69,8 @@ export interface OperateTraceTruth {
   latencyMs?: number | null
   executionLabel?: string
   executionNote?: string
+  knowledgeSummary?: PlaygroundKnowledgeRetrievalSummary
+  toolSchemaSummary?: PlaygroundToolSchemaSummary
   isExportedReviewStage: boolean
 }
 
@@ -83,6 +91,36 @@ function parseJson(raw: string | null | undefined): Record<string, unknown> | nu
   } catch {
     return null
   }
+}
+
+export function summarizeLlmRequestPayloadForTrace(
+  payload: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!payload) return null
+
+  const toolSchemaSummary = summarizeToolSchemaVisibility(payload.tools)
+  const messages = Array.isArray(payload.messages)
+    ? payload.messages
+    : Array.isArray(payload.lastMessages)
+      ? payload.lastMessages
+      : null
+  const systemPromptChars =
+    typeof payload.systemPrompt === 'string'
+      ? payload.systemPrompt.length
+      : payload.systemPrompt && typeof payload.systemPrompt === 'object' && !Array.isArray(payload.systemPrompt)
+        ? Number((payload.systemPrompt as Record<string, unknown>).originalChars ?? 0) || undefined
+        : undefined
+
+  const summary: Record<string, unknown> = {}
+  if (typeof payload.model === 'string') summary.model = payload.model
+  if (typeof payload.messageCount === 'number') summary.messageCount = payload.messageCount
+  if (messages) summary.capturedMessageCount = messages.length
+  if (systemPromptChars != null) summary.systemPromptChars = systemPromptChars
+  if (payload.requestPayloadCaptured === true) summary.requestPayloadCaptured = true
+  if (payload.toolChoice != null) summary.toolChoice = payload.toolChoice
+  if (toolSchemaSummary) summary.toolSchemaSummary = toolSchemaSummary
+
+  return Object.keys(summary).length > 0 ? summary : null
 }
 
 function toolNameFromTrace(
@@ -565,6 +603,28 @@ function detailTextForTrace(
   }
 
   if (trace.actionType === 'tool_call') {
+    const knowledgeSummary = summarizeKnowledgeRetrievalPayload(payload)
+    if (
+      knowledgeSummary &&
+      (
+        normalizedToolName === 'search_knowledge' ||
+        normalizedToolName?.startsWith('kb_search_') ||
+        payload.isKnowledgeTool === true ||
+        typeof payload.knowledgeSourceId === 'string'
+      )
+    ) {
+      const source = knowledgeSummary.sourceName ?? knowledgeSummary.source
+      const parts = [
+        source ? `source: ${source}` : null,
+        knowledgeSummary.topK != null
+          ? `topK: ${knowledgeSummary.topK}`
+          : knowledgeSummary.requestedTopK != null
+            ? `topK: ${knowledgeSummary.requestedTopK}`
+            : null,
+      ].filter(Boolean)
+      return parts.length > 0 ? parts.join(' · ') : trace.detail
+    }
+
     if (normalizedToolName === 'ask_user_questions') {
       const input = payload.input && typeof payload.input === 'object' && !Array.isArray(payload.input)
         ? (payload.input as Record<string, unknown>)
@@ -600,6 +660,30 @@ function detailTextForTrace(
   }
 
   if (trace.actionType === 'tool_result') {
+    const knowledgeSummary = summarizeKnowledgeRetrievalPayload(payload)
+    if (
+      knowledgeSummary &&
+      (
+        normalizedToolName === 'search_knowledge' ||
+        normalizedToolName?.startsWith('kb_search_') ||
+        payload.isKnowledgeTool === true ||
+        typeof payload.knowledgeSourceId === 'string'
+      )
+    ) {
+      const source = knowledgeSummary.sourceName ?? knowledgeSummary.source
+      const parts = [
+        source ? `source: ${source}` : null,
+        knowledgeSummary.topK != null
+          ? `topK: ${knowledgeSummary.topK}`
+          : knowledgeSummary.requestedTopK != null
+            ? `topK: ${knowledgeSummary.requestedTopK}`
+            : null,
+        knowledgeSummary.resultCount != null ? `results: ${knowledgeSummary.resultCount}` : null,
+        knowledgeSummary.latencyMs != null ? `latency: ${knowledgeSummary.latencyMs}ms` : null,
+      ].filter(Boolean)
+      return parts.length > 0 ? parts.join(' · ') : trace.detail
+    }
+
     const parts: string[] = []
     const inputSummary = summarizeStructuredValue(payload.input)
     const outputSummary = summarizeStructuredValue(payload.output)
@@ -630,6 +714,21 @@ function detailTextForTrace(
       stopReason ? `stop: ${stopReason}` : null,
     ].filter(Boolean)
 
+    return parts.length > 0 ? parts.join(' · ') : trace.detail
+  }
+
+  if (trace.actionType === 'llm_request_start') {
+    const toolSchemaSummary =
+      payload.toolSchemaSummary && typeof payload.toolSchemaSummary === 'object' && !Array.isArray(payload.toolSchemaSummary)
+        ? payload.toolSchemaSummary as PlaygroundToolSchemaSummary
+        : summarizeToolSchemaVisibility(payload.tools)
+    const parts = [
+      typeof payload.model === 'string' ? `model: ${payload.model}` : null,
+      toolSchemaSummary ? `provider-visible tools: ${toolSchemaSummary.providerVisibleToolCount}` : null,
+      toolSchemaSummary ? `knowledge schema: ${toolSchemaSummary.knowledgeSchemaUnified ? 'unified' : 'legacy/mixed'}` : null,
+      toolSchemaSummary ? `schema tokens: ~${toolSchemaSummary.approxSchemaTokens}` : null,
+      typeof payload.capturedMessageCount === 'number' ? `messages captured: ${payload.capturedMessageCount}` : null,
+    ].filter(Boolean)
     return parts.length > 0 ? parts.join(' · ') : trace.detail
   }
 
@@ -784,10 +883,20 @@ export function summarizeToolPairing(traces: TraceTruthInput[]): ToolPairingSumm
 }
 
 export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth {
-  const payload = parseJson(trace.payload) ?? parseJson(trace.detail)
+  const rawPayload = parseJson(trace.payload) ?? parseJson(trace.detail)
+  const payload = trace.actionType === 'llm_request_start'
+    ? summarizeLlmRequestPayloadForTrace(rawPayload)
+    : rawPayload
   const toolName = toolNameFromTrace(trace, payload)
   const toolDisplay = knowledgeToolDisplay({ toolName, payload, fallback: trace.title })
   const status = deriveTraceStatus(trace, payload)
+  const knowledgeSummary = summarizeKnowledgeRetrievalPayload(payload)
+  const toolSchemaSummary =
+    payload?.toolSchemaSummary && typeof payload.toolSchemaSummary === 'object' && !Array.isArray(payload.toolSchemaSummary)
+      ? payload.toolSchemaSummary as PlaygroundToolSchemaSummary
+      : trace.actionType === 'llm_request_start'
+        ? summarizeToolSchemaVisibility(rawPayload?.tools)
+        : undefined
   const executionTruth =
     payload?.executionTruth && typeof payload.executionTruth === 'object' && !Array.isArray(payload.executionTruth)
       ? (payload.executionTruth as Record<string, unknown>)
@@ -810,6 +919,7 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
       displayToolName: toolDisplay.label,
       executionLabel,
       executionNote,
+      knowledgeSummary,
       isExportedReviewStage: false,
     }
   }
@@ -867,6 +977,7 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
       latencyMs: typeof payload?.latencyMs === 'number' ? payload.latencyMs : null,
       executionLabel,
       executionNote,
+      knowledgeSummary,
       isExportedReviewStage: false,
     }
   }
@@ -928,6 +1039,7 @@ export function classifyOperateTrace(trace: TraceTruthInput): OperateTraceTruth 
       title: trace.title || 'Model request',
       detailText: detailTextForTrace(trace, payload),
       payload,
+      toolSchemaSummary,
       isExportedReviewStage: false,
     }
   }

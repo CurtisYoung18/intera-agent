@@ -1,11 +1,17 @@
 import type { ProcedureRuntimeSignal, ProcedureRuntimeSignalDetector } from '@intera/shared/types'
 import type { ProcedureRunState } from './procedure-run-state'
 
+const SUPPORTED_RUNTIME_SIGNALS: readonly ProcedureRuntimeSignal[] = [
+  'no_progress_loop',
+  'knowledge_gap',
+]
+
 export function updateSignalsFromInput(run: ProcedureRunState, content: string): void {
   const text = content.trim()
   if (!text) return
 
   for (const detector of getRuntimeSignalDetectors(run)) {
+    if (!isSupportedRuntimeSignal(detector.signal)) continue
     if (matchesDetector(detector, text)) {
       setProcedureSignal(run, detector.signal, detector.reason || 'Procedure runtime signal detector matched customer input.')
     }
@@ -26,6 +32,10 @@ function matchesDetector(detector: ProcedureRuntimeSignalDetector, text: string)
     }
   }
   return false
+}
+
+function isSupportedRuntimeSignal(signal: unknown): signal is ProcedureRuntimeSignal {
+  return typeof signal === 'string' && SUPPORTED_RUNTIME_SIGNALS.includes(signal as ProcedureRuntimeSignal)
 }
 
 function setProcedureSignal(run: ProcedureRunState, signal: ProcedureRuntimeSignal, reason: string): void {

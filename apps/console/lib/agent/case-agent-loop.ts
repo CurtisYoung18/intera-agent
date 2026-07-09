@@ -22,7 +22,7 @@ import {
 } from './human-task-errors'
 import { normalizeHumanHandoffNotePayload } from './human-handoff'
 import { makeInternalRuntimeMessage } from './message-builder'
-import { isKnowledgeToolDefinition, isKnowledgeToolName } from './knowledge-tooling'
+import { isKnowledgeToolDefinition, isUnifiedKnowledgeToolName } from './knowledge-tooling'
 
 export interface CaseLoopServices {
   caseId: string
@@ -57,7 +57,11 @@ export class CaseAgentLoop {
       const knowledgeToolNames = new Set(
         this.services.toolRouter
           .getToolDefinitions()
-          .filter((tool) => isKnowledgeToolDefinition(tool) && !tool.providerHidden)
+          .filter((tool) =>
+            isKnowledgeToolDefinition(tool) &&
+            !tool.providerHidden &&
+            isUnifiedKnowledgeToolName(tool.name),
+          )
           .map((tool) => tool.name),
       )
       this.procedureExecutor = new ProcedureExecutor(caseSchema.procedure, caseSchema.type, knowledgeToolNames)
@@ -106,22 +110,26 @@ export class CaseAgentLoop {
   }
 
   filterProcedureTools(allTools: Tool[]): Tool[] {
-    if (!this.procedureExecutor) return allTools
+    if (!this.procedureExecutor) return this.filterAlwaysOnTools(allTools)
 
     const activeRun = getActiveProcedureRun(this.services.caseId)
-    if (!activeRun?.currentStepId) return allTools
-    if (activeRun.agentConfigId && activeRun.agentConfigId !== this.services.agentConfigId) return allTools
+    if (!activeRun?.currentStepId) return this.filterAlwaysOnTools(allTools)
+    if (activeRun.agentConfigId && activeRun.agentConfigId !== this.services.agentConfigId) {
+      return this.filterAlwaysOnTools(allTools)
+    }
 
     const stepSelection = this.procedureExecutor.toolSelectionForStep(activeRun.currentStepId)
-    if (!stepSelection) return allTools
+    if (!stepSelection) return this.filterAlwaysOnTools(allTools)
 
     const stepToolNames = new Set(stepSelection.toolNames)
-    const allowKnowledgeFallback = stepSelection.includesKnowledgeTools && stepToolNames.size === 0
     return allTools.filter((tool) =>
       isProcedureSchemaSystemToolName(tool.name) ||
-      stepToolNames.has(tool.name) ||
-      (allowKnowledgeFallback && isKnowledgeToolName(tool.name)),
+      stepToolNames.has(tool.name),
     )
+  }
+
+  private filterAlwaysOnTools(allTools: Tool[]): Tool[] {
+    return allTools.filter((tool) => isProcedureSchemaSystemToolName(tool.name))
   }
 
   emitProgressEvent(iterationCount: number, sendEvent: (event: SSEEvent) => void): void {

@@ -46,6 +46,25 @@ export interface PlaygroundToolExecutionTruth {
   note?: string
 }
 
+export interface PlaygroundToolSchemaSummary {
+  providerVisibleToolCount: number
+  toolNames: string[]
+  hiddenToolNameCount: number
+  knowledgeSchemaUnified: boolean
+  legacyKnowledgeToolCount: number
+  knowledgeSourceCount: number
+  approxSchemaTokens: number
+}
+
+export interface PlaygroundKnowledgeRetrievalSummary {
+  source?: string
+  sourceName?: string
+  topK?: number
+  requestedTopK?: number
+  resultCount?: number
+  latencyMs?: number
+}
+
 export interface PlaygroundCapabilityTruth {
   model: string
   imageSupport: {
@@ -77,6 +96,7 @@ export interface PlaygroundTraceEvent {
   detail: string
   toolName?: string
   executionTruth?: PlaygroundToolExecutionTruth
+  knowledgeSummary?: PlaygroundKnowledgeRetrievalSummary
   payload?: unknown
 }
 
@@ -93,7 +113,8 @@ export interface PlaygroundTraceStep {
   runtimeTruth?: PlaygroundCapabilityTruth
   json?: Array<Record<string, unknown>>
   /** Model request data captured from llm_request_start (available for Model generation stage). */
-  promptData?: { systemPrompt: unknown; messages: unknown[]; tools?: unknown[]; toolChoice?: unknown; requestPayloadCaptured?: boolean }
+  promptData?: { systemPrompt: unknown; messages: unknown[]; toolChoice?: unknown; requestPayloadCaptured?: boolean; toolSchemaSummary?: PlaygroundToolSchemaSummary }
+  toolSchemaSummary?: PlaygroundToolSchemaSummary
 }
 
 /** Bookkeeping actionTypes — excluded from stage bucketing, kept aside for timing + debug JSON. */
@@ -147,6 +168,18 @@ function stringifyCompact(value: unknown): string {
   }
 }
 
+function compactString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function arrayLength(value: unknown): number | undefined {
+  return Array.isArray(value) ? value.length : undefined
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
@@ -162,6 +195,131 @@ function parseNestedJson(value: unknown): unknown {
 
 function hasOwn(obj: Record<string, unknown> | null | undefined, key: string): boolean {
   return !!obj && Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+function toolNameFromDefinition(tool: unknown): string | undefined {
+  return isRecord(tool) ? compactString(tool.name) : undefined
+}
+
+function approximateJsonTokens(value: unknown): number {
+  const json = stringifyCompact(value)
+  return Math.max(0, Math.ceil(json.length / 4))
+}
+
+function schemaEnumCount(tool: unknown, propertyName: string): number | undefined {
+  if (!isRecord(tool)) return undefined
+  const inputSchema = isRecord(tool.input_schema)
+    ? tool.input_schema
+    : isRecord(tool.inputSchema)
+      ? tool.inputSchema
+      : null
+  const properties = isRecord(inputSchema?.properties) ? inputSchema.properties : null
+  const property = isRecord(properties?.[propertyName]) ? properties[propertyName] : null
+  return arrayLength(property?.enum)
+}
+
+export function summarizeToolSchemaVisibility(rawTools: unknown): PlaygroundToolSchemaSummary | undefined {
+  if (!Array.isArray(rawTools)) return undefined
+
+  const toolNames = rawTools
+    .map(toolNameFromDefinition)
+    .filter((name): name is string => Boolean(name))
+  const legacyKnowledgeToolCount = toolNames.filter((name) => name.startsWith('kb_search_')).length
+  const hasUnifiedKnowledge = toolNames.includes('search_knowledge')
+  const unifiedKnowledgeTool = rawTools.find((tool) => toolNameFromDefinition(tool) === 'search_knowledge')
+  const knowledgeSourceCount =
+    schemaEnumCount(unifiedKnowledgeTool, 'source')
+      ?? (isRecord(unifiedKnowledgeTool) && Array.isArray(unifiedKnowledgeTool.knowledgeSources)
+        ? unifiedKnowledgeTool.knowledgeSources.length
+        : 0)
+
+  return {
+    providerVisibleToolCount: rawTools.length,
+    toolNames: toolNames.slice(0, 12),
+    hiddenToolNameCount: Math.max(0, toolNames.length - 12),
+    knowledgeSchemaUnified: hasUnifiedKnowledge && legacyKnowledgeToolCount === 0,
+    legacyKnowledgeToolCount,
+    knowledgeSourceCount,
+    approxSchemaTokens: approximateJsonTokens(rawTools),
+  }
+}
+
+function nestedRecord(value: Record<string, unknown> | null | undefined, key: string): Record<string, unknown> | null {
+  const nested = value?.[key]
+  return isRecord(nested) ? nested : null
+}
+
+function unwrapToolOutput(parsedPayload: Record<string, unknown> | null): Record<string, unknown> | null {
+  const output = parseNestedJson(parsedPayload?.output)
+  if (isRecord(output)) {
+    const nestedOutput = parseNestedJson(output.output)
+    if (isRecord(nestedOutput)) return nestedOutput
+    return output
+  }
+
+  const result = parseNestedJson(parsedPayload?.result)
+  return isRecord(result) ? result : null
+}
+
+function countKnowledgeResults(output: Record<string, unknown> | null): number | undefined {
+  if (!output) return undefined
+  if (Array.isArray(output.list)) return output.list.length
+  if (Array.isArray(output.data)) return output.data.length
+  if (isRecord(output.data) && Array.isArray(output.data.list)) return output.data.list.length
+  if (Array.isArray(output.results)) return output.results.length
+  if (Array.isArray(output.chunks)) return output.chunks.length
+  return undefined
+}
+
+export function summarizeKnowledgeRetrievalPayload(
+  parsedPayload: Record<string, unknown> | null,
+): PlaygroundKnowledgeRetrievalSummary | undefined {
+  if (!parsedPayload) return undefined
+  const input = nestedRecord(parsedPayload, 'input')
+  const output = unwrapToolOutput(parsedPayload)
+
+  const source =
+    compactString(input?.source) ??
+    compactString(input?.sourceId) ??
+    compactString(input?.sourceName) ??
+    compactString(parsedPayload.knowledgeSourceKey) ??
+    compactString(parsedPayload.source) ??
+    compactString(output?.knowledgeSourceKey) ??
+    compactString(output?.sourceSelection && isRecord(output.sourceSelection) ? output.sourceSelection.source : undefined)
+  const sourceName =
+    compactString(parsedPayload.knowledgeSourceName) ??
+    compactString(output?.knowledgeSourceName) ??
+    compactString(input?.sourceName) ??
+    (output?.sourceSelection && isRecord(output.sourceSelection)
+      ? compactString(output.sourceSelection.sourceName)
+      : undefined)
+  const topK =
+    finiteNumber(output?.topK) ??
+    finiteNumber(parsedPayload.topK) ??
+    finiteNumber(input?.topK)
+  const requestedTopK = finiteNumber(input?.topK)
+  const resultCount = countKnowledgeResults(output)
+  const latencyMs = finiteNumber(parsedPayload.latencyMs) ?? finiteNumber(output?.latencyMs)
+
+  if (
+    source == null &&
+    sourceName == null &&
+    topK == null &&
+    requestedTopK == null &&
+    resultCount == null &&
+    latencyMs == null
+  ) {
+    return undefined
+  }
+
+  return {
+    source,
+    sourceName,
+    topK,
+    requestedTopK,
+    resultCount,
+    latencyMs,
+  }
 }
 
 function hasMeaningfulError(value: unknown): boolean {
@@ -446,6 +604,11 @@ function buildTraceEvent(record: TraceRecord, stage: string): PlaygroundTraceEve
 
   if (actionType === 'tool_call' || actionType === 'tool_result') {
     const toolName = toolNameFromTrace(record, parsedPayload) || record.title || actionType
+    const isKnowledgeEvent =
+      parsedPayload?.isKnowledgeTool === true ||
+      typeof parsedPayload?.knowledgeSourceId === 'string' && parsedPayload.knowledgeSourceId.trim() ||
+      toolName === 'search_knowledge' ||
+      toolName.startsWith('kb_search_')
     return {
       kind: actionType,
       actionType,
@@ -454,6 +617,7 @@ function buildTraceEvent(record: TraceRecord, stage: string): PlaygroundTraceEve
       detail: formatToolDetail(record, parsedPayload),
       toolName,
       executionTruth: extractToolExecutionTruth(parsedPayload),
+      knowledgeSummary: isKnowledgeEvent ? summarizeKnowledgeRetrievalPayload(parsedPayload) : undefined,
       payload: parsedPayload ?? record.payload,
     }
   }
@@ -631,6 +795,7 @@ export function aggregateTraces(
     if (stage === 'Model generation') {
       const llmReqRecord = records.find(r => r.actionType === 'llm_request_start')
       const parsedRequest = parseJson(llmReqRecord?.payload)
+      const toolSchemaSummary = summarizeToolSchemaVisibility(parsedRequest?.tools)
       if (parsedRequest?.systemPrompt || parsedRequest?.messages || parsedRequest?.lastMessages || parsedRequest?.tools) {
         step.promptData = {
           systemPrompt: parsedRequest?.systemPrompt ?? '',
@@ -639,11 +804,12 @@ export function aggregateTraces(
             : Array.isArray(parsedRequest?.lastMessages)
               ? parsedRequest.lastMessages
               : [],
-          tools: Array.isArray(parsedRequest?.tools) ? parsedRequest.tools : undefined,
           toolChoice: parsedRequest?.toolChoice,
           requestPayloadCaptured: parsedRequest?.requestPayloadCaptured === true,
+          toolSchemaSummary,
         }
       }
+      step.toolSchemaSummary = toolSchemaSummary
 
       const iterationSnapshots = bookkeeping.filter((record) =>
         record.actionType === 'loop_decision' && record.title === 'Iteration Snapshot',

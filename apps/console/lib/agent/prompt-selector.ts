@@ -7,7 +7,7 @@ import type { Tool } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CaseSchemaConfig } from '@intera/shared/types'
 import type { ConversationLoop } from './conversation-loop'
 import type { CaseAgentLoop } from './case-agent-loop'
-import { isKnowledgeToolName } from './knowledge-tooling'
+import { isUnifiedKnowledgeToolName } from './knowledge-tooling'
 
 export interface PromptSelection {
   prompt: string
@@ -16,16 +16,14 @@ export interface PromptSelection {
 
 export const PROCEDURE_TOOL_SCHEMA_FILTERING_ENV = 'INTERA_PROCEDURE_TOOL_SCHEMA_FILTERING'
 
-const PROCEDURE_SCHEMA_SYSTEM_TOOL_NAMES = new Set([
+const PROCEDURE_SCHEMA_ALWAYS_ON_TOOL_NAMES = new Set([
   'start_procedure',
   'ask_user_questions',
-  'read_chat_memory',
   'read_user_profile',
   'remember',
   'get_current_time',
   'create_human_task',
-  'finalize_procedure',
-  'finalize_consultation',
+  'search_knowledge',
 ])
 
 export interface PromptSelectorContext {
@@ -46,18 +44,19 @@ export function isProcedureToolSchemaFilteringEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
   const raw = env[PROCEDURE_TOOL_SCHEMA_FILTERING_ENV]?.trim().toLowerCase()
-  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false
+  return true
 }
 
 export function isProcedureSchemaSystemToolName(name: string): boolean {
-  return PROCEDURE_SCHEMA_SYSTEM_TOOL_NAMES.has(name)
+  return PROCEDURE_SCHEMA_ALWAYS_ON_TOOL_NAMES.has(name)
 }
 
 export function isCoreDiscoverySchemaToolName(name: string): boolean {
-  return isProcedureSchemaSystemToolName(name) || isKnowledgeToolName(name)
+  return isProcedureSchemaSystemToolName(name) || isUnifiedKnowledgeToolName(name)
 }
 
-function filterCoreDiscoveryToolSchemas(allTools: Tool[]): Tool[] {
+export function filterCoreDiscoveryToolSchemas(allTools: Tool[]): Tool[] {
   return allTools.filter((tool) => isCoreDiscoverySchemaToolName(tool.name))
 }
 
@@ -99,7 +98,7 @@ export function selectPromptAndTools(ctx: PromptSelectorContext): PromptSelectio
         '',
         systemPrompt,
       ].join('\n')),
-      tools: allTools,
+      tools: [],
     }
   }
 

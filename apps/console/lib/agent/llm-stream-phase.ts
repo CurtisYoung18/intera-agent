@@ -166,13 +166,18 @@ export class LlmStreamPhase {
     try {
       stream = await withRetry(
         async (_client, ctx) => {
+          const toolRequestOptions = input.stageTools.length > 0
+            ? {
+              tools: input.stageTools as any,
+              tool_choice: { type: 'auto' as const, disable_parallel_tool_use: false },
+            }
+            : {}
           return this.deps.getAnthropicClient().messages.stream({
             model: ctx.model,
             max_tokens: ctx.maxTokensOverride ?? (this.deps.config.maxOutputTokens ?? 4096),
             system: input.stagePrompt,
             messages: input.apiMessages as any,
-            tools: input.stageTools as any,
-            tool_choice: { type: 'auto' as const, disable_parallel_tool_use: false },
+            ...toolRequestOptions,
             ...(this.deps.config.extendedThinking &&
               (buildModelList().find((model) => model.id === ctx.model)?.supportsThinking ?? false) ? {
               thinking: { type: 'enabled' as const, budget_tokens: this.deps.config.thinkingBudget || 4096 },

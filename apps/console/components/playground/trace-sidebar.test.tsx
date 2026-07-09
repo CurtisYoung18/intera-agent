@@ -1,9 +1,30 @@
 // @vitest-environment jsdom
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import TraceSidebar from './trace-sidebar'
 import type { PlaygroundTraceStep } from '@/lib/agent/trace-aggregator'
+
+vi.mock('lucide-react', async () => {
+  const React = await import('react')
+  const Icon = (props: React.SVGProps<SVGSVGElement>) => React.createElement('svg', props)
+  return {
+    Activity: Icon,
+    ChevronDown: Icon,
+    ChevronLeft: Icon,
+    CheckCircle2: Icon,
+    XCircle: Icon,
+    Loader2: Icon,
+    Brain: Icon,
+  }
+})
+
+vi.mock('@/components/ui/copy-button', async () => {
+  const React = await import('react')
+  return {
+    default: ({ label }: { text: string; label: string }) => React.createElement('button', { type: 'button' }, label),
+  }
+})
 
 afterEach(() => cleanup())
 
@@ -181,7 +202,7 @@ describe('TraceSidebar', () => {
     expect(screen.getAllByText(/result/i).length).toBeGreaterThan(0)
   })
 
-  it('shows captured request tools in the model prompt drawer', () => {
+  it('shows provider-visible Tool schema summaries without full schemas in the model prompt drawer', () => {
     renderSidebar([
       {
         stage: 'Model generation',
@@ -194,12 +215,26 @@ describe('TraceSidebar', () => {
         promptData: {
           systemPrompt: 'CORE',
           messages: [{ role: 'user', content: 'hello' }],
-          tools: [
-            { name: 'remember', description: 'Write a scoped memory item.' },
-            { name: 'get_current_time', description: 'Return the current server time.' },
-          ],
+          toolSchemaSummary: {
+            providerVisibleToolCount: 2,
+            toolNames: ['search_knowledge', 'get_current_time'],
+            hiddenToolNameCount: 0,
+            knowledgeSchemaUnified: true,
+            legacyKnowledgeToolCount: 0,
+            knowledgeSourceCount: 2,
+            approxSchemaTokens: 188,
+          },
           toolChoice: { type: 'auto', disable_parallel_tool_use: false },
           requestPayloadCaptured: true,
+        },
+        toolSchemaSummary: {
+          providerVisibleToolCount: 2,
+          toolNames: ['search_knowledge', 'get_current_time'],
+          hiddenToolNameCount: 0,
+          knowledgeSchemaUnified: true,
+          legacyKnowledgeToolCount: 0,
+          knowledgeSourceCount: 2,
+          approxSchemaTokens: 188,
         },
         usage: {
           inputTokens: 826,
@@ -214,8 +249,47 @@ describe('TraceSidebar', () => {
 
     expect(screen.getByText('System Prompt')).toBeTruthy()
     expect(screen.getByText('Messages (IN)')).toBeTruthy()
-    expect(screen.getByText('Tools (IN)')).toBeTruthy()
-    expect(screen.getAllByText((_, node) => node?.textContent?.includes('"name": "remember"') ?? false).length).toBeGreaterThan(0)
-    expect(screen.getAllByText((_, node) => node?.textContent?.includes('"name": "get_current_time"') ?? false).length).toBeGreaterThan(0)
+    expect(screen.queryByText('Tools (IN)')).toBeNull()
+    expect(screen.getByText('Visible Tools')).toBeTruthy()
+    expect(screen.getByText('Schema Tokens')).toBeTruthy()
+    expect(screen.getByText((_, node) => node?.textContent === 'Tool names: search_knowledge, get_current_time')).toBeTruthy()
+    expect(screen.queryByText((_, node) => node?.textContent?.includes('"description"') ?? false)).toBeNull()
+  })
+
+  it('shows search_knowledge source, topK, result count, and latency', () => {
+    renderSidebar([
+      {
+        stage: 'Knowledge retrieval',
+        source: 'knowledge',
+        status: 'ok',
+        fired: true,
+        ms: 237,
+        summary: 'Tool: search_knowledge',
+        detail: [['tool_result', 'output: Returned 2 items']],
+        events: [{
+          kind: 'tool_result',
+          actionType: 'tool_result',
+          label: 'search_knowledge',
+          toolName: 'search_knowledge',
+          status: 'ok',
+          detail: 'output: Returned 2 items',
+          knowledgeSummary: {
+            source: 'deposit',
+            sourceName: 'Deposit',
+            topK: 8,
+            requestedTopK: 8,
+            resultCount: 2,
+            latencyMs: 237,
+          },
+          payload: {
+            toolName: 'search_knowledge',
+            knowledgeSourceName: 'Deposit',
+          },
+        }],
+      },
+    ])
+
+    expect(screen.getByText('search_knowledge · Deposit')).toBeTruthy()
+    expect(screen.getAllByText(/source Deposit · topK 8 · 2 results · 237ms/).length).toBeGreaterThan(0)
   })
 })

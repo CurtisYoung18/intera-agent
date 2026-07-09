@@ -17,7 +17,7 @@ vi.mock('@/lib/agent/prompt-resolver', async () => {
     case_state: (params?.caseState as object) ?? null,
     session_binding: (params?.sessionBinding as object) ?? { userId: 'test-user-123', userLabel: 'Test User' },
     available_tools: (params?.available_tools as unknown[]) ?? [
-      { name: 'faq_lookup_default', description: 'Search the FAQ knowledge base', needsMemberId: false, knowledgeSourceId: 'ks_faq' },
+      { name: 'search_knowledge', description: 'Search configured knowledge sources', needsMemberId: false, knowledgeProvider: 'gptbots', knowledgeTool: true },
     ],
   }))
   return {
@@ -41,7 +41,13 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     caseState: null,
     sessionBinding: { userId: 'test-user-123', userLabel: 'Test User' },
     availableTools: [
-      { name: 'faq_lookup_default', description: 'Search the FAQ knowledge base', needsMemberId: false, knowledgeSourceId: 'ks_faq' },
+      { name: 'start_procedure', description: 'Start a ProcedureRun', needsMemberId: false },
+      { name: 'search_knowledge', description: 'Search configured knowledge sources', needsMemberId: false, knowledgeProvider: 'gptbots', knowledgeTool: true },
+      { name: 'ask_user_questions', description: 'Ask structured customer questions', needsMemberId: false },
+      { name: 'create_human_task', description: 'Create a human handoff task', needsMemberId: false },
+      { name: 'read_user_profile', description: 'Read user profile memory', needsMemberId: false },
+      { name: 'remember', description: 'Save user profile memory', needsMemberId: false },
+      { name: 'get_current_time', description: 'Read current server time', needsMemberId: false },
     ],
   }
 
@@ -125,6 +131,25 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     expect(result.prompt).toContain('## Knowledge Tool Override')
     expect(result.prompt).toContain('kb_search_*')
     expect(result.prompt).not.toContain('kb_search_deposit')
+  })
+
+  it('filters business and legacy tools out of the core prompt tool summary', async () => {
+    const result = await buildModePrompt({
+      ...baseInput,
+      coreSystemPrompt: 'You are a support agent.',
+      availableTools: [
+        ...baseInput.availableTools,
+        { name: 'get_latest_deposit', description: 'Lookup latest deposit', needsMemberId: true },
+        { name: 'kb_search_deposit_faq', description: 'Legacy deposit FAQ', needsMemberId: false, knowledgeSourceId: 'ks_deposit' },
+        { name: 'finalize_procedure', description: 'Finalize the ProcedureRun', needsMemberId: false },
+      ],
+    })
+
+    expect(result.prompt).toContain('search_knowledge')
+    expect(result.prompt).toContain('ask_user_questions')
+    expect(result.prompt).not.toContain('get_latest_deposit')
+    expect(result.prompt).not.toContain('kb_search_deposit_faq')
+    expect(result.prompt).not.toContain('finalize_procedure')
   })
 
   // ── Case mode: case-specific blocks injected ──

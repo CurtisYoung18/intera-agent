@@ -422,7 +422,6 @@ export type ProcedureConditionKind =
   | 'runtime_signal'
 
 export type ProcedureRuntimeSignal =
-  | 'explicit_human_request'
   | 'no_progress_loop'
   | 'knowledge_gap'
 

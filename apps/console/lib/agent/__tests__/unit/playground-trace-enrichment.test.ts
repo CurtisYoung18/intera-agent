@@ -49,8 +49,10 @@ describe('playground trace enrichment', () => {
         title: 'Tool: search_knowledge',
         payload: JSON.stringify({
           toolName: 'search_knowledge',
+          input: { query: 'deposit bonus', source: 'deposit', topK: 8 },
           knowledgeSourceId: 'kb_deposit_123456',
           knowledgeSourceName: 'Deposit Bonus',
+          knowledgeSourceKey: 'deposit',
           knowledgeProvider: 'gptbots',
         }),
       },
@@ -62,8 +64,10 @@ describe('playground trace enrichment', () => {
     const payload = JSON.parse(enriched.payload ?? '{}')
     expect(payload).toMatchObject({
       toolName: 'search_knowledge',
+      input: { query: 'deposit bonus', source: 'deposit', topK: 8 },
       knowledgeSourceId: 'kb_deposit_123456',
       knowledgeSourceName: 'Deposit Bonus',
+      knowledgeSourceKey: 'deposit',
       knowledgeProvider: 'gptbots',
       executionTruth: {
         effectiveMode: 'runtime_backed',

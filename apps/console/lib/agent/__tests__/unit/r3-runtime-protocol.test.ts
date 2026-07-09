@@ -239,7 +239,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(output.localDateTime).toEqual(expect.stringMatching(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
   })
 
-  it('keeps tool schema stable and appends ProcedureRun state only at the prompt tail', () => {
+  it('keeps the stable prompt before the ProcedureRun tail while preserving always-on discovery schemas', () => {
     const caseId = 'r3-prompt-boundary'
     const router = new ToolRouter('agent_1')
     const toolsBefore = router.getTools()
@@ -247,6 +247,15 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     const conversationLoop = { buildPrompt: () => 'CORE_PROMPT', filterTools: (tools: unknown[]) => tools } as unknown as ConversationLoop
     const caseLoop = {
       buildProcedurePrompt: () => 'PROCEDURE_DEFINITION',
+      filterProcedureTools: (tools: Tool[]) => tools.filter((tool) => [
+        'start_procedure',
+        'ask_user_questions',
+        'read_user_profile',
+        'remember',
+        'get_current_time',
+        'create_human_task',
+        'search_knowledge',
+      ].includes(tool.name)),
     } as unknown as CaseAgentLoop
     const beforeCtx: PromptSelectorContext = {
       isCaseActive: false,
@@ -283,8 +292,9 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     closeSession(caseId)
   })
 
-  it('keeps all tool schemas by default when Procedure-aware filtering is disabled', () => {
-    expect(isProcedureToolSchemaFilteringEnabled({})).toBe(false)
+  it('keeps all tool schemas only when Procedure-aware filtering is explicitly disabled', () => {
+    expect(isProcedureToolSchemaFilteringEnabled({})).toBe(true)
+    expect(isProcedureToolSchemaFilteringEnabled({ INTERA_PROCEDURE_TOOL_SCHEMA_FILTERING: '0' })).toBe(false)
 
     const allTools = [
       makeTool('start_procedure'),
@@ -308,6 +318,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
       conversationLoop,
       caseLoop,
       allTools,
+      procedureToolSchemaFilteringEnabled: false,
     })
 
     expect(selection.tools).toBe(allTools)
@@ -315,7 +326,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(filterProcedureTools).not.toHaveBeenCalled()
   })
 
-  it('filters Core discovery schemas to base tools when the flag is enabled', () => {
+  it('filters Core discovery schemas to base tools by default', () => {
     const allTools = [
       makeTool('get_latest_deposit'),
       makeTool('start_procedure'),
@@ -341,7 +352,6 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
       conversationLoop,
       caseLoop: null,
       allTools,
-      procedureToolSchemaFilteringEnabled: true,
     })
 
     const names = selection.tools.map((tool) => tool.name)
@@ -349,15 +359,11 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(names).toEqual([
       'start_procedure',
       'ask_user_questions',
-      'read_chat_memory',
       'read_user_profile',
       'remember',
       'get_current_time',
       'create_human_task',
-      'finalize_procedure',
       'search_knowledge',
-      'kb_search_deposit_faq',
-      'kb_search_withdrawal_faq',
     ])
   })
 
@@ -427,14 +433,14 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(names).toEqual(expect.arrayContaining([
       'start_procedure',
       'ask_user_questions',
-      'read_chat_memory',
       'read_user_profile',
       'remember',
       'get_current_time',
       'create_human_task',
-      'finalize_procedure',
       'get_latest_deposit',
     ]))
+    expect(names).not.toContain('read_chat_memory')
+    expect(names).not.toContain('finalize_procedure')
     expect(names).not.toContain('kb_search_deposit_faq')
     expect(names).not.toContain('kb_search_withdrawal_faq')
     expect(names).not.toContain('get_latest_withdrawal')
@@ -442,7 +448,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     closeSession(caseId)
   })
 
-  it('keeps only known knowledge tools for a Procedure knowledge step when enabled', () => {
+  it('keeps only unified knowledge tools for a Procedure knowledge step when enabled', () => {
     const caseId = 'r3-procedure-knowledge-schema-filtering'
     const procedure = knowledgeProcedure()
     recordInitialInputEvent(caseId, { content: 'what is the deposit policy?' })
@@ -485,6 +491,7 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
       makeTool('get_current_time'),
       makeTool('create_human_task'),
       makeTool('finalize_procedure'),
+      makeTool('search_knowledge'),
       makeTool('kb_search_deposit_faq'),
       makeTool('kb_search_withdrawal_faq'),
       makeTool('get_latest_deposit'),
@@ -506,14 +513,15 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(names).toEqual(expect.arrayContaining([
       'start_procedure',
       'ask_user_questions',
-      'read_chat_memory',
       'read_user_profile',
       'remember',
       'get_current_time',
       'create_human_task',
-      'finalize_procedure',
-      'kb_search_deposit_faq',
+      'search_knowledge',
     ]))
+    expect(names).not.toContain('read_chat_memory')
+    expect(names).not.toContain('finalize_procedure')
+    expect(names).not.toContain('kb_search_deposit_faq')
     expect(names).not.toContain('kb_search_withdrawal_faq')
     expect(names).not.toContain('get_latest_deposit')
     closeSession(caseId)
@@ -583,13 +591,15 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
 
     const names = selection.tools.map((tool) => tool.name)
     expect(names).toContain('search_knowledge')
+    expect(names).not.toContain('read_chat_memory')
+    expect(names).not.toContain('finalize_procedure')
     expect(names).not.toContain('kb_search_deposit_faq')
     expect(names).not.toContain('kb_search_withdrawal_faq')
     expect(names).not.toContain('get_latest_deposit')
     closeSession(caseId)
   })
 
-  it('falls back to all Procedure schemas when the active step cannot be determined', () => {
+  it('falls back to always-on schemas when the active step cannot be determined', () => {
     const caseId = 'r3-procedure-schema-filtering-fallback'
     const procedure = toolProcedure('get_latest_deposit')
     const caseLoop = new CaseAgentLoop({
@@ -611,6 +621,12 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     } as any)
     const allTools = [
       makeTool('start_procedure'),
+      makeTool('ask_user_questions'),
+      makeTool('read_user_profile'),
+      makeTool('remember'),
+      makeTool('get_current_time'),
+      makeTool('create_human_task'),
+      makeTool('search_knowledge'),
       makeTool('get_latest_deposit'),
       makeTool('get_latest_withdrawal'),
     ]
@@ -627,8 +643,15 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
       procedureToolSchemaFilteringEnabled: true,
     })
 
-    expect(selection.tools).toBe(allTools)
-    expect(selection.tools.map((tool) => tool.name)).toEqual(allTools.map((tool) => tool.name))
+    expect(selection.tools.map((tool) => tool.name)).toEqual([
+      'start_procedure',
+      'ask_user_questions',
+      'read_user_profile',
+      'remember',
+      'get_current_time',
+      'create_human_task',
+      'search_knowledge',
+    ])
   })
 })
 

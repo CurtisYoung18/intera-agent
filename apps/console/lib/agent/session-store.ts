@@ -896,8 +896,20 @@ export function procedureRunPromptTail(caseId: string): string {
       }
     }
   }
+  const renderPausedRunSummary = (run: ProcedureRunState) => {
+    const latestTimeline = run.timeline[run.timeline.length - 1]
+    const latestEvidence = run.evidence[run.evidence.length - 1]
+    const latest = latestTimeline?.summary || latestTimeline?.content || latestEvidence?.label || 'no recent runtime event'
+    lines.push(
+      `- ${run.displayName} (${run.procedureId}) runId=${run.runId} status=${run.status} currentStepId=${run.currentStepId ?? 'none'} evidenceCount=${run.evidence.length} latest=${JSON.stringify(String(latest).slice(0, 180))}`,
+    )
+  }
   if (state.activeProcedureRun) renderRun(state.activeProcedureRun, 'Active ProcedureRun')
-  for (const run of state.pausedProcedureRuns.slice(-3)) renderRun(run, 'Paused ProcedureRun')
+  if (state.pausedProcedureRuns.length) {
+    lines.push('')
+    lines.push('Paused ProcedureRun summaries:')
+    for (const run of state.pausedProcedureRuns.slice(-3)) renderPausedRunSummary(run)
+  }
   lines.push('</procedure_run_runtime>')
   return lines.join('\n')
 }
@@ -1561,7 +1573,6 @@ function applyToolEvidenceToRun(
     clearProcedureSignal(run, 'knowledge_gap')
   }
   if (input.toolName === 'create_human_task' && assessment.outcome === 'succeeded') {
-    clearProcedureSignal(run, 'explicit_human_request')
     clearProcedureSignal(run, 'no_progress_loop')
     clearProcedureSignal(run, 'knowledge_gap')
     // Owner contract: persisted human handoff is terminal for the ProcedureRun

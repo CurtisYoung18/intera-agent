@@ -124,7 +124,6 @@ type ProcedureEditorDraft = {
 
 function emptyRuntimeSignalDetectors(): Record<ProcedureRuntimeSignalContract, string> {
   return {
-    explicit_human_request: '',
     no_progress_loop: '',
     knowledge_gap: '',
   }
@@ -213,8 +212,6 @@ function endStatusLabel(t: TranslateFn, status: ActionDraft['endStatus']) {
 
 function runtimeSignalLabel(t: TranslateFn, signal: ProcedureRuntimeSignalContract) {
   switch (signal) {
-    case 'explicit_human_request':
-      return t('procedureEditor.runtimeSignal.explicitHumanRequest')
     case 'no_progress_loop':
       return t('procedureEditor.runtimeSignal.noProgressLoop')
     case 'knowledge_gap':

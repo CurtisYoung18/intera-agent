@@ -53,7 +53,7 @@ export function finalizationBlockers(run: ProcedureRunState): string[] {
 
     const activeHints = run.signals.filter((signal) => signal.active)
     for (const signal of activeHints) {
-      if (signal.signal === 'explicit_human_request' || signal.signal === 'no_progress_loop') {
+      if (signal.signal === 'no_progress_loop') {
         blockers.push(`Safety hint "${signal.signal}" is still active: ${signal.reason}`)
       }
     }

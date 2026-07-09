@@ -14,8 +14,8 @@ describe('Procedure v2 contract', () => {
     overview: 'Collect evidence, search knowledge if needed, then investigate or hand off.',
     runtimeSignalDetectors: [
       {
-        signal: 'explicit_human_request' as const,
-        patterns: ['human', 'agent'],
+        signal: 'knowledge_gap' as const,
+        patterns: ['where can i find'],
       },
     ],
     steps: [
@@ -29,9 +29,9 @@ describe('Procedure v2 contract', () => {
         ],
         branches: [
           {
-            id: 'if_human',
+            id: 'if_no_progress',
             kind: 'if' as const,
-            condition: { id: 'human_request', kind: 'runtime_signal' as const, signal: 'explicit_human_request' as const },
+            condition: { id: 'no_progress', kind: 'runtime_signal' as const, signal: 'no_progress_loop' as const },
             actions: [
               { id: 'handoff_now', kind: 'request_human_handoff' as const, label: 'Request human help', queue: 'general' },
             ],
@@ -83,14 +83,14 @@ describe('Procedure v2 contract', () => {
 
   it('produces a lightweight simulation receipt for preview', () => {
     const receipt = simulateProcedure(procedureV2, {
-      signals: ['explicit_human_request'],
+      signals: ['no_progress_loop'],
       handoffRequested: true,
     })
     expect(receipt.status).toBe('handoff')
     expect(receipt.steps[0]).toMatchObject({
       stepId: 'understand_issue',
       status: 'completed',
-      matchedBranchId: 'if_human',
+      matchedBranchId: 'if_no_progress',
     })
   })
 

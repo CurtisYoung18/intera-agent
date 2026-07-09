@@ -331,7 +331,7 @@ describe('aggregateTraces', () => {
     expect(emptyData.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]?.status).toBe('info')
   })
 
-  it('exposes the captured model request payload including tools and tool_choice', () => {
+  it('summarizes provider-visible Tool schemas without exposing full tool definitions', () => {
     const traces = [
       {
         caseId: 'c',
@@ -343,8 +343,8 @@ describe('aggregateTraces', () => {
           systemPrompt: 'CORE\n<procedure_run_runtime>active</procedure_run_runtime>',
           messages: [{ role: 'user', content: 'hello' }],
           tools: [
-            { name: 'remember', description: 'Write a scoped memory item.' },
-            { name: 'get_current_time', description: 'Return the current server time.' },
+            { name: 'search_knowledge', description: 'Search KB', input_schema: { type: 'object', properties: { source: { type: 'string', enum: ['deposit', 'account'] } } } },
+            { name: 'get_current_time', description: 'Return the current server time.', input_schema: { type: 'object', properties: {} } },
           ],
           toolChoice: { type: 'auto', disable_parallel_tool_use: false },
         }),
@@ -363,8 +363,61 @@ describe('aggregateTraces', () => {
     const model = result.find((step) => step.stage === 'Model generation')
     expect(model?.promptData?.systemPrompt).toContain('<procedure_run_runtime>')
     expect(model?.promptData?.messages).toEqual([{ role: 'user', content: 'hello' }])
-    expect(model?.promptData?.tools?.map((tool: any) => tool.name)).toEqual(['remember', 'get_current_time'])
     expect(model?.promptData?.toolChoice).toEqual({ type: 'auto', disable_parallel_tool_use: false })
     expect(model?.promptData?.requestPayloadCaptured).toBe(true)
+    expect(model?.promptData).not.toHaveProperty('tools')
+    expect(model?.toolSchemaSummary).toMatchObject({
+      providerVisibleToolCount: 2,
+      toolNames: ['search_knowledge', 'get_current_time'],
+      knowledgeSchemaUnified: true,
+      legacyKnowledgeToolCount: 0,
+      knowledgeSourceCount: 2,
+    })
+    expect(model?.toolSchemaSummary?.approxSchemaTokens).toBeGreaterThan(0)
+  })
+
+  it('summarizes unified search_knowledge source, topK, result count, and latency', () => {
+    const traces = [
+      {
+        caseId: 'c',
+        actionType: 'tool_result',
+        title: 'Tool: search_knowledge',
+        payload: JSON.stringify({
+          toolName: 'search_knowledge',
+          input: { query: 'deposit bonus', source: 'deposit', topK: 8 },
+          output: {
+            ok: true,
+            output: {
+              list: [
+                { document_name: 'Deposit FAQ', score: 0.91 },
+                { document_name: 'Bonus Policy', score: 0.82 },
+              ],
+              knowledgeSourceKey: 'deposit',
+              knowledgeSourceName: 'Deposit',
+              topK: 8,
+            },
+            latencyMs: 237,
+          },
+          latencyMs: 237,
+          isKnowledgeTool: true,
+          knowledgeSourceId: 'ks_1',
+          knowledgeSourceName: 'Deposit',
+          knowledgeProvider: 'gptbots',
+        }),
+        createdAt: new Date(t0 + 10).toISOString(),
+      },
+    ]
+
+    const result = aggregateTraces(traces as any, t0, false, ['Knowledge retrieval'])
+    const event = result.find((step) => step.stage === 'Knowledge retrieval')?.events?.[0]
+    expect(event?.toolName).toBe('search_knowledge')
+    expect(event?.knowledgeSummary).toEqual({
+      source: 'deposit',
+      sourceName: 'Deposit',
+      topK: 8,
+      requestedTopK: 8,
+      resultCount: 2,
+      latencyMs: 237,
+    })
   })
 })

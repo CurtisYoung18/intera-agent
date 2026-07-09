@@ -43,8 +43,11 @@ export interface KnowledgeSourceDefinitionRef {
 export function isUnifiedKnowledgeToolEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  const raw = env[UNIFIED_KNOWLEDGE_TOOL_ENV]?.trim().toLowerCase()
-  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on'
+  // `search_knowledge` is the only provider-visible knowledge surface. Legacy
+  // kb_search_* definitions may still execute from old transcripts/retries, but
+  // they stay hidden from provider schemas.
+  void env
+  return true
 }
 
 export function isUnifiedKnowledgeToolName(name: string | undefined): boolean {

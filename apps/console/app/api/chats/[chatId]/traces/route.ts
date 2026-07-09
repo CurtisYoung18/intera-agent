@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { defineRoute } from '@/lib/api/define-route'
 import { apiOk } from '@intera/shared/contracts/envelope'
+import { summarizeLlmRequestPayloadForTrace } from '@/lib/operate/runtime-truth'
 import { caseIdFilterForScope, resolveRequiredAgentCaseScopeForChat } from '../../_agent-scope'
 
 const querySchema = z.object({
@@ -34,6 +35,27 @@ function omitCaseId(trace: ActionTraceListRow) {
   return rest
 }
 
+function parsePayload(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function sanitizeTracePayload(trace: ActionTraceListRow): ActionTraceListRow {
+  if (trace.actionType !== 'llm_request_start') return trace
+  const summary = summarizeLlmRequestPayloadForTrace(parsePayload(trace.payload))
+  return {
+    ...trace,
+    payload: summary ? JSON.stringify(summary) : null,
+  }
+}
+
 export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>({
   method: 'GET',
   parseQuery: true,
@@ -60,9 +82,6 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     }
     if (input.actionType) where.actionType = input.actionType
 
-    const payloadProjection = input.payloadMode === 'summary'
-      ? Prisma.sql`CASE WHEN "actionType" = 'llm_request_start' THEN NULL ELSE payload END`
-      : Prisma.sql`payload`
     const actionTypeFilter = input.actionType
       ? Prisma.sql`AND "actionType" = ${input.actionType}`
       : Prisma.empty
@@ -78,7 +97,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
           "actionType",
           title,
           detail,
-          ${payloadProjection} AS payload,
+          payload,
           "createdAt"
         FROM action_traces
         WHERE org_id = ${repo.orgId}
@@ -92,7 +111,7 @@ export const GET = defineRoute<z.infer<typeof querySchema>, { chatId: string }>(
     ])
 
     return apiOk({
-      traces: traces.slice(0, limit).map(omitCaseId),
+      traces: traces.slice(0, limit).map(sanitizeTracePayload).map(omitCaseId),
       total,
     })
   },

@@ -156,26 +156,31 @@ afterEach(() => {
 })
 
 describe('generated knowledge-search tool names', () => {
-  it('exposes provider-safe lowercase tool names for knowledge sources', async () => {
+  it('exposes unified search_knowledge by default while keeping legacy knowledge definitions hidden', async () => {
     const { ToolRouter } = await import('../../tools')
     const router = await ToolRouter.create('agent-a', true)
     const names = router.getTools().map((tool) => tool.name)
 
-    expect(names).toContain('kb_search_default')
-    expect(names).toContain('kb_search_deposit_bonus')
-    expect(names).toContain('kb_search_kb_cn_abcdef')
-    expect(names).not.toContain('search_knowledge')
+    expect(names).toContain('search_knowledge')
+    expect(names).not.toContain('kb_search_default')
+    expect(names).not.toContain('kb_search_deposit_bonus')
+    expect(names).not.toContain('kb_search_kb_cn_abcdef')
     expect(names).not.toContain('kb_search_empty_source')
     expect(names).not.toContain('kb_search_Default')
     expect(names.every((name) => /^[a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*$/.test(name))).toBe(true)
     expect(router.getTool('kb_search_default')?.knowledgeSourceId).toBe('kb_default_123456')
+    expect(router.getTool('kb_search_default')?.providerHidden).toBe(true)
     expect((router.getTool('kb_search_default')?.inputSchema as any)?.properties).not.toHaveProperty('topK')
     expect((router.getTool('kb_search_deposit_bonus')?.inputSchema as any)?.properties).toHaveProperty('topK')
     expect(router.getTool('kb_search_deposit_bonus')?.description).toContain('Number of results to return')
+    expect((router.getTool('search_knowledge')?.inputSchema as any)?.properties.source.enum).toEqual(expect.arrayContaining([
+      'default',
+      'deposit_bonus',
+      'account',
+    ]))
   })
 
-  it('exposes only search_knowledge to providers when the unified knowledge flag is enabled while keeping legacy definitions executable', async () => {
-    process.env.INTERA_UNIFIED_KNOWLEDGE_TOOL = 'true'
+  it('exposes only search_knowledge to providers while keeping legacy definitions executable', async () => {
     const { ToolRouter } = await import('../../tools')
     const { StreamingToolExecutor } = await import('../../streaming-tool-executor')
     const router = await ToolRouter.create('agent-a', true)
