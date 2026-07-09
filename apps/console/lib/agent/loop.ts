@@ -21,9 +21,15 @@ import { writeDebugTranscript } from './debug-logger'
 import type { AgentConfigData, CaseStatus } from '@intera/shared/types'
 import { makeUserMessage, makeInternalRuntimeMessage, buildApiMessagesWithTranscriptHealth } from './message-builder'
 import { selectPromptAndTools } from './prompt-selector'
-import { interceptToolResults, processPendingHookToolCalls as hookToolCalls, type ToolInterceptorContext } from './tool-interceptor'
+import {
+  interceptToolResults,
+  processPendingHookToolCalls as hookToolCalls,
+  refreshActiveProcedureRunForStartToolResult,
+  type ToolInterceptorContext,
+} from './tool-interceptor'
 import {
   bindProcedureRuntimeAgentConfig,
+  getActiveProcedureRun,
   latestInputEpoch,
   procedureRunPromptTail,
   recordProcedureTextReply,
@@ -142,6 +148,8 @@ export class AgentLoop {
     this.persistence = deps.persistence || (() => { const { createPrismaPersistence } = require('./persistence-port'); return createPrismaPersistence() })()
     this.traceWriter = new TraceWriter(deps.caseId, this.persistence)
     if (deps.chatId) this.traceWriter.setChatId(deps.chatId)
+    this.traceWriter.setRunId(getActiveProcedureRun(deps.caseId)?.runId ?? null)
+    this.traceWriter.setRunIdProvider(() => getActiveProcedureRun(this.deps.caseId)?.runId ?? null)
     this.dryRun = deps.dryRun ?? false
     this.memoryLifecycle = new RuntimeMemoryLifecycle({
       config: deps.config,
@@ -382,6 +390,7 @@ export class AgentLoop {
       const isConsultation = this.chatMemory.getSummary().caseStatus === 'waiting_human'
 
       await this.procedureConditionCheckpoint.run()
+      this.traceWriter.setRunId(getActiveProcedureRun(this.deps.caseId)?.runId ?? null)
 
       // Emit case progress for active Procedure cases.
       if (isCaseActive) {
@@ -679,6 +688,12 @@ export class AgentLoop {
         await this.persistTurnMemory()
         return noToolTurn.result
       }
+
+      await refreshActiveProcedureRunForStartToolResult(
+        this.buildToolInterceptorContext(),
+        toolResults,
+        sendEvent,
+      )
 
       const postToolUse = await this.postToolUsePhase.run({
         toolResults,

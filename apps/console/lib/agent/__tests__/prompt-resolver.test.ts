@@ -117,11 +117,38 @@ describe('available tools rendering', () => {
     })
 
     expect(rendered).toContain('## Available Tools')
-    expect(rendered).toContain('**Knowledge Bases**')
-    expect(rendered).toContain('faq_lookup_default: Search the FAQ knowledge base')
-    expect(rendered).toContain('**Account Lookups**')
-    expect(rendered).toContain('get_latest_deposit: Fetch the latest deposit')
-    expect(rendered).toContain('**Actions**')
-    expect(rendered).toContain('create_human_task: Request human help')
+    expect(rendered).toContain('**Knowledge**')
+    expect(rendered).toContain('KB tools: `faq_lookup_default`')
+    expect(rendered).toContain('**Member ID / Account Lookups**')
+    expect(rendered).toContain('`get_latest_deposit`')
+    expect(rendered).toContain('call `ask_user_questions`')
+    expect(rendered).toContain('**Human Handoff**')
+    expect(rendered).toContain('`create_human_task`')
+    expect(rendered).not.toContain('Search the FAQ knowledge base')
+    expect(rendered).not.toContain('Fetch the latest deposit')
+    expect(rendered).not.toContain('Request human help')
+  })
+
+  it('keeps unified KB, Procedure routing, handoff, and action constraints compact', () => {
+    const longDescription = 'Long provider schema description. '.repeat(80)
+    const rendered = resolvePrompt('{{available_tools}}', {
+      available_tools: [
+        { name: 'search_knowledge', description: longDescription, needsMemberId: false, knowledgeProvider: 'gptbots', knowledgeTool: true },
+        { name: 'start_procedure', description: longDescription, needsMemberId: false },
+        { name: 'ask_user_questions', description: longDescription, needsMemberId: false },
+        { name: 'get_latest_deposit', description: longDescription, needsMemberId: true },
+        { name: 'create_human_task', description: longDescription, needsMemberId: false },
+        { name: 'send_bonus_adjustment', description: longDescription, needsMemberId: false },
+      ],
+    })
+
+    expect(rendered.length).toBeLessThan(1200)
+    expect(rendered).toContain('Use `search_knowledge` for KB')
+    expect(rendered).toContain('Legacy override: if older instructions mention `kb_search_*`')
+    expect(rendered).toContain('Use `start_procedure`')
+    expect(rendered).toContain('call `ask_user_questions`')
+    expect(rendered).toContain('**Human Handoff**')
+    expect(rendered).toContain('**Tool Actions**')
+    expect(rendered).not.toContain('Long provider schema description')
   })
 })

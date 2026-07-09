@@ -81,6 +81,17 @@ interface LoopResult {
 // Main entry point — intercept tool results after execution
 // ---------------------------------------------------------------------------
 
+export async function refreshActiveProcedureRunForStartToolResult(
+  ctx: ToolInterceptorContext,
+  toolResults: ToolExecutionResult[],
+  sendEvent: (event: SSEEvent) => void,
+): Promise<InterceptAction | null> {
+  const startProcedureResult = toolResults.find((r) => r.name === 'start_procedure')
+  if (!startProcedureResult) return null
+  const action = await handleStartProcedure(ctx, startProcedureResult, sendEvent)
+  return action.kind === 'pass' ? null : action
+}
+
 /**
  * Process tool results that need special handling after execution.
  * Returns an action (continue/return/pass) and possibly transformed tool results.
@@ -137,6 +148,13 @@ async function handleStartProcedure(
   result: ToolExecutionResult,
   sendEvent: (event: SSEEvent) => void,
 ): Promise<InterceptAction> {
+  const existingRunId = inlineProcedureRunId(result.output)
+  if (existingRunId) {
+    ctx.traceWriter.setRunId?.(existingRunId)
+    return { kind: 'continue' }
+  }
+  if (isProcedureStartRejectedOutput(result.output)) return { kind: 'continue' }
+
   const toolInput = result.toolUse?.input || {}
   const requestedProcedureId = String(toolInput.procedureId || toolInput.caseType || '')
   let reason = String(toolInput.reason || 'The customer raised an issue that matches this procedure.')
@@ -199,6 +217,7 @@ async function handleStartProcedure(
         instruction: 'Do not claim a procedure has started. Runtime did not create a durable ProcedureRun, so ask for clarification or retry with a valid procedureId.',
       })
     }
+    ctx.traceWriter.setRunId?.(start.run.runId)
     ctx.chatMemory.setCaseStatus('investigating')
     try {
       await prisma.case.upsert({
@@ -908,6 +927,16 @@ function fallbackFormDescription(requiredFacts: string[]): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function inlineProcedureRunId(output: unknown): string | null {
+  if (!isRecord(output)) return null
+  if (output.mode !== 'inline_procedure') return null
+  return typeof output.runId === 'string' && output.runId.trim().length > 0 ? output.runId : null
+}
+
+function isProcedureStartRejectedOutput(output: unknown): boolean {
+  return isRecord(output) && output.mode === 'procedure_start_rejected'
 }
 
 function normalizeCurrentProcedureAction(raw: unknown): 'pause' | 'complete' | 'abandon' | undefined {

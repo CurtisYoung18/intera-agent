@@ -9,6 +9,7 @@ import {
   selectPromptAndTools,
   type PromptSelectorContext,
 } from '../../prompt-selector'
+import { resolvePrompt } from '../../prompt-resolver'
 import type { ConversationLoop } from '../../conversation-loop'
 import { CaseAgentLoop } from '../../case-agent-loop'
 import { createMemoryPersistence } from '../../persistence-port'
@@ -290,6 +291,30 @@ describe('R3 ToolRouter and prompt cache boundaries', () => {
     expect(after.prompt).not.toContain('action=call_tool')
     expect(after.tools.map((tool) => tool.name)).toEqual(before.tools.map((tool) => tool.name))
     closeSession(caseId)
+  })
+
+  it('keeps Available Tools compact while preserving routing constraints', () => {
+    const longDescription = 'Verbose provider description with endpoint details, examples, and parameters. '.repeat(90)
+    const prompt = resolvePrompt('CORE_PROMPT\n\n{{available_tools}}', {
+      available_tools: [
+        { name: 'search_knowledge', description: longDescription, needsMemberId: false, knowledgeProvider: 'gptbots', knowledgeTool: true },
+        { name: 'start_procedure', description: longDescription, needsMemberId: false },
+        { name: 'ask_user_questions', description: longDescription, needsMemberId: false },
+        { name: 'get_latest_deposit', description: longDescription, needsMemberId: true },
+        { name: 'create_human_task', description: longDescription, needsMemberId: false },
+        { name: 'send_bonus_adjustment', description: longDescription, needsMemberId: false },
+      ],
+    })
+
+    const toolsBlock = prompt.slice(prompt.indexOf('## Available Tools'))
+    expect(toolsBlock.length).toBeLessThan(1200)
+    expect(toolsBlock).toContain('Use `search_knowledge` for KB')
+    expect(toolsBlock).toContain('Legacy override: if older instructions mention `kb_search_*`')
+    expect(toolsBlock).toContain('Use `start_procedure`')
+    expect(toolsBlock).toContain('call `ask_user_questions`')
+    expect(toolsBlock).toContain('**Human Handoff**')
+    expect(toolsBlock).toContain('**Tool Actions**')
+    expect(toolsBlock).not.toContain('Verbose provider description')
   })
 
   it('keeps all tool schemas only when Procedure-aware filtering is explicitly disabled', () => {

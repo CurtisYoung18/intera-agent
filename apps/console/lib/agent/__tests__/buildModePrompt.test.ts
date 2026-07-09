@@ -61,6 +61,9 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     expect(result.prompt).toContain('## Current User')
     // No raw {{...}} tokens remain
     expect(result.prompt).not.toMatch(/\{\{[a-z_]+\}\}/)
+    expect(result.prompt).toContain('Full tool descriptions and parameters are in the provider tool schemas')
+    expect(result.prompt).not.toContain('Start a ProcedureRun')
+    expect(result.prompt).not.toContain('Create a human handoff task')
   })
 
   // ── No-token config still receives all injection blocks ──
@@ -131,6 +134,8 @@ describe('buildModePrompt — deterministic injection (Phase 1)', () => {
     expect(result.prompt).toContain('## Knowledge Tool Override')
     expect(result.prompt).toContain('kb_search_*')
     expect(result.prompt).not.toContain('kb_search_deposit')
+    expect(result.prompt).not.toContain('Available sources: source="deposit_bonus"')
+    expect(result.prompt).not.toContain('Deposit Bonus')
   })
 
   it('filters business and legacy tools out of the core prompt tool summary', async () => {

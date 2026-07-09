@@ -49,6 +49,7 @@ export function normalizeTraceActionType(actionType: string): ActionType | strin
 export interface TraceEntry {
   id: string
   caseId: string
+  runId?: string | null
   actionType: ActionType
   title: string
   detail?: string
@@ -82,12 +83,24 @@ function capTraceValue(value: unknown, maxChars: number): unknown {
 
 export class TraceWriter {
   private chatId: string | null = null
+  private runId: string | null = null
+  private runIdProvider: (() => string | null | undefined) | null = null
 
   constructor(private caseId: string, private persistence: PersistencePort) {}
 
   /** Set the chatId for all subsequent trace writes. */
   setChatId(chatId: string | null): void {
     this.chatId = chatId
+  }
+
+  /** Set the active ProcedureRun id for subsequent trace writes. */
+  setRunId(runId: string | null | undefined): void {
+    this.runId = runId ?? null
+  }
+
+  /** Resolve the active ProcedureRun id at write time for same-turn attribution. */
+  setRunIdProvider(provider: (() => string | null | undefined) | null): void {
+    this.runIdProvider = provider
   }
 
   async write(
@@ -109,11 +122,17 @@ export class TraceWriter {
       entry.payload = detailOrPayload as Record<string, unknown>
     }
 
+    entry.runId = traceRunIdFromPayload(entry.payload)
+      ?? this.runIdProvider?.()
+      ?? this.runId
+      ?? null
+
     // Single seam: prod → Prisma, playground → in-memory. Fire-and-forget (never block the loop).
     this.persistence.saveTrace({
       id: entry.id,
       caseId: entry.caseId,
       chatId: this.chatId,
+      runId: entry.runId,
       actionType: entry.actionType,
       title: entry.title,
       detail: entry.detail ?? null,
@@ -273,4 +292,10 @@ export class TraceWriter {
   async writeChatDeactivated(): Promise<void> {
     await this.write('chat_deactivated', 'Chat deactivated')
   }
+}
+
+function traceRunIdFromPayload(payload?: Record<string, unknown>): string | undefined {
+  if (!payload) return undefined
+  const runId = payload.runId
+  return typeof runId === 'string' && runId.trim().length > 0 ? runId : undefined
 }

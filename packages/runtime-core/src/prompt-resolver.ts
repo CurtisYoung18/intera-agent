@@ -87,25 +87,77 @@ function renderTools(tools: PromptContext['available_tools']): string {
   if (!tools?.length) return ''
   const isKnowledgeTool = (tool: NonNullable<PromptContext['available_tools']>[number]): boolean =>
     !!tool.knowledgeTool || !!tool.knowledgeSourceId || tool.name === 'search_knowledge' || tool.knowledgeProvider === 'gptbots'
-  const kbTools = tools.filter(isKnowledgeTool)
-  const lookupTools = tools.filter((tool) => !isKnowledgeTool(tool) && tool.needsMemberId)
-  const otherTools = tools.filter((tool) => !isKnowledgeTool(tool) && !tool.needsMemberId)
+  const isHumanHandoffTool = (tool: NonNullable<PromptContext['available_tools']>[number]): boolean =>
+    tool.name === 'create_human_task' || /\b(?:human|handoff|transfer|escalat)/i.test(tool.name)
+  const contextToolNames = new Set([
+    'ask_user_questions',
+    'read_chat_memory',
+    'read_user_profile',
+    'remember',
+    'get_current_time',
+  ])
+  const formatToolNames = (items: NonNullable<PromptContext['available_tools']>): string =>
+    items.map((tool) => `\`${tool.name}\``).sort((a, b) => a.localeCompare(b)).join(', ')
 
-  const lines: string[] = ['## Available Tools']
+  const kbTools = tools.filter(isKnowledgeTool)
+  const procedureTools = tools.filter((tool) => tool.name === 'start_procedure')
+  const lookupTools = tools.filter((tool) => !isKnowledgeTool(tool) && !procedureTools.includes(tool) && tool.needsMemberId)
+  const handoffTools = tools.filter((tool) => !isKnowledgeTool(tool) && !procedureTools.includes(tool) && isHumanHandoffTool(tool))
+  const contextTools = tools.filter((tool) =>
+    !isKnowledgeTool(tool)
+    && !procedureTools.includes(tool)
+    && !lookupTools.includes(tool)
+    && !handoffTools.includes(tool)
+    && contextToolNames.has(tool.name),
+  )
+  const actionTools = tools.filter((tool) =>
+    !isKnowledgeTool(tool)
+    && !procedureTools.includes(tool)
+    && !lookupTools.includes(tool)
+    && !handoffTools.includes(tool)
+    && !contextTools.includes(tool),
+  )
+
+  const lines: string[] = [
+    '## Available Tools',
+    'Full tool descriptions and parameters are in the provider tool schemas; use this prompt block only for routing discipline.',
+  ]
   if (kbTools.length) {
-    lines.push('\n**Knowledge Bases** (call for any factual question — FAQs, policies, contact info, how-to):')
-    for (const t of kbTools) lines.push(`- ${t.name}: ${t.description}`)
+    const hasUnifiedKnowledge = kbTools.some((tool) => tool.name === 'search_knowledge')
+    lines.push('\n**Knowledge**')
+    if (hasUnifiedKnowledge) {
+      lines.push('- Use `search_knowledge` for KB/FAQ/policy/contact/how-to facts; choose source from the tool schema.')
+    } else {
+      lines.push(`- KB tools: ${formatToolNames(kbTools)}.`)
+    }
     if (kbTools.some((tool) => tool.name === 'search_knowledge')) {
-      lines.push('- Override: if older instructions mention kb_search_* tools, use search_knowledge instead and choose the matching source key.')
+      lines.push('- Legacy override: if older instructions mention `kb_search_*`, call `search_knowledge` instead and choose the matching source key.')
     }
   }
-  if (lookupTools.length) {
-    lines.push('\n**Account Lookups** (all require member_id — if member_id is missing, ask_user_questions is mandatory and plain-text collection is not allowed):')
-    for (const t of lookupTools) lines.push(`- ${t.name}: ${t.description}`)
+  if (procedureTools.length) {
+    lines.push('\n**Procedure Routing**')
+    lines.push('- Use `start_procedure` when the customer needs a guided ProcedureRun; choose the procedureId from Available Procedures.')
   }
-  if (otherTools.length) {
-    lines.push('\n**Actions**:')
-    for (const t of otherTools) lines.push(`- ${t.name}: ${t.description}`)
+  if (lookupTools.length) {
+    lines.push('\n**Member ID / Account Lookups**')
+    lines.push(`- Account tools requiring member_id: ${formatToolNames(lookupTools)}.`)
+    lines.push('- If member_id or another required fact is missing, call `ask_user_questions`; do not collect it with plain text only.')
+  }
+  if (!lookupTools.length && contextTools.some((tool) => tool.name === 'ask_user_questions')) {
+    lines.push('\n**Required Facts**')
+    lines.push('- If member_id or another required fact is missing, call `ask_user_questions`; do not collect it with plain text only.')
+  }
+  if (handoffTools.length) {
+    lines.push('\n**Human Handoff**')
+    lines.push(`- Handoff tools: ${formatToolNames(handoffTools)}. Use them for durable human transfer/escalation when evidence, Hooks, or customer need requires it.`)
+  }
+  if (actionTools.length) {
+    lines.push('\n**Tool Actions**')
+    lines.push(`- Other action tools: ${formatToolNames(actionTools)}. Follow the active Procedure, Hook feedback, and tool schema before using them.`)
+  }
+  if (contextTools.length) {
+    lines.push('\n**Context / Memory**')
+    lines.push(`- Context tools: ${formatToolNames(contextTools)}.`)
   }
   return lines.join('\n')
 }
