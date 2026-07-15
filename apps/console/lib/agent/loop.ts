@@ -184,6 +184,7 @@ export class AgentLoop {
       getCurrentStage: () => this.currentStage,
     })
     this.humanTaskHandoffHandler = new HumanTaskHandoffHandler({
+      config: deps.config,
       traceWriter: this.traceWriter,
       getMessages: () => this.messages,
       addMessage: (message) => this.messages.push(message),
@@ -471,7 +472,9 @@ export class AgentLoop {
       if (!assistantMessage) {
         throw new Error(`No assistant message received${streamFatalError ? `: ${streamFatalError}` : ''}`)
       }
-      assistantMessage.content = fullText
+      const hasProviderToolUse = [...blocks.values()].some((block) => block.type === 'tool_use')
+      const customerVisibleText = hasProviderToolUse ? '' : fullText
+      assistantMessage.content = customerVisibleText
       assistantMessage.isStreaming = false
 
       // ── Wait for all tools to finish ─────────────────────────
@@ -485,10 +488,21 @@ export class AgentLoop {
         this.pendingHumanTaskEscalation = toolCompletion.pendingHumanTaskEscalation
       }
 
+      if (hasProviderToolUse && fullText.trim()) {
+        discardVisibleText()
+        await this.traceWriter.write('loop_decision', 'Provider Tool-turn text withheld from customer', {
+          iteration: this.iterationCount,
+          characterCount: fullText.length,
+          toolNames: [...blocks.values()]
+            .filter((block) => block.type === 'tool_use')
+            .map((block) => block.name),
+        })
+      }
+
       let stopBlockedThisIteration = false
-      if (fullText.trim().length > 0) {
+      if (customerVisibleText.trim().length > 0) {
         const textReplyRuntime = recordProcedureTextReply(this.deps.caseId, {
-          text: fullText,
+          text: customerVisibleText,
           basedOnInputEpoch: iterationBasedOnInputEpoch,
           alreadyStreamed: false,
         })
@@ -620,6 +634,7 @@ export class AgentLoop {
         finalizeStreamingProviderToolTurn({
           messages: this.messages,
           assistantMessage,
+          providerText: hasProviderToolUse ? fullText : undefined,
           blocks,
           toolResults,
           missingReasons,
@@ -668,7 +683,7 @@ export class AgentLoop {
 
       if (toolResults.length === 0) {
         const noToolTurn = await this.noToolTurnHandler.handle({
-          fullText,
+          fullText: customerVisibleText,
           nudgeCount: this.nudgeCount,
           iterationCount: this.iterationCount,
           assistantMessage,
@@ -731,6 +746,7 @@ export class AgentLoop {
           this.iterationCount,
           nudgeBox,
           sendEvent,
+          customerVisibleText,
         )
         this.nudgeCount = nudgeBox.value
         if (caseToolResult.type === 'terminal') {
@@ -743,7 +759,7 @@ export class AgentLoop {
       if (this.pendingHumanTaskEscalation) {
         const pending = this.pendingHumanTaskEscalation
         this.pendingHumanTaskEscalation = null
-        const handoffResult = await this.humanTaskHandoffHandler.complete(pending, fullText, sendEvent)
+        const handoffResult = await this.humanTaskHandoffHandler.complete(pending, customerVisibleText, sendEvent)
         await this.persistTurnMemory()
         return handoffResult
       }

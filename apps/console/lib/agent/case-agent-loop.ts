@@ -23,6 +23,8 @@ import {
 import { normalizeHumanHandoffNotePayload } from './human-handoff'
 import { makeInternalRuntimeMessage } from './message-builder'
 import { isKnowledgeToolDefinition, isUnifiedKnowledgeToolName } from './knowledge-tooling'
+import { ensureRuntimeHandoffReceipt } from './human-task-handoff-handler'
+import { ensureRuntimeCustomerReply } from './runtime-customer-reply'
 
 export interface CaseLoopServices {
   caseId: string
@@ -149,20 +151,21 @@ export class CaseAgentLoop {
     iterationCount: number,
     _nudgeCount: { value: number },
     sendEvent: (event: SSEEvent) => void,
+    customerVisibleText = '',
   ): Promise<CaseToolResult> {
     const humanTaskResult = toolResults.find((result) => result.name === 'create_human_task')
     if (humanTaskResult) {
-      return this.handleCreateHumanTask(humanTaskResult, iterationCount, sendEvent)
+      return this.handleCreateHumanTask(humanTaskResult, iterationCount, sendEvent, customerVisibleText)
     }
 
     const finalizeResult = toolResults.find((result) => result.name === 'finalize_procedure')
     if (finalizeResult) {
-      return this.handleFinalizeCase(finalizeResult, sendEvent)
+      return this.handleFinalizeCase(finalizeResult, sendEvent, customerVisibleText)
     }
 
     const consultResult = toolResults.find((result) => result.name === 'finalize_consultation')
     if (consultResult) {
-      return this.handleFinalizeConsultation(consultResult, sendEvent)
+      return this.handleFinalizeConsultation(consultResult, sendEvent, customerVisibleText)
     }
 
     return { type: 'none' }
@@ -197,6 +200,7 @@ export class CaseAgentLoop {
     humanTaskResult: ToolExecutionResult,
     iterationCount: number,
     sendEvent: (event: SSEEvent) => void,
+    customerVisibleText: string,
   ): Promise<CaseToolResult> {
     const toolInput = humanTaskResult.toolUse?.input || {}
     const queue = String(toolInput.queue || 'general')
@@ -344,6 +348,13 @@ export class CaseAgentLoop {
           }
         }
 
+        ensureRuntimeHandoffReceipt({
+          customerVisibleText,
+          config: this.services.config,
+          messages: this.services.getMessages(),
+          addMessage: this.services.addMessage,
+          sendEvent,
+        })
         sendEvent({
           type: 'human_task_created',
           data: { taskId: task.id, queue, question, status: 'pending', ...handoffNote },
@@ -433,8 +444,10 @@ export class CaseAgentLoop {
   private async handleFinalizeCase(
     finalizeResult: ToolExecutionResult,
     sendEvent: (event: SSEEvent) => void,
+    customerVisibleText: string,
   ): Promise<CaseToolResult> {
     const finalizedPayload = unwrapToolExecutionPayload(finalizeResult.output)
+    const conclusion = readTerminalReply(finalizedPayload, finalizeResult.toolUse?.input, 'conclusion')
     if (
       finalizedPayload &&
       typeof finalizedPayload === 'object' &&
@@ -472,7 +485,7 @@ export class CaseAgentLoop {
           text: event.text,
           source: event.source,
         })),
-        replyDraft: typeof finalizedPayload === 'string' ? finalizedPayload : JSON.stringify(finalizedPayload),
+        replyDraft: conclusion || (typeof finalizedPayload === 'string' ? finalizedPayload : JSON.stringify(finalizedPayload)),
         metadata: {
           currentStage: this._currentStage,
           terminalTool: finalizeResult.name,
@@ -517,6 +530,12 @@ export class CaseAgentLoop {
       console.error('[CaseAgentLoop] Failed to persist case resolution:', err)
     }
 
+    ensureRuntimeCustomerReply({
+      customerVisibleText,
+      runtimeText: conclusion,
+      addMessage: this.services.addMessage,
+      sendEvent,
+    })
     sendEvent({ type: 'finalized', data: finalizedPayload, timestamp: new Date().toISOString() })
     return {
       type: 'terminal',
@@ -532,6 +551,7 @@ export class CaseAgentLoop {
   private async handleFinalizeConsultation(
     consultResult: ToolExecutionResult,
     sendEvent: (event: SSEEvent) => void,
+    customerVisibleText: string,
   ): Promise<CaseToolResult> {
     const toolInput = (consultResult.toolUse?.input || {}) as Record<string, unknown>
     const output = unwrapToolExecutionPayload(consultResult.output) as Record<string, unknown> | undefined
@@ -555,6 +575,12 @@ export class CaseAgentLoop {
       console.error('[CaseAgentLoop] Failed to finalize consultation:', err)
     }
 
+    ensureRuntimeCustomerReply({
+      customerVisibleText,
+      runtimeText: summary,
+      addMessage: this.services.addMessage,
+      sendEvent,
+    })
     sendEvent({
       type: 'consultation_complete',
       data: { summary, resolution },
@@ -570,4 +596,18 @@ export class CaseAgentLoop {
       },
     }
   }
+}
+
+function readTerminalReply(
+  output: unknown,
+  input: Record<string, unknown> | undefined,
+  field: string,
+): string {
+  if (output && typeof output === 'object' && !Array.isArray(output)) {
+    const value = (output as Record<string, unknown>)[field]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  const inputValue = input?.[field]
+  if (typeof inputValue === 'string' && inputValue.trim()) return inputValue.trim()
+  return typeof output === 'string' ? output.trim() : ''
 }

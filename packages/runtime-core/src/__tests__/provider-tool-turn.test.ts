@@ -74,6 +74,35 @@ describe('provider-tool-turn', () => {
     ])).not.toThrow()
   })
 
+  it('preserves withheld Tool-turn text in an internal provider transcript', () => {
+    const assistantMessage = assistant('')
+    const turn = finalizeProviderToolTurn({
+      assistantMessage,
+      providerText: 'search_knowledge to=general {"query":"deposit status"}',
+      toolUseBlocks: [
+        { type: 'tool_use', id: 'toolu_internal', name: 'search_knowledge', content: '{"query":"deposit status"}' },
+      ],
+      completedResults: [
+        { toolUseId: 'toolu_internal', output: { ok: true }, isError: false },
+      ],
+      missingReasons: new Map(),
+      pendingHookFeedback: [],
+      createId: () => 'msg-tool-result',
+      createdAt: CREATED_AT,
+    })
+
+    expect(turn.assistantMessage.content).toBe('')
+    expect(turn.assistantMessage.providerContent).toEqual([
+      { type: 'text', text: 'search_knowledge to=general {"query":"deposit status"}' },
+      { type: 'tool_use', id: 'toolu_internal', name: 'search_knowledge', input: { query: 'deposit status' } },
+    ])
+    expect(turn.assistantMessage.providerMeta).toMatchObject({
+      transcriptKind: 'assistant_response',
+      visibility: 'internal',
+      toolUseIds: ['toolu_internal'],
+    })
+  })
+
   it('synthesizes missing tool results before hook feedback messages', () => {
     const missingReasons = new Map<string, SynthesisReason>([['toolu_blocked', 'hook_blocked']])
     const turn = finalizeProviderToolTurn({

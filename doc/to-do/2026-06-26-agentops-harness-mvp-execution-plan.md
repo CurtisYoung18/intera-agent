@@ -606,3 +606,14 @@ Run narrow tests first, then typecheck/build/full tests when feasible.
 
 Final response must include changes, files changed, tests run, skipped tests, risks, follow-ups, and acceptance evidence.
 ```
+
+## 11. Runtime Safety Fix Ledger
+
+### 2026-07-15 — Provider Tool-turn text visibility
+
+- **Production evidence:** J1N emitted provider Tool syntax as customer-visible LiveChat text while the valid Tool call also executed successfully. The model/provider triggered the malformed mixed response; the harness exposed it.
+- **Runtime contract:** when an assistant response contains `tool_use`, same-iteration text is internal provider transcript only. It must not enter customer SSE, persisted customer message content, Procedure text evidence, or Stop Hook evaluation.
+- **Terminal Tool contract:** runtime-managed terminal Tools own their customer-visible receipt. `create_human_task` emits a locale-aware safe handoff message; `finalize_procedure` emits typed `conclusion`; `finalize_consultation` emits typed `summary`.
+- **Observability:** withheld turns write `Provider Tool-turn text withheld from customer` with Tool names and character count, without copying raw text into the trace payload.
+- **Verification:** focused regression tests pass; runtime-core boundary passes; production console build passes; related agent/runtime-core suite passes with the three known unrelated failing files excluded.
+- **Delivery state:** fixed and verified locally. Not committed, pushed, or deployed; production remains unchanged pending an explicit deployment request and rollback gate.

@@ -528,6 +528,39 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(memory.traces.some((trace) => trace.actionType === 'escalated')).toBe(true)
   })
 
+  it('keeps same-iteration Tool text internal and only streams the final answer', async () => {
+    const engine = new HookEngine('agent_1')
+    const leakedToolText = 'search_knowledge to=general {"query":"deposit status"}'
+    const finalAnswer = 'Your deposit is still being reviewed.'
+    const { loop, memory, events, sendEvent } = makeLoop(engine, [
+      mockTextAndToolUseStream(leakedToolText, 'test_lookup', { id: '123' }, 'tool_lookup'),
+      mockTextStream(finalAnswer),
+    ])
+
+    const result = await loop.run('please check my deposit', sendEvent)
+
+    expect(result.transition).toBe('next_turn')
+    const streamedText = events
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).toBe(finalAnswer)
+
+    const providerToolMessage = result.messages.find((message) =>
+      message.role === 'assistant' && message.toolUses?.some((toolUse) => toolUse.id === 'tool_lookup')
+    )
+    expect(providerToolMessage?.content).toBe('')
+    expect(providerToolMessage?.providerContent).toEqual(expect.arrayContaining([
+      { type: 'text', text: leakedToolText },
+      { type: 'tool_use', id: 'tool_lookup', name: 'test_lookup', input: { id: '123' } },
+    ]))
+    expect(providerToolMessage?.providerMeta).toMatchObject({ visibility: 'internal' })
+    expect(memory.traces.some((trace) =>
+      trace.actionType === 'loop_decision' &&
+      trace.title === 'Provider Tool-turn text withheld from customer'
+    )).toBe(true)
+  })
+
   it('explicit create_human_task in general mode creates a durable waiting_human handoff', async () => {
     const engine = new HookEngine('agent_1')
     const { loop, memory, events, sendEvent } = makeLoop(engine, [
@@ -583,7 +616,7 @@ describe('AgentLoop Hook checkpoints', () => {
     expect(events.some((event) => event.type === 'escalated')).toBe(false)
   })
 
-  it('keeps the model-authored handoff receipt when create_human_task is called in the same turn', async () => {
+  it('replaces same-iteration model handoff text with a runtime-owned safe receipt', async () => {
     const defaultHook = DEFAULT_HOOKS.find((hook) => hook.name === 'human_handoff_promise_requires_task')
     expect(defaultHook).toBeDefined()
     const engine = new HookEngine('agent_1')
@@ -606,12 +639,14 @@ describe('AgentLoop Hook checkpoints', () => {
       .filter((event) => event.type === 'text_delta')
       .map((event) => String(event.data))
       .join('')
-    expect(streamedText).toContain(modelReceipt)
+    expect(streamedText).not.toContain(modelReceipt)
+    expect(streamedText).toContain('human specialist')
     const assistantMessages = result.messages.filter((message) => message.role === 'assistant').map((message) => String(message.content))
-    expect(assistantMessages.join('\n')).toContain(modelReceipt)
+    expect(assistantMessages.join('\n')).not.toContain(modelReceipt)
+    expect(assistantMessages.join('\n')).toContain('human specialist')
     expect(memory.traces.some((trace) =>
       trace.actionType === 'loop_decision' &&
-      trace.title === 'Hook checkpoint Stop: allow'
+      trace.title === 'Provider Tool-turn text withheld from customer'
     )).toBe(true)
   })
 

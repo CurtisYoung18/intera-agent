@@ -5,7 +5,7 @@ import type { ToolExecutionResult } from '../../streaming-tool-executor'
 const h = vi.hoisted(() => ({
   prisma: {
     organization: { upsert: vi.fn() },
-    case: { upsert: vi.fn() },
+    case: { upsert: vi.fn(), update: vi.fn() },
     chatMemory: { upsert: vi.fn() },
     humanTask: {
       findFirst: vi.fn(),
@@ -37,6 +37,7 @@ function makeLoop(input: {
     write: vi.fn(async () => {}),
     writeHumanTaskCreated: vi.fn(async () => {}),
     writeEscalated: vi.fn(async () => {}),
+    writeFinalResolution: vi.fn(async () => {}),
   }
 
   const loop = new CaseAgentLoop(
@@ -56,7 +57,10 @@ function makeLoop(input: {
       chatId: input.chatId,
       config: {} as any,
       chatMemory,
-      getHookEngine: () => ({ getHookNames: () => [] }) as any,
+      getHookEngine: () => ({
+        getHookNames: () => [],
+        evaluate: vi.fn(async () => ({ summary: 'allow', results: [] })),
+      }) as any,
       traceWriter: traceWriter as any,
       toolRouter: { getToolDefinitions: () => [] } as any,
       getMessages: () => messages,
@@ -66,7 +70,7 @@ function makeLoop(input: {
     },
   )
 
-  return { loop, chatMemory, traceWriter }
+  return { loop, chatMemory, traceWriter, messages }
 }
 
 function humanTaskToolResult(question: string): ToolExecutionResult {
@@ -87,12 +91,28 @@ function humanTaskToolResult(question: string): ToolExecutionResult {
   } as ToolExecutionResult
 }
 
+function finalizeProcedureToolResult(conclusion: string): ToolExecutionResult {
+  return {
+    name: 'finalize_procedure',
+    latencyMs: 8,
+    output: { ok: true, output: { ok: true, status: 'completed', conclusion }, latencyMs: 8 },
+    toolUse: {
+      id: 'toolu_finalize_procedure',
+      name: 'finalize_procedure',
+      input: { status: 'completed', conclusion },
+      status: 'completed',
+    },
+  } as ToolExecutionResult
+}
+
 describe('CaseAgentLoop create_human_task attribution', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     clearSessionsForTest()
+    h.prisma.humanTask.findFirst.mockReset()
     h.prisma.organization.upsert.mockResolvedValue({})
     h.prisma.case.upsert.mockResolvedValue({})
+    h.prisma.case.update.mockResolvedValue({})
     h.prisma.chatMemory.upsert.mockResolvedValue({})
     h.prisma.humanTask.findFirst
       .mockResolvedValueOnce(null)
@@ -172,6 +192,65 @@ describe('CaseAgentLoop create_human_task attribution', () => {
       expect(args.update).not.toHaveProperty('agentConfigId')
       expect(args.create).not.toHaveProperty('agentConfigId')
     }
+  })
+
+  it('emits a runtime-owned handoff receipt when the Procedure Tool turn has no customer-visible text', async () => {
+    const { loop, messages } = makeLoop({
+      caseId: 'case-safe-receipt',
+      orgId: 'org-safe-receipt',
+      agentConfigId: 'agent-config-safe-receipt',
+      userId: 'user-safe-receipt',
+      chatId: 'chat-safe-receipt',
+    })
+    const sendEvent = vi.fn()
+
+    const result = await loop.handleCaseTerminalTools(
+      [humanTaskToolResult('Please review this case.')],
+      1,
+      { value: 0 },
+      sendEvent,
+      '',
+    )
+
+    expect(result.type).toBe('terminal')
+    const streamedText = sendEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).toContain('human specialist')
+    expect(messages.some((message) =>
+      message.role === 'assistant' && String(message.content).includes('human specialist')
+    )).toBe(true)
+  })
+
+  it('emits the typed Procedure conclusion when finalization Tool text is internal', async () => {
+    const conclusion = 'Your deposit has been credited successfully.'
+    const { loop, messages } = makeLoop({
+      caseId: 'case-safe-finalization',
+      orgId: 'org-safe-finalization',
+      agentConfigId: 'agent-config-safe-finalization',
+      userId: 'user-safe-finalization',
+      chatId: 'chat-safe-finalization',
+    })
+    const sendEvent = vi.fn()
+
+    const result = await loop.handleCaseTerminalTools(
+      [finalizeProcedureToolResult(conclusion)],
+      1,
+      { value: 0 },
+      sendEvent,
+      '',
+    )
+
+    expect(result.type).toBe('terminal')
+    const streamedText = sendEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'text_delta')
+      .map((event) => String(event.data))
+      .join('')
+    expect(streamedText).toBe(conclusion)
+    expect(messages.some((message) => message.role === 'assistant' && message.content === conclusion)).toBe(true)
   })
 
   it('omits runId when the active ProcedureRun belongs to another AgentConfig', async () => {

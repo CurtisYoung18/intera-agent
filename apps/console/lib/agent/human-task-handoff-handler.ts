@@ -1,7 +1,8 @@
-import type { AssistantMessage, CaseStatus, Message, SSEEvent } from '@intera/shared/types'
-import { escalationMessageFor, latestUserText } from './customer-messages'
+import type { AgentConfigData, CaseStatus, Message, SSEEvent } from '@intera/shared/types'
+import { escalationMessageForRuntime, latestUserText } from './customer-messages'
 import type { TraceWriter } from './trace'
 import type { HumanHandoffNotePayload } from './human-handoff'
+import { ensureRuntimeCustomerReply } from './runtime-customer-reply'
 
 export interface PendingHumanTaskEscalation {
   taskId: string
@@ -19,11 +20,33 @@ export type HumanTaskHandoffResult = {
 }
 
 export interface HumanTaskHandoffHandlerDeps {
+  config: AgentConfigData
   traceWriter: TraceWriter
   getMessages: () => Message[]
   addMessage: (message: Message) => void
   createId?: () => string
   now?: () => Date
+}
+
+export interface RuntimeHandoffReceiptInput {
+  customerVisibleText: string
+  config: AgentConfigData
+  messages: Message[]
+  addMessage: (message: Message) => void
+  sendEvent: (event: SSEEvent) => void
+  createId?: () => string
+  now?: () => Date
+}
+
+export function ensureRuntimeHandoffReceipt(input: RuntimeHandoffReceiptInput): void {
+  ensureRuntimeCustomerReply({
+    customerVisibleText: input.customerVisibleText,
+    runtimeText: escalationMessageForRuntime(latestUserText(input.messages), input.config),
+    addMessage: input.addMessage,
+    sendEvent: input.sendEvent,
+    createId: input.createId,
+    now: input.now,
+  })
 }
 
 export class HumanTaskHandoffHandler {
@@ -36,22 +59,15 @@ export class HumanTaskHandoffHandler {
   ): Promise<HumanTaskHandoffResult> {
     const { taskId, queue, question, handoffNote } = pending
 
-    if (!fullText.trim()) {
-      const safeMessage = escalationMessageFor(latestUserText(this.deps.getMessages()))
-      const fallbackMessage: AssistantMessage = {
-        id: this.createId(),
-        role: 'assistant',
-        content: safeMessage,
-        createdAt: this.deps.now?.() ?? new Date(),
-        isStreaming: false,
-      }
-      this.deps.addMessage(fallbackMessage)
-      sendEvent({
-        type: 'text_delta',
-        data: safeMessage,
-        timestamp: this.timestamp(),
-      })
-    }
+    ensureRuntimeHandoffReceipt({
+      customerVisibleText: fullText,
+      config: this.deps.config,
+      messages: this.deps.getMessages(),
+      addMessage: this.deps.addMessage,
+      sendEvent,
+      createId: this.deps.createId,
+      now: this.deps.now,
+    })
 
     sendEvent({
       type: 'human_task_created',
@@ -83,10 +99,6 @@ export class HumanTaskHandoffHandler {
       currentStage: 'waiting_human',
       reason: 'human_task_created',
     }
-  }
-
-  private createId(): string {
-    return this.deps.createId?.() ?? crypto.randomUUID()
   }
 
   private timestamp(): string {

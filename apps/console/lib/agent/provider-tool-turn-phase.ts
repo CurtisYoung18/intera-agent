@@ -10,6 +10,7 @@ import type { ToolExecutionResult } from './streaming-tool-executor'
 export interface ProviderToolTurnPhaseInput {
   messages: Message[]
   assistantMessage: AssistantMessage
+  providerText?: string
   blocks: Map<number, StreamContentBlock>
   toolResults: ToolExecutionResult[]
   missingReasons: Map<string, SynthesisReason>
@@ -20,6 +21,7 @@ export interface ProviderToolTurnPhaseInput {
 export function finalizeStreamingProviderToolTurn(input: ProviderToolTurnPhaseInput): void {
   const providerToolTurn = finalizeProviderToolTurn({
     assistantMessage: input.assistantMessage,
+    providerText: input.providerText,
     toolUseBlocks: [...input.blocks.values()],
     completedResults: input.toolResults.map((result) => ({
       toolUseId: result.toolUse?.id ?? result.name,

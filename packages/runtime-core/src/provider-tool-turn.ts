@@ -28,6 +28,7 @@ export interface CompletedProviderToolResult {
 
 export interface FinalizeProviderToolTurnInput {
   assistantMessage: AssistantMessage
+  providerText?: string
   toolUseBlocks: ProviderToolUseBlock[]
   completedResults: CompletedProviderToolResult[]
   missingReasons: Map<string, SynthesisReason>
@@ -45,13 +46,14 @@ export interface FinalizedProviderToolTurn {
 export function finalizeProviderToolTurn(input: FinalizeProviderToolTurnInput): FinalizedProviderToolTurn {
   const toolUses = buildProviderToolUses(input.toolUseBlocks)
   const messagesToAppend: Message[] = []
+  const providerText = input.providerText ?? input.assistantMessage.content
 
   input.assistantMessage.toolUses = toolUses.length > 0 ? toolUses : undefined
-  input.assistantMessage.providerContent = assistantProviderContent(input.assistantMessage.content, toolUses)
+  input.assistantMessage.providerContent = assistantProviderContent(providerText, toolUses)
   if (input.assistantMessage.providerContent?.length) {
     input.assistantMessage.providerMeta = makeProviderMeta({
       providerFamily: 'anthropic',
-      visibility: 'customer',
+      visibility: input.assistantMessage.content.trim() ? 'customer' : 'internal',
       transcriptKind: 'assistant_response',
       toolUseIds: toolUses.map((toolUse) => toolUse.id),
     })
