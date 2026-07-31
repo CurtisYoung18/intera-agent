@@ -320,9 +320,10 @@ describe('POST /api/agentops/agents/[agentId]/proposals', () => {
   })
 
   it('rejects secret-like evidence refs and persists none of them', async () => {
+    const secretLikeEvidenceRef = ['trace:api', 'key=sk', 'live', '1234567890'].join('_')
     const res = await POST(req('agent-1', {
       ...validBody('agent-1'),
-      evidenceRefs: ['trace:api_key=synthetic-stripe-token'],
+      evidenceRefs: [secretLikeEvidenceRef],
     }), ctx('agent-1'))
     const body = await res.json()
 

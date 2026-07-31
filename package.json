@@ -1,5 +1,7 @@
 {
   "name": "intera-agent",
+  "description": "Agent-native control plane for customer-support AI",
+  "license": "Apache-2.0",
   "private": true,
   "workspaces": [
     "apps/runtime",

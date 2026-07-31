@@ -69,10 +69,11 @@ describe('AgentOps proposal create contract', () => {
   })
 
   it('rejects oversized, raw-looking, or secret-like evidence payloads', () => {
+    const stripeLikeSecret = ['sk', 'live', '1234567890'].join('_')
     const badEvidenceRefs = [
       `chat:${'x'.repeat(170)}`,
       'debug:{"messages":[{"content":"raw"}]}',
-      'trace:api_key=synthetic-stripe-token',
+      `trace:api_key=${stripeLikeSecret}`,
       `trace:${'a'.repeat(100)}`,
     ]
 

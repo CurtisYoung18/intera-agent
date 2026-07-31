@@ -603,6 +603,8 @@ describe('buildChatForensicPack', () => {
   })
 
   it('drops unknown trace detail and payload text that may contain provider secrets', async () => {
+    const futureSecret = ['future', 'secret'].join('-')
+    const payloadSecret = ['payload', 'secret'].join('-')
     const repo = createRepo({
       traces: [{
         id: 'trace-future-debug',
@@ -612,9 +614,9 @@ describe('buildChatForensicPack', () => {
         runId: 'run-1',
         actionType: 'future_provider_debug',
         title: 'Future provider debug',
-        detail: 'Authorization: Bearer test provider_trace_id=ptr_detail_123',
+        detail: `Authorization: Bearer ${futureSecret} provider_trace_id=ptr_detail_123`,
         payload: JSON.stringify({
-          diagnostic: 'Authorization: Bearer test provider_trace_id=ptr_payload_456',
+          diagnostic: `Authorization: Bearer ${payloadSecret} provider_trace_id=ptr_payload_456`,
           provider_trace_id: 'ptr_payload_456',
         }),
         createdAt: new Date('2026-06-26T00:00:07.000Z'),
@@ -628,8 +630,8 @@ describe('buildChatForensicPack', () => {
     expect(json).not.toContain('Authorization')
     expect(json).not.toContain('Bearer')
     expect(json).not.toContain('provider_trace_id')
-    expect(json).not.toContain('test')
-    expect(json).not.toContain('test')
+    expect(json).not.toContain(futureSecret)
+    expect(json).not.toContain(payloadSecret)
     expect(json).not.toContain('ptr_detail_123')
     expect(json).not.toContain('ptr_payload_456')
   })

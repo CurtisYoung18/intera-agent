@@ -1,77 +1,117 @@
-# Intera — AI 客服 SaaS 平台
+# Intera
 
-Intera 是一个以 **AI Agent 为核心**的多租户智能客服 SaaS。客户发起对话后，Agent 会围绕 **Chat / User / ProcedureRun / HumanTask / Trace / Memory** 推进问题：检索知识、调用 Tools、追问澄清、在 Hook 命中时升级人工，并把过程留成可验证的运行时证据。底层仍暂保留 durable `Case` shell 来兼容现有 message/trace 持久化，但这不再是产品层主概念。
+<p align="center">
+  <img src="doc/assets/intera-readme-cover.png" alt="Intera agent operations pathway" width="100%" />
+</p>
 
-当前 Console 的真实产品壳是：登录后默认进入 **Build -> Pilot Lab**，其中 `Pilot` 负责对话式构建，`Playground` 保留 dry-run 与 TraceSidebar 调试能力；**Release** 拥有版本与 package 动作；**ConfigPilot** 只存在于 Pilot Lab 内，不再作为全局 drawer。
+<p align="center">
+  <strong>An agent-native control plane for building and operating customer-support AI.</strong>
+</p>
 
-长期目标：Intera Console 要成为 **客服 Agent 的 AgentOps Workbench**。第一阶段的对话式工具命名为 **ConfigPilot**：交付人员可以用自然语言检查、调优、测试并直接配置一个 Intera Agent，但它不开放服务器 shell、不读写服务器文件，只通过 typed admin / scenario / trace APIs 修改 Procedure、Tools、Hooks、Human Transfer，并输出 diff、验证记录和回滚路径。
+<p align="center">
+  <a href="LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-0b7285" /></a>
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6" />
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-15-111111" />
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16-336791" />
+</p>
 
-**技术栈**：Next.js 15 monorepo（`apps/console` + `packages/shared`）· TypeScript · Prisma 6 + PostgreSQL · 自托管 Ubuntu，服务 `demo.anytrans.ai`。
+Intera is an open-source reference implementation of an AI customer-support
+platform built around **governed agent execution**. It connects model reasoning
+to durable procedures, business tools, runtime hooks, human handoff, memory,
+traces, validation scenarios, and reviewable releases.
 
-> 架构细节、当前状态与路线图见 [`doc/handoffs/MASTER_BUILD_HANDOFF.md`](doc/handoffs/MASTER_BUILD_HANDOFF.md)。
+The model is free to reason. The runtime decides what may execute, records what
+happened, and keeps every customer-facing action attributable.
 
-## 本地运行
+> 中文简介：Intera 是一套面向客服 Agent 的 AgentOps 控制平面，让模型推理、
+> 业务工具、流程约束、人工接管和运行证据成为同一个可审计系统。
 
-需要 **Node.js 18+**、npm、Docker（本地 Postgres）。
+## Why Intera
 
-### 1. 安装依赖
-```bash
-npm install
+Most agent products optimize for producing an answer. Customer support also
+needs operational guarantees:
+
+- a clear owner for each live conversation
+- durable state across multi-turn procedures
+- typed tools with hard pre- and post-execution controls
+- structured forms and human escalation
+- replayable scenarios before a configuration is released
+- traces that explain decisions without exposing hidden provider payloads
+- versioned configuration with review, activation, and rollback semantics
+
+Intera treats those guarantees as the product, not as logging added around a
+chatbot.
+
+## Product Surface
+
+| Area | Purpose |
+| --- | --- |
+| **Pilot Lab** | Build and refine an Agent through guided conversation and a trace-aware playground. |
+| **Procedures** | Describe issue-specific handling while preserving model judgment. |
+| **Tools & Hooks** | Connect business capabilities and enforce hard runtime checkpoints. |
+| **Scenario Lab** | Exercise draft behavior and retain validation receipts. |
+| **Operate** | Inspect conversations, ProcedureRuns, traces, memory, and human tasks. |
+| **Release** | Review version diffs and control which Agent configuration is active. |
+| **AgentOps Control Plane** | Give external coding agents scoped evidence, typed proposals, replay, and review APIs. |
+
+## Runtime Model
+
+<p align="center">
+  <img src="doc/assets/intera-agentops-overview.png" alt="Intera AgentOps architecture" width="100%" />
+</p>
+
+```text
+Customer message
+  -> channel adapter
+  -> discovery
+  -> ProcedureRun
+  -> reasoning and tool selection
+  -> Hook evaluation
+  -> tool result and durable evidence
+  -> customer reply or human handoff
 ```
 
-### 2. 起本地数据库（Postgres 16）
-```bash
-docker compose up -d        # postgres:16，用户/密码/库均为 intera
-```
+A `Procedure` is a soft operational guide, not a rigid flowchart. A
+`ProcedureRun` owns the changing state of one issue. `Hooks` form the hard
+control layer around tool use and completion. Runtime input epochs prevent stale
+tool results or stale generated text from advancing a conversation after newer
+customer input arrives.
 
-### 3. 配置环境变量
-```bash
-cp .env.example .env
-cp apps/console/.env.example apps/console/.env.local
-```
-至少填：
-- `DATABASE_URL=postgresql://intera:intera@localhost:5432/intera`
-- `SESSION_SECRET=`（session 签名密钥）
-- 至少一个 LLM key + 其 base URL：`ANTHROPIC_AUTH_TOKEN` / `MINIMAX_API_KEY` / `DEEPSEEK_API_KEY`
-- `STAFF_PASSWORD=`（破窗 / bootstrap 登录）
+## Agent-Native By Design
 
-> Google SSO + 邀请制为可选，需额外的 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` / `INVITE_TOKEN_SECRET`。完整清单以 `.env.example` 为准。
+Intera separates intelligence from authority:
 
-### 4. 建表 + 种子
-```bash
-npm run db:push    # 按 schema 建表
-npm run db:seed    # 写入 default Organization + 演示 Agent 配置 / Tools / Hooks / CaseTypes
-```
-> `db:seed` 不是可选：它提供 `id='default'` 的组织和完整演示数据。
+1. **Models propose.** The Agent reasons, selects procedures, calls tools, and
+   drafts responses.
+2. **Runtime governs.** Typed contracts, ownership checks, hooks, and durable
+   state decide what can happen.
+3. **Evidence accumulates.** Messages, tool activity, traces, memory, human
+   tasks, and scenario receipts remain inspectable.
+4. **Changes are reviewable.** External coding agents submit typed draft
+   proposals rather than mutating a live Agent directly.
+5. **Humans retain control.** High-risk actions can be blocked, rewritten, or
+   transferred with a structured internal brief.
 
-### 5. 启动
-```bash
-npm run dev:console   # 控制台 (localhost:3001)
-```
+## Repository Map
 
-## 构建 & 部署
-```bash
-npm run build:console
-git push deploy main           # post-receive hook → scripts/deploy.sh
-```
+| Path | Contents |
+| --- | --- |
+| `apps/console` | Next.js operator console, APIs, channel adapters, and Agent workspaces |
+| `apps/runtime` | Internal runtime service |
+| `packages/runtime-core` | Shared execution and orchestration logic |
+| `packages/shared` | Contracts, types, memory helpers, UI primitives, and Prisma schema |
+| `templates` | Portable Agent template examples |
+| `doc/spec` | Product architecture and design specifications |
+| `scripts` | Validation, boundary checks, receipts, and operational tooling |
 
-## 调试功能
+## Project Status
 
-### Debug Mode
-在 Console 的 Brain 工作台开启 `Debug Mode`，每次 LLM 调用的完整 request/response payload 写入 `debug-logs/<caseId>/`。无需重启，实时生效。
+Intera began as a production-backed exploration of agent-native customer
+support. The original hosted environment has been archived; this repository is
+published as a code and architecture reference for further development. It does
+not include tenant data, production credentials, or the archived production
+environment.
 
-### ProcedureRun 导出
-```bash
-curl http://localhost:3001/api/cases/{caseId}/export -o case-export.md
-```
-兼容 API 仍使用 `/api/cases/*` 路径，也可在 Console 的 ProcedureRun 详情页找到导出入口。
+## License
 
-## 外部 API
-
-Bearer token 鉴权（在 `/admin/api-keys` 创建管理）：
-```bash
-curl https://demo.anytrans.ai/api/messages \
-  -H "Authorization: Bearer intera_sk_live_…" \
-  -H "Content-Type: application/json" \
-  -d '{"message":"Hello","userId":"u_1"}'
-```
+Licensed under the [Apache License 2.0](LICENSE).
